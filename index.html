@@ -1,0 +1,47 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+    <link rel="icon" type="image/svg+xml" href="../icon.svg">
+    <meta name="description" content="Mars Colony — drive a rover, fly a drone and walk a surface unit across real Mars terrain from Jezero and Gale craters.">
+    <title>SIGNAL — Mars Colony</title>
+
+    <!-- Open Graph / social share -->
+    <meta property="og:type" content="website">
+    <meta property="og:title" content="SIGNAL — Mars Colony">
+    <meta property="og:description" content="Drive, fly and walk across real Mars terrain — Jezero and Gale craters, from real elevation data.">
+    <meta property="og:url" content="https://signal-playground-0uj.pages.dev/mars-colony/">
+    <meta property="og:site_name" content="SIGNAL">
+    <meta name="twitter:card" content="summary_large_image">
+
+    <!-- Three.js ESM via import map — latest stable (0.185.1), intentionally newer
+         than this project's other games (pinned at 0.160.1); this is a standalone
+         game with no shared vendor files, so it can track latest independently. -->
+    <script type="importmap">
+    {
+      "imports": {
+        "three": "https://cdn.jsdelivr.net/npm/three@0.185.1/build/three.module.js",
+        "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.185.1/examples/jsm/"
+      }
+    }
+    </script>
+
+    <link rel="stylesheet" href="style.css">
+</head>
+
+<body>
+    <div id="site-select"></div>
+
+    <div id="game-root" hidden>
+        <canvas id="mc-canvas"></canvas>
+        <div id="mc-hud"></div>
+        <div id="mc-touch-move" class="mars-touch-zone mars-touch-zone--left"></div>
+        <div id="mc-touch-look" class="mars-touch-zone mars-touch-zone--right"></div>
+    </div>
+
+    <script type="module" src="js/main.js"></script>
+</body>
+
+</html>

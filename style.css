@@ -1,0 +1,237 @@
+html, body {
+    margin: 0;
+    padding: 0;
+    width: 100%;
+    height: 100%;
+    background: #150b07;
+    color: #f2ece3;
+    font-family: system-ui, -apple-system, sans-serif;
+    overflow: hidden;
+    touch-action: none;
+}
+
+#site-select {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 100vh;
+    padding: 24px;
+}
+
+.site-select {
+    text-align: center;
+    max-width: 640px;
+}
+
+.site-select h1 {
+    font-size: clamp(1.8rem, 6vw, 3rem);
+    letter-spacing: 0.08em;
+    margin-bottom: 0.4em;
+}
+
+.site-select__cards {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 16px;
+    justify-content: center;
+    margin-top: 24px;
+}
+
+.site-card {
+    display: block;
+    width: 220px;
+    padding: 20px;
+    border: 1px solid #5a3a26;
+    border-radius: 8px;
+    background: rgba(90, 58, 38, 0.15);
+    color: inherit;
+    text-decoration: none;
+    transition: background 0.15s, border-color 0.15s;
+}
+
+.site-card:hover, .site-card:active {
+    background: rgba(224, 185, 94, 0.15);
+    border-color: #e0b95e;
+}
+
+.site-card h2 {
+    margin: 0 0 6px;
+    font-size: 1.2rem;
+}
+
+.site-card p {
+    margin: 0;
+    opacity: 0.8;
+    font-size: 0.9rem;
+}
+
+#game-root {
+    position: relative;
+    width: 100vw;
+    height: 100vh;
+}
+
+#mc-canvas {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    display: block;
+}
+
+/* ---- HUD ---- */
+
+#mc-hud {
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+}
+
+.mars-hud__top {
+    position: absolute;
+    top: max(12px, env(safe-area-inset-top));
+    left: 12px;
+    right: 12px;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    pointer-events: none;
+}
+
+.mars-btn {
+    pointer-events: auto;
+    background: rgba(20, 12, 8, 0.75);
+    border: 1px solid #7a4f30;
+    color: #f2ece3;
+    border-radius: 6px;
+    padding: 10px 16px;
+    font-size: 0.85rem;
+    letter-spacing: 0.05em;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    cursor: pointer;
+}
+
+.mars-btn__hint {
+    opacity: 0.55;
+    font-size: 0.75em;
+    display: none;
+}
+
+.mars-hud--desktop .mars-btn__hint {
+    display: inline;
+}
+
+.mars-hud__unit {
+    pointer-events: none;
+    background: rgba(20, 12, 8, 0.6);
+    padding: 6px 14px;
+    border-radius: 6px;
+    font-size: 0.8rem;
+    letter-spacing: 0.1em;
+}
+
+.mars-hud__minimap {
+    position: absolute;
+    top: max(70px, calc(env(safe-area-inset-top) + 60px));
+    right: 12px;
+    width: 140px;
+    height: 140px;
+    border: 1px solid #7a4f30;
+    border-radius: 8px;
+    overflow: hidden;
+}
+
+.mars-minimap-canvas {
+    width: 100%;
+    height: 100%;
+    display: block;
+}
+
+.mars-hud__prompt {
+    position: absolute;
+    bottom: max(140px, calc(env(safe-area-inset-bottom) + 130px));
+    left: 50%;
+    transform: translateX(-50%);
+}
+
+.mars-hud__inventory {
+    position: absolute;
+    bottom: max(12px, env(safe-area-inset-bottom));
+    left: 12px;
+    background: rgba(20, 12, 8, 0.7);
+    border: 1px solid #7a4f30;
+    border-radius: 8px;
+    padding: 10px 14px;
+    pointer-events: auto;
+    max-width: 200px;
+    max-height: 120px;
+    overflow-y: auto;
+}
+
+.mars-hud__inventory-title {
+    font-size: 0.75rem;
+    letter-spacing: 0.1em;
+    opacity: 0.8;
+    margin-bottom: 4px;
+}
+
+.mars-hud__inventory ul {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    font-size: 0.8rem;
+}
+
+/* ---- Touch controls ---- */
+
+.mars-touch-zone {
+    position: absolute;
+    bottom: 0;
+    width: 45vw;
+    max-width: 260px;
+    height: 45vw;
+    max-height: 260px;
+    touch-action: none;
+}
+
+.mars-touch-zone--left {
+    left: 0;
+}
+
+.mars-touch-zone--right {
+    right: 0;
+}
+
+.joy-base {
+    position: absolute;
+    width: 100px;
+    height: 100px;
+    margin-left: -50px;
+    margin-top: -50px;
+    border-radius: 50%;
+    background: rgba(224, 185, 94, 0.12);
+    border: 1px solid rgba(224, 185, 94, 0.4);
+    opacity: 0;
+    transition: opacity 0.1s;
+    pointer-events: none;
+}
+
+.joy-nub {
+    position: absolute;
+    left: 50%;
+    top: 50%;
+    width: 44px;
+    height: 44px;
+    margin-left: -22px;
+    margin-top: -22px;
+    border-radius: 50%;
+    background: rgba(224, 185, 94, 0.55);
+}
+
+@media (min-width: 900px) and (pointer: fine) {
+    .mars-touch-zone {
+        display: none;
+    }
+}
