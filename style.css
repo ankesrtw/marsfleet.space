@@ -202,6 +202,22 @@ html, body {
     color: #e0b95e;
 }
 
+.mars-tele__clock {
+    letter-spacing: 0.06em;
+    font-size: 0.66rem;
+    color: #e0b95e;
+    opacity: 0.9;
+    margin-bottom: 6px;
+}
+
+.mars-tele__grid b.is-low {
+    color: #e0885e;
+}
+
+.mars-tele__grid b.is-crit {
+    color: #e05e5e;
+}
+
 /* On phones the joystick zones own the bottom corners — lift the
    telemetry above the right-hand (look) zone. */
 @media (max-width: 899px), (pointer: coarse) {

@@ -18,7 +18,7 @@
    ============================================================ */
 
 import { isTouchDevice } from './touch.js';
-import { SITES, M_PER_DEG } from './sites.js';
+import { SITES, M_PER_DEG, SOL_MS } from './sites.js';
 
 export function createHud(rootEl, { site, onSwitchUnit, onCollect }) {
     rootEl.innerHTML = `
@@ -31,6 +31,7 @@ export function createHud(rootEl, { site, onSwitchUnit, onCollect }) {
             <div class="mars-hud__minimap" id="mc-minimap"></div>
             <div class="mars-hud__telemetry" id="mc-telemetry">
                 <div class="mars-tele__site"></div>
+                <div class="mars-tele__clock" id="mc-t-clock">SOL — · MET 00:00:00</div>
                 <div class="mars-tele__grid">
                     <span>SPD</span><b id="mc-t-spd">0.0 m/s</b>
                     <span>HDG</span><b id="mc-t-hdg">000° N</b>
@@ -38,6 +39,9 @@ export function createHud(rootEl, { site, onSwitchUnit, onCollect }) {
                     <span>SLOPE</span><b id="mc-t-slope">—</b>
                     <span>LAT</span><b id="mc-t-lat">—</b>
                     <span>LON</span><b id="mc-t-lon">—</b>
+                    <span>ODO</span><b id="mc-t-odo">0 m</b>
+                    <span>BATT</span><b id="mc-t-batt">100%</b>
+                    <span>TGT</span><b id="mc-t-tgt">—</b>
                 </div>
             </div>
             <div class="mars-hud__prompt" id="mc-prompt" hidden>
@@ -97,14 +101,20 @@ export function createHud(rootEl, { site, onSwitchUnit, onCollect }) {
     }
 
     const tele = {
+        clock: rootEl.querySelector('#mc-t-clock'),
         spd: rootEl.querySelector('#mc-t-spd'),
         hdg: rootEl.querySelector('#mc-t-hdg'),
         elev: rootEl.querySelector('#mc-t-elev'),
         slope: rootEl.querySelector('#mc-t-slope'),
         lat: rootEl.querySelector('#mc-t-lat'),
         lon: rootEl.querySelector('#mc-t-lon'),
+        odo: rootEl.querySelector('#mc-t-odo'),
+        batt: rootEl.querySelector('#mc-t-batt'),
+        tgt: rootEl.querySelector('#mc-t-tgt'),
     };
     const CARDINALS = ['N', 'NE', 'E', 'SE', 'S', 'SW', 'W', 'NW'];
+    const missionStart = Date.parse(site.landingUtc);
+    const metStart = Date.now();
 
     switchBtn.addEventListener('click', onSwitchUnit);
     collectBtn.addEventListener('click', onCollect);
@@ -150,17 +160,34 @@ export function createHud(rootEl, { site, onSwitchUnit, onCollect }) {
 
     // speed m/s, heading rad (unit convention: W travels along
     // -[sin h, cos h], so bearing-from-north = -h), elev m, slope deg.
-    function setTelemetry({ speed, heading, elevation, slopeDeg, x, z }) {
+    function setTelemetry({ speed, heading, elevation, slopeDeg, x, z, odo, charge, dead, target }) {
         const bearing = ((-heading * 180 / Math.PI) % 360 + 360) % 360;
         const card = CARDINALS[Math.round(bearing / 45) % 8];
         const lat = site.center.lat - z / M_PER_DEG;
         const lon = site.center.lon + x / M_PER_DEG;
+
+        // Live mission sol (real landing epoch, real sol length) + session MET.
+        const sol = Math.floor((Date.now() - missionStart) / SOL_MS);
+        const met = Math.floor((Date.now() - metStart) / 1000);
+        const hh = String(Math.floor(met / 3600)).padStart(2, '0');
+        const mm = String(Math.floor((met % 3600) / 60)).padStart(2, '0');
+        const ss = String(met % 60).padStart(2, '0');
+        tele.clock.textContent = `SOL ${sol} · MET ${hh}:${mm}:${ss}`;
+
         tele.spd.textContent = `${speed.toFixed(1)} m/s`;
         tele.hdg.textContent = `${String(Math.round(bearing)).padStart(3, '0')}° ${card}`;
         tele.elev.textContent = `${elevation.toFixed(1)} m`;
         tele.slope.textContent = `${slopeDeg.toFixed(1)}°`;
         tele.lat.textContent = `${Math.abs(lat).toFixed(5)}° ${lat >= 0 ? 'N' : 'S'}`;
         tele.lon.textContent = `${Math.abs(lon).toFixed(5)}° ${lon >= 0 ? 'E' : 'W'}`;
+        tele.odo.textContent = odo >= 1000 ? `${(odo / 1000).toFixed(2)} km` : `${Math.round(odo)} m`;
+
+        tele.batt.textContent = dead ? `${Math.round(charge)}% ⚠` : `${Math.round(charge)}%`;
+        tele.batt.className = charge <= 15 ? 'is-crit' : charge <= 35 ? 'is-low' : '';
+
+        tele.tgt.textContent = target
+            ? `${target.dist >= 1000 ? (target.dist / 1000).toFixed(2) + ' km' : Math.round(target.dist) + ' m'} · ${target.sample.name}`
+            : 'ALL COLLECTED';
     }
 
     return {

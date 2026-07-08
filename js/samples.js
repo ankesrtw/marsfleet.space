@@ -47,11 +47,26 @@ export function createSamples(site, terrain) {
         return nearestDist <= COLLECT_RADIUS ? nearest : null;
     }
 
+    // Nearest uncollected sample at ANY distance (telemetry target readout).
+    function nearestInfo(position) {
+        let nearest = null;
+        let nearestDist = Infinity;
+        for (const s of site.samples) {
+            if (s.collected) continue;
+            const d = Math.hypot(position.x - s.x, position.z - s.z);
+            if (d < nearestDist) {
+                nearestDist = d;
+                nearest = s;
+            }
+        }
+        return nearest ? { sample: nearest, dist: nearestDist } : null;
+    }
+
     function collect(sample) {
         sample.collected = true;
         sample._mesh.material.color.set(0x5ee08a);
         inventory.push({ ...sample, _mesh: undefined });
     }
 
-    return { group, inventory, nearestUncollected, collect, markers: site.samples };
+    return { group, inventory, nearestUncollected, nearestInfo, collect, markers: site.samples };
 }

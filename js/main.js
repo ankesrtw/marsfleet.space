@@ -85,11 +85,16 @@ async function startGame(site) {
     const samples = createSamples(site, terrain);
     scene.add(samples.group);
 
+    // Per-unit sim state: battery (drains with movement, solar-recharges
+    // when idle; an empty battery immobilises the unit until it recovers
+    // above the restart threshold) and odometer.
     const units = [
-        { name: 'Rover', unit: rover, kind: 'ground' },
-        { name: 'Drone', unit: drone, kind: 'fly' },
-        { name: 'Humanoid', unit: humanoid, kind: 'ground' },
+        { name: 'Rover', unit: rover, kind: 'ground', charge: 100, odo: 0, drainRate: 0.5 },
+        { name: 'Drone', unit: drone, kind: 'fly', charge: 100, odo: 0, drainRate: 0.9 },
+        { name: 'Humanoid', unit: humanoid, kind: 'ground', charge: 100, odo: 0, drainRate: 0.3 },
     ];
+    const SOLAR_RATE = 0.6;      // %/s recharge while not driving
+    const RESTART_CHARGE = 10;   // empty units stay dead until this
     let activeIndex = 0;
 
     const hudRoot = document.getElementById('mc-hud');
@@ -149,13 +154,31 @@ async function startGame(site) {
         const dt = Math.min(timer.getDelta(), 0.1);
         const active = units[activeIndex];
 
-        const moveInput = readMoveInput(keys, touchZones.move);
+        let moveInput = readMoveInput(keys, touchZones.move);
+        const lookInput = readLookInput(touchZones.look);
+
+        // Battery: the active unit drains proportionally to input; every
+        // idle unit solar-recharges. Empty -> inputs cut until it recovers.
+        const inputMag = Math.min(1, Math.abs(moveInput.x) + Math.abs(moveInput.y) + Math.abs(lookInput.x) * 0.3);
+        active.dead = active.dead ? active.charge < RESTART_CHARGE : active.charge <= 0;
+        if (active.dead) moveInput = { x: 0, y: 0 };
+        for (const u of units) {
+            const driving = u === active && !active.dead && inputMag > 0.02;
+            u.charge = driving
+                ? Math.max(0, u.charge - u.drainRate * inputMag * dt)
+                : Math.min(100, u.charge + SOLAR_RATE * dt);
+        }
+
+        const beforeMove = active.unit.position.clone();
         if (active.kind === 'ground') {
             active.unit.update(dt, { throttle: moveInput.y, steer: -moveInput.x });
         } else {
-            const lookInput = readLookInput(touchZones.look);
             active.unit.update(dt, { forward: -moveInput.y, strafe: moveInput.x, turn: lookInput.x });
         }
+        active.odo += Math.hypot(
+            active.unit.position.x - beforeMove.x,
+            active.unit.position.z - beforeMove.z
+        );
 
         fog.reveal(drone.position.x, drone.position.z);
         if (active.kind === 'ground') fog.reveal(active.unit.position.x, active.unit.position.z);
@@ -184,6 +207,10 @@ async function startGame(site) {
                 slopeDeg,
                 x: pos.x,
                 z: pos.z,
+                odo: active.odo,
+                charge: active.charge,
+                dead: !!active.dead,
+                target: samples.nearestInfo(pos),
             });
             prevPos.copy(pos);
             teleAccum = 0;

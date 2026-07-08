@@ -20,6 +20,9 @@
 // of the equirectangular projection all site rasters use.
 export const M_PER_DEG = 59274.697523;
 
+// One Martian sol in milliseconds (24h 39m 35.244s).
+export const SOL_MS = 88775244;
+
 export const SITES = {
     jezero: {
         id: 'jezero',
@@ -35,6 +38,8 @@ export const SITES = {
         // Séítah -> western delta front -> Neretva Vallis.
         worldSize: 6000,
         center: { lon: 77.415, lat: 18.455 },
+        // Perseverance touchdown (UTC) — drives the live mission sol counter.
+        landingUtc: '2021-02-18T20:55:00Z',
         // CTX ortho is grayscale — multiply in a Mars-rust tint (see terrain.js).
         tint: 0xc98a5e,
         // Octavia E. Butler Landing (77.45088E, 18.44463N); heading faces
@@ -64,6 +69,8 @@ export const SITES = {
         // traverse: Bradbury Landing -> Yellowknife Bay -> Vera Rubin Ridge.
         worldSize: 9000,
         center: { lon: 137.40264, lat: -4.65629 },
+        // Curiosity touchdown (UTC) — drives the live mission sol counter.
+        landingUtc: '2012-08-06T05:17:00Z',
         // HiRISE ortho is real color — no tint needed.
         tint: 0xffffff,
         // Bradbury Landing (137.4417E, 4.5895S); heading faces south so W
