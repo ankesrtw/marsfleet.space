@@ -9,19 +9,49 @@
    ============================================================ */
 
 import * as THREE from 'three';
+import { attachUnitModel } from './models.js';
 
 const WALK_SPEED = 3.2;  // m/s
 const TURN_RATE = 2.4;   // rad/s
 const SLOPE_K = 0.8;     // much gentler falloff than the rover
 const MIN_SPEED_FACTOR = 0.3;
 
+// Procedural walk cycle on the GLB's rig (the Tripo export is rigged
+// but ships zero animation clips, so we drive the bones ourselves).
+// Swing amplitudes in radians around each bone's bind pose.
+const WALK_BONES = [
+    { name: 'L_Thigh', amp: 0.55, phase: 0 },
+    { name: 'R_Thigh', amp: 0.55, phase: Math.PI },
+    { name: 'L_Calf', amp: 0.45, phase: Math.PI * 0.55 },
+    { name: 'R_Calf', amp: 0.45, phase: Math.PI * 1.55 },
+    { name: 'L_Upperarm', amp: 0.35, phase: Math.PI },
+    { name: 'R_Upperarm', amp: 0.35, phase: 0 },
+    { name: 'L_Forearm', amp: 0.2, phase: Math.PI * 1.3 },
+    { name: 'R_Forearm', amp: 0.2, phase: Math.PI * 0.3 },
+];
+
 export function createHumanoid(site, terrain) {
     const mesh = buildHumanoidMesh();
     mesh.position.set(site.spawn.x + 5, 0, site.spawn.z);
     mesh.rotation.y = site.spawn.heading;
 
+    // Populated once the GLB lands: [{bone, bindQuat, amp, phase}]
+    let rig = null;
+    attachUnitModel(mesh, 'humanoid', (model) => {
+        rig = [];
+        for (const cfg of WALK_BONES) {
+            const bone = model.getObjectByName(cfg.name);
+            if (bone) rig.push({ bone, bind: bone.quaternion.clone(), ...cfg });
+        }
+        if (!rig.length) rig = null; // unexpected rig — leave bind pose
+    });
+
     let heading = site.spawn.heading;
     let stride = 0;
+    let walkAmt = 0; // 0..1, eases the cycle in/out so stops don't snap
+
+    const _swing = new THREE.Quaternion();
+    const _axis = new THREE.Vector3(1, 0, 0); // bind-local X = leg/arm swing
 
     function update(dt, input) {
         // input: { throttle: -1..1, steer: -1..1 }
@@ -36,9 +66,18 @@ export function createHumanoid(site, terrain) {
         mesh.position.z += Math.cos(heading) * speed * dt;
         mesh.position.y = terrain.sampleHeight(mesh.position.x, mesh.position.z);
 
-        if (Math.abs(input.throttle) > 0.05) stride += dt * 6;
+        const moving = Math.abs(input.throttle) > 0.05;
+        if (moving) stride += dt * 6;
+        walkAmt += ((moving ? 1 : 0) - walkAmt) * Math.min(1, 8 * dt);
         mesh.rotation.y = heading;
-        mesh.position.y += Math.abs(Math.sin(stride)) * 0.06; // subtle walk bob
+        mesh.position.y += Math.abs(Math.sin(stride)) * 0.06 * walkAmt; // walk bob
+
+        if (rig && walkAmt > 0.01) {
+            for (const j of rig) {
+                _swing.setFromAxisAngle(_axis, Math.sin(stride + j.phase) * j.amp * walkAmt);
+                j.bone.quaternion.copy(j.bind).multiply(_swing);
+            }
+        }
     }
 
     return { mesh, update, get position() { return mesh.position; }, get heading() { return heading; } };

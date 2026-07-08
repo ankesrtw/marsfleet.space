@@ -20,13 +20,14 @@
 import { isTouchDevice } from './touch.js';
 import { SITES, M_PER_DEG, SOL_MS } from './sites.js';
 
-export function createHud(rootEl, { site, onSwitchUnit, onCollect }) {
+export function createHud(rootEl, { site, onSwitchUnit, onCollect, onToggleSfx, sfxEnabled = true }) {
     rootEl.innerHTML = `
         <div class="mars-hud">
             <div class="mars-hud__top">
                 <button class="mars-btn mars-btn--switch" id="mc-switch">SWITCH UNIT<span class="mars-btn__hint">[TAB]</span></button>
                 <div class="mars-hud__unit" id="mc-active-unit">ROVER</div>
                 <button class="mars-btn mars-btn--menu" id="mc-menu-btn">MENU<span class="mars-btn__hint">[M]</span></button>
+                <button class="mars-btn mars-btn--sfx" id="mc-sfx">SFX ${sfxEnabled ? 'ON' : 'OFF'}</button>
             </div>
             <div class="mars-hud__minimap" id="mc-minimap"></div>
             <div class="mars-hud__telemetry" id="mc-telemetry">
@@ -41,7 +42,7 @@ export function createHud(rootEl, { site, onSwitchUnit, onCollect }) {
                     <span>LON</span><b id="mc-t-lon">—</b>
                     <span>ODO</span><b id="mc-t-odo">0 m</b>
                     <span>BATT</span><b id="mc-t-batt">100%</b>
-                    <span>TGT</span><b id="mc-t-tgt">—</b>
+                    <span>TGT</span><b id="mc-t-tgt"><span class="mars-tele__arrow" id="mc-t-tgt-arrow" hidden>▲</span><span id="mc-t-tgt-txt">—</span></b>
                 </div>
             </div>
             <div class="mars-hud__prompt" id="mc-prompt" hidden>
@@ -60,6 +61,12 @@ export function createHud(rootEl, { site, onSwitchUnit, onCollect }) {
                     <div class="mars-menu__sites" id="mc-menu-sites"></div>
                 </div>
                 <div class="mars-menu__section">
+                    <h3>LAB — COLLECTED SAMPLES</h3>
+                    <ul class="mars-menu__lab" id="mc-lab-list">
+                        <li class="mars-menu__lab-empty">Nothing collected yet — follow the beacon.</li>
+                    </ul>
+                </div>
+                <div class="mars-menu__section">
                     <h3>CONTROLS</h3>
                     <ul class="mars-menu__controls">
                         <li>Drive / walk / fly — WASD or left joystick</li>
@@ -67,6 +74,7 @@ export function createHud(rootEl, { site, onSwitchUnit, onCollect }) {
                         <li>Switch unit — TAB or SWITCH UNIT</li>
                         <li>Collect sample — E or COLLECT</li>
                         <li>Menu — M or MENU</li>
+                        <li>Sol cycle — solar recharge stops at night</li>
                     </ul>
                 </div>
                 <button class="mars-btn mars-btn--resume" id="mc-resume">RESUME</button>
@@ -110,7 +118,8 @@ export function createHud(rootEl, { site, onSwitchUnit, onCollect }) {
         lon: rootEl.querySelector('#mc-t-lon'),
         odo: rootEl.querySelector('#mc-t-odo'),
         batt: rootEl.querySelector('#mc-t-batt'),
-        tgt: rootEl.querySelector('#mc-t-tgt'),
+        tgt: rootEl.querySelector('#mc-t-tgt-txt'),
+        tgtArrow: rootEl.querySelector('#mc-t-tgt-arrow'),
     };
     const CARDINALS = ['N', 'NE', 'E', 'SE', 'S', 'SW', 'W', 'NW'];
     const missionStart = Date.parse(site.landingUtc);
@@ -118,6 +127,11 @@ export function createHud(rootEl, { site, onSwitchUnit, onCollect }) {
 
     switchBtn.addEventListener('click', onSwitchUnit);
     collectBtn.addEventListener('click', onCollect);
+    const sfxBtn = rootEl.querySelector('#mc-sfx');
+    sfxBtn.addEventListener('click', () => {
+        const on = onToggleSfx ? onToggleSfx() : false;
+        sfxBtn.textContent = `SFX ${on ? 'ON' : 'OFF'}`;
+    });
     rootEl.querySelector('#mc-menu-btn').addEventListener('click', () => setMenuOpen(true));
     rootEl.querySelector('#mc-resume').addEventListener('click', () => setMenuOpen(false));
     menuEl.addEventListener('click', (e) => {
@@ -149,6 +163,8 @@ export function createHud(rootEl, { site, onSwitchUnit, onCollect }) {
         }
     }
 
+    const labList = rootEl.querySelector('#mc-lab-list');
+
     function setInventory(items) {
         invCount.textContent = items.length;
         invList.replaceChildren(...items.map((i) => {
@@ -156,11 +172,25 @@ export function createHud(rootEl, { site, onSwitchUnit, onCollect }) {
             li.textContent = i.name;
             return li;
         }));
+        // menu LAB panel: name + the sample's real mission note
+        if (items.length) {
+            labList.replaceChildren(...items.map((i) => {
+                const li = document.createElement('li');
+                const name = document.createElement('b');
+                name.textContent = i.name;
+                const note = document.createElement('span');
+                note.textContent = i.note ?? '';
+                li.append(name, note);
+                return li;
+            }));
+        }
     }
 
     // speed m/s, heading rad (unit convention: W travels along
     // -[sin h, cos h], so bearing-from-north = -h), elev m, slope deg.
-    function setTelemetry({ speed, heading, elevation, slopeDeg, x, z, odo, charge, dead, target }) {
+    // tgtRelDeg: steer angle to the target relative to forward travel
+    // (0 = dead ahead, +90 = hard right) — rotates the TGT arrow.
+    function setTelemetry({ speed, heading, elevation, slopeDeg, x, z, odo, charge, dead, target, tgtRelDeg }) {
         const bearing = ((-heading * 180 / Math.PI) % 360 + 360) % 360;
         const card = CARDINALS[Math.round(bearing / 45) % 8];
         const lat = site.center.lat - z / M_PER_DEG;
@@ -188,6 +218,10 @@ export function createHud(rootEl, { site, onSwitchUnit, onCollect }) {
         tele.tgt.textContent = target
             ? `${target.dist >= 1000 ? (target.dist / 1000).toFixed(2) + ' km' : Math.round(target.dist) + ' m'} · ${target.sample.name}`
             : 'ALL COLLECTED';
+        tele.tgtArrow.hidden = !target || tgtRelDeg == null;
+        if (!tele.tgtArrow.hidden) {
+            tele.tgtArrow.style.transform = `rotate(${Math.round(tgtRelDeg)}deg)`;
+        }
     }
 
     return {

@@ -11,17 +11,27 @@
    ============================================================ */
 
 import * as THREE from 'three';
+import { attachUnitModel } from './models.js';
 
 const BASE_SPEED = 14;   // m/s
 const TURN_RATE = 1.6;   // rad/s
-const CLEARANCE = 0.6;   // meters, wheel-to-chassis
+const CLEARANCE = 0.6;   // meters, wheel-to-chassis (procedural mesh)
 const SLOPE_K = 3.0;     // speed falloff strength
 const MIN_SPEED_FACTOR = 0.15;
+
+const _up = new THREE.Vector3(0, 1, 0);
+const _tiltQuat = new THREE.Quaternion();
+const _yawQuat = new THREE.Quaternion();
 
 export function createRover(site, terrain) {
     const mesh = buildRoverMesh();
     mesh.position.set(site.spawn.x, 0, site.spawn.z);
     mesh.rotation.y = site.spawn.heading;
+
+    // GLB is normalized base-at-y=0, so it needs (almost) no clearance;
+    // the procedural box chassis keeps the original 0.6.
+    let clearance = CLEARANCE;
+    attachUnitModel(mesh, 'rover', () => { clearance = 0.05; });
 
     let heading = site.spawn.heading;
     let speed = 0;
@@ -38,15 +48,16 @@ export function createRover(site, terrain) {
 
         mesh.position.x += Math.sin(heading) * speed * dt;
         mesh.position.z += Math.cos(heading) * speed * dt;
-        mesh.position.y = terrain.sampleHeight(mesh.position.x, mesh.position.z) + CLEARANCE;
+        mesh.position.y = terrain.sampleHeight(mesh.position.x, mesh.position.z) + clearance;
 
-        mesh.rotation.y = heading;
-        const up = new THREE.Vector3(0, 1, 0);
-        const tiltQuat = new THREE.Quaternion().setFromUnitVectors(up, normal);
-        mesh.quaternion.slerp(
-            tiltQuat.multiply(new THREE.Quaternion().setFromAxisAngle(up, heading)),
-            0.15
-        );
+        // Stay in quaternion space end-to-end: assigning mesh.rotation.y
+        // here re-derived euler angles from the tilted quaternion, and that
+        // decomposition is discontinuous — past ~3/4 turn the x/z terms flip
+        // by π and the mesh visibly snapped (the "flicker past 270°" bug).
+        _tiltQuat.setFromUnitVectors(_up, normal);
+        _yawQuat.setFromAxisAngle(_up, heading);
+        _tiltQuat.multiply(_yawQuat);
+        mesh.quaternion.slerp(_tiltQuat, 1 - Math.exp(-12 * dt));
     }
 
     return { mesh, update, get position() { return mesh.position; }, get heading() { return heading; } };

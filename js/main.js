@@ -15,6 +15,9 @@ import { createJoystick, isTouchDevice } from './touch.js';
 import { createCameraRig } from './camera.js';
 import { createEnvironment, FOG } from './environment.js';
 import { createRocks } from './rocks.js';
+import { createEffects } from './effects.js';
+import { createWaypoint } from './waypoint.js';
+import { createSound } from './sound.js';
 
 const QUALITY = {
     terrainSegments: window.matchMedia('(pointer: coarse)').matches ? 128 : 256,
@@ -87,6 +90,15 @@ async function startGame(site) {
     const samples = createSamples(site, terrain);
     scene.add(samples.group);
 
+    // Blob shadows, drive dust, wheel tracks (effects.js); beacon column
+    // on the current TGT sample (waypoint.js); synthesized audio (sound.js).
+    const effects = createEffects(scene, terrain);
+    effects.addShadow(rover.mesh, 1.7);
+    effects.addShadow(drone.mesh, 0.85, true);
+    effects.addShadow(humanoid.mesh, 0.5);
+    const waypoint = createWaypoint(scene, terrain);
+    const sound = createSound();
+
     // Per-unit sim state: battery (drains with movement, solar-recharges
     // when idle; an empty battery immobilises the unit until it recovers
     // above the restart threshold) and odometer.
@@ -104,6 +116,8 @@ async function startGame(site) {
         site,
         onSwitchUnit: () => switchUnit(),
         onCollect: () => tryCollect(),
+        onToggleSfx: () => sound.toggle(),
+        sfxEnabled: sound.enabled,
     });
     const fog = createFog(site, hud.minimapEl);
     hud.setActiveUnit(units[activeIndex].name);
@@ -125,11 +139,12 @@ async function startGame(site) {
     // Debug/E2E handle (also used by the sampleHeight ground-truth check;
     // renderer/scene/camera exposed so tests on software-GL boxes can pause
     // the loop and capture canvas pixels via a same-task render+toDataURL).
-    window.__mc = { site, terrain, rover, drone, humanoid, samples, renderer, scene, camera, camRig, units };
+    window.__mc = { site, terrain, rover, drone, humanoid, samples, renderer, scene, camera, camRig, units, env, effects, waypoint, sound };
 
     function switchUnit() {
         activeIndex = (activeIndex + 1) % units.length;
         hud.setActiveUnit(units[activeIndex].name);
+        sound.switchUnit();
     }
 
     function tryCollect() {
@@ -139,6 +154,7 @@ async function startGame(site) {
         if (sample) {
             samples.collect(sample);
             hud.setInventory(samples.inventory);
+            sound.collect();
         }
     }
 
@@ -160,16 +176,24 @@ async function startGame(site) {
         const lookInput = readLookInput(touchZones.look);
 
         // Battery: the active unit drains proportionally to input; every
-        // idle unit solar-recharges. Empty -> inputs cut until it recovers.
+        // idle unit solar-recharges — but only while the sun is up (the
+        // day/night cycle gates SOLAR_RATE through env.daylight()).
         const inputMag = Math.min(1, Math.abs(moveInput.x) + Math.abs(moveInput.y) + Math.abs(lookInput.x) * 0.3);
         active.dead = active.dead ? active.charge < RESTART_CHARGE : active.charge <= 0;
         if (active.dead) moveInput = { x: 0, y: 0 };
+        const solarNow = SOLAR_RATE * env.daylight();
         for (const u of units) {
             const driving = u === active && !active.dead && inputMag > 0.02;
             u.charge = driving
                 ? Math.max(0, u.charge - u.drainRate * inputMag * dt)
-                : Math.min(100, u.charge + SOLAR_RATE * dt);
+                : Math.min(100, u.charge + solarNow * dt);
         }
+
+        // battery audio cues on downward transitions of the active unit
+        if (active.charge <= 15 && !active.lowWarned) { active.lowWarned = true; sound.lowBattery(); }
+        else if (active.charge > 35) active.lowWarned = false;
+        if (active.dead && !active.deadWarned) { active.deadWarned = true; sound.dead(); }
+        else if (!active.dead) active.deadWarned = false;
 
         const beforeMove = active.unit.position.clone();
         if (active.kind === 'ground') {
@@ -177,14 +201,22 @@ async function startGame(site) {
         } else {
             active.unit.update(dt, { forward: -moveInput.y, strafe: moveInput.x, turn: lookInput.x });
         }
-        active.odo += Math.hypot(
+        const movedDist = Math.hypot(
             active.unit.position.x - beforeMove.x,
             active.unit.position.z - beforeMove.z
         );
+        active.odo += movedDist;
+        const speedNow = dt > 0 ? movedDist / dt : 0;
 
         fog.reveal(drone.position.x, drone.position.z);
         if (active.kind === 'ground') fog.reveal(active.unit.position.x, active.unit.position.z);
         fog.render(samples.markers);
+
+        const targetInfo = samples.nearestInfo(active.unit.position);
+        waypoint.update(dt, targetInfo);
+        effects.update(dt, active, speedNow, env.daylight());
+        const speedCap = active.kind === 'fly' ? 22 : active.name === 'Humanoid' ? 3.2 : 14;
+        sound.update(active.name, Math.min(1, speedNow / speedCap));
 
         if (active.kind === 'ground') {
             const nearest = samples.nearestUncollected(active.unit.position);
@@ -202,6 +234,13 @@ async function startGame(site) {
             const speed = pos.distanceTo(prevPos) / teleAccum;
             const normal = terrain.sampleNormal(pos.x, pos.z);
             const slopeDeg = Math.acos(Math.min(1, Math.max(0, normal.y))) * 180 / Math.PI;
+            // steer angle to TGT relative to forward travel (-[sin h, cos h])
+            let tgtRelDeg = null;
+            if (targetInfo) {
+                const rel = Math.atan2(targetInfo.sample.x - pos.x, targetInfo.sample.z - pos.z)
+                    - (active.unit.heading + Math.PI);
+                tgtRelDeg = -(((rel * 180 / Math.PI) + 540) % 360 - 180);
+            }
             hud.setTelemetry({
                 speed,
                 heading: active.unit.heading,
@@ -212,14 +251,15 @@ async function startGame(site) {
                 odo: active.odo,
                 charge: active.charge,
                 dead: !!active.dead,
-                target: samples.nearestInfo(pos),
+                target: targetInfo,
+                tgtRelDeg,
             });
             prevPos.copy(pos);
             teleAccum = 0;
         }
 
         camRig.update(active.unit.position, active.unit.heading, active.kind);
-        env.update(camera);
+        env.update(camera, dt);
         rocks.update(active.unit.position);
 
         renderer.render(scene, camera);

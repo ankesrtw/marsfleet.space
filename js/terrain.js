@@ -113,9 +113,12 @@ export async function loadTerrain(site, quality) {
                 albedo *= mix(1.0, 0.72 + 0.56 * detail, detailAmt);
 
                 // Sun + ambient relief shading from the real DEM normals.
+                // Ambient tracks sun elevation so night actually darkens
+                // (uSunDir is mutated in place by the day/night cycle).
                 vec3 n = normalize(vNormal);
                 float diff = max(dot(n, uSunDir), 0.0);
-                vec3 lit = albedo * (0.38 + 0.85 * diff);
+                float dayAmt = smoothstep(-0.10, 0.20, uSunDir.y);
+                vec3 lit = albedo * ((0.07 + 0.31 * dayAmt) + 0.85 * diff);
 
                 // Dust haze, same params as scene.fog on standard materials.
                 float fogAmt = 1.0 - exp(-uFogDensity * uFogDensity * vViewDist * vViewDist);

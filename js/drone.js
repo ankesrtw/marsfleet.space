@@ -8,6 +8,7 @@
    ============================================================ */
 
 import * as THREE from 'three';
+import { attachUnitModel } from './models.js';
 
 const SPEED = 22;      // m/s
 const TURN_RATE = 2.0; // rad/s
@@ -17,9 +18,12 @@ export function createDrone(site, terrain) {
     const mesh = buildDroneMesh();
     mesh.position.set(site.spawn.x, 0, site.spawn.z);
     mesh.position.y = terrain.sampleHeight(mesh.position.x, mesh.position.z) + HOVER_HEIGHT;
+    attachUnitModel(mesh, 'drone');
 
     let heading = site.spawn.heading;
     let bob = 0;
+    let pitchTilt = 0, rollTilt = 0;
+    mesh.rotation.order = 'YXZ'; // yaw, then motion tilts
 
     function update(dt, input) {
         // input: { forward: -1..1, strafe: -1..1, turn: -1..1 }
@@ -34,7 +38,12 @@ export function createDrone(site, terrain) {
 
         const groundY = terrain.sampleHeight(mesh.position.x, mesh.position.z);
         mesh.position.y = groundY + HOVER_HEIGHT + Math.sin(bob * 2) * 0.3;
-        mesh.rotation.y = heading;
+
+        // quad-style attitude: nose dips into travel, banks into strafes
+        const k = Math.min(1, 9 * dt);
+        pitchTilt += (input.forward * 0.22 - pitchTilt) * k;
+        rollTilt += (-input.strafe * 0.16 - rollTilt) * k;
+        mesh.rotation.set(pitchTilt, heading, rollTilt, 'YXZ');
     }
 
     return { mesh, update, get position() { return mesh.position; }, get heading() { return heading; } };

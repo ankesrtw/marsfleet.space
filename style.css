@@ -218,13 +218,50 @@ html, body {
     color: #e05e5e;
 }
 
-/* On phones the joystick zones own the bottom corners — lift the
-   telemetry above the right-hand (look) zone. */
+/* steer arrow inside the TGT row — rotated via inline transform */
+.mars-tele__arrow {
+    display: inline-block;
+    margin-right: 5px;
+    color: #e0b95e;
+    transition: transform 0.2s linear;
+}
+
+/* On phones the joystick zones own the bottom corners and the chase cam
+   frames the unit near screen center — lifting the card above the look
+   zone parked it right on top of the unit. Dock it top-left under the
+   top bar instead (mirroring the minimap on the right), compacted. */
 @media (max-width: 899px), (pointer: coarse) {
     .mars-hud__telemetry {
-        bottom: max(calc(45vw + 16px), calc(env(safe-area-inset-bottom) + 200px));
-        min-width: 150px;
-        font-size: 0.65rem;
+        right: auto;
+        bottom: auto;
+        left: 12px;
+        top: max(70px, calc(env(safe-area-inset-top) + 60px));
+        min-width: 132px;
+        max-width: 186px;
+        font-size: 0.6rem;
+        padding: 8px 10px;
+    }
+
+    /* the nowrap site line otherwise stretches the card across the screen */
+    .mars-hud__telemetry .mars-tele__site {
+        white-space: normal;
+    }
+
+    .mars-hud__telemetry .mars-tele__grid b {
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+    }
+
+    /* four top-bar buttons have to fit a phone width */
+    .mars-btn {
+        padding: 8px 10px;
+        font-size: 0.72rem;
+    }
+
+    .mars-hud__unit {
+        padding: 6px 8px;
+        font-size: 0.72rem;
     }
 }
 
@@ -303,6 +340,34 @@ html, body {
 .mars-menu__site span {
     font-size: 0.72rem;
     opacity: 0.7;
+}
+
+.mars-menu__lab {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+}
+
+.mars-menu__lab li {
+    display: flex;
+    flex-direction: column;
+    gap: 1px;
+    padding: 6px 0;
+    border-bottom: 1px solid rgba(122, 79, 48, 0.35);
+}
+
+.mars-menu__lab li b {
+    font-size: 0.85rem;
+}
+
+.mars-menu__lab li span {
+    font-size: 0.72rem;
+    opacity: 0.7;
+}
+
+.mars-menu__lab-empty {
+    font-size: 0.78rem;
+    opacity: 0.6;
 }
 
 .mars-menu__controls {
