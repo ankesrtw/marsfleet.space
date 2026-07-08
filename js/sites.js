@@ -46,10 +46,11 @@ export const SITES = {
         mission: 'Curiosity · MSL',
         heightmapUrl: 'assets/gale/heightmap.png',
         textureUrl: 'assets/gale/albedo.jpg',
-        // Placeholder until scripts/mars-terrain/prep_site.sh gale has been run
-        // against a streamed AOI crop (source DEM is 3.6GB — never fetched whole).
-        elevMin: -4500,
-        elevMax: -4100,
+        // Baked from `gdalinfo -stats` on the real cropped DEM
+        // (prep_site.sh gale, run 2026-07-08 — streamed AOI, source never
+        // fetched whole). 805m relief: crater floor -> Mount Sharp foothills.
+        elevMin: -4529.212890625,
+        elevMax: -3723.7697753906,
         // 9km x 9km crop centered at (8144500, -276000)m = (137.4026E, 4.6563S).
         // Width fixed at 9km by the HiRISE ortho corridor; spans the real
         // traverse: Bradbury Landing -> Yellowknife Bay -> Vera Rubin Ridge.
