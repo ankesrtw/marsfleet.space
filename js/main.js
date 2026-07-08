@@ -12,6 +12,7 @@ import { createFog } from './fog.js';
 import { createSamples } from './samples.js';
 import { createHud } from './hud.js';
 import { createJoystick, isTouchDevice } from './touch.js';
+import { createCameraRig } from './camera.js';
 
 const QUALITY = {
     terrainSegments: window.matchMedia('(pointer: coarse)').matches ? 128 : 256,
@@ -103,19 +104,21 @@ async function startGame(site) {
     const touchZones = setupTouchControls();
     const keys = setupKeyboard();
 
-    // Start the follow-cam at the rover's spawn instead of lerping down
-    // from the origin (real elevations are negative — ~-2500m at Jezero).
-    camera.position.set(
-        rover.position.x + Math.sin(rover.heading) * 12,
-        rover.position.y + 6,
-        rover.position.z + Math.cos(rover.heading) * 12
-    );
-    camera.lookAt(rover.position.x, rover.position.y + 1, rover.position.z);
+    // Ground every unit once before the first camera snap — constructors
+    // leave y=0 and only the first update() drops them onto the terrain
+    // (~-2500m at Jezero), which would leave the camera lerping down.
+    rover.update(0, { throttle: 0, steer: 0 });
+    humanoid.update(0, { throttle: 0, steer: 0 });
+
+    // Orbit chase-cam (mouse drag / touch drag to orbit, wheel / pinch to
+    // zoom, double-click to recenter); snapped to spawn.
+    const camRig = createCameraRig(camera, canvas, terrain);
+    camRig.update(rover.position, rover.heading, 'ground', true);
 
     // Debug/E2E handle (also used by the sampleHeight ground-truth check;
     // renderer/scene/camera exposed so tests on software-GL boxes can pause
     // the loop and capture canvas pixels via a same-task render+toDataURL).
-    window.__mc = { site, terrain, rover, drone, humanoid, samples, renderer, scene, camera };
+    window.__mc = { site, terrain, rover, drone, humanoid, samples, renderer, scene, camera, camRig, units };
 
     function switchUnit() {
         activeIndex = (activeIndex + 1) % units.length;
@@ -186,21 +189,7 @@ async function startGame(site) {
             teleAccum = 0;
         }
 
-        const target = active.unit.position;
-        // Chase-cam sits behind the unit's travel direction (W drives along
-        // -[sin h, cos h], so "behind" = +[sin h, cos h]) and turns with it.
-        const h = active.unit.heading;
-        const dist = active.kind === 'fly' ? 18 : 12;
-        const lift = active.kind === 'fly' ? 12 : 6;
-        camera.position.lerp(
-            new THREE.Vector3(
-                target.x + Math.sin(h) * dist,
-                target.y + lift,
-                target.z + Math.cos(h) * dist
-            ),
-            0.08
-        );
-        camera.lookAt(target.x, target.y + 1, target.z);
+        camRig.update(active.unit.position, active.unit.heading, active.kind);
 
         renderer.render(scene, camera);
     });
