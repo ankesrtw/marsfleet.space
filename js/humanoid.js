@@ -41,7 +41,7 @@ export function createHumanoid(site, terrain) {
         mesh.position.y += Math.abs(Math.sin(stride)) * 0.06; // subtle walk bob
     }
 
-    return { mesh, update, get position() { return mesh.position; } };
+    return { mesh, update, get position() { return mesh.position; }, get heading() { return heading; } };
 }
 
 function buildHumanoidMesh() {

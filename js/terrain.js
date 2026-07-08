@@ -52,6 +52,9 @@ export async function loadTerrain(site, quality) {
         uAlbedo: { value: albedoTexture },
         uElevMin: { value: site.elevMin },
         uElevRange: { value: range },
+        // Per-site albedo tint: grayscale source imagery (Jezero's CTX
+        // ortho) gets a Mars-rust multiply; real-color sources use white.
+        uTint: { value: new THREE.Color(site.tint ?? 0xffffff) },
     };
 
     const mat = new THREE.ShaderMaterial({
@@ -70,9 +73,10 @@ export async function loadTerrain(site, quality) {
         `,
         fragmentShader: /* glsl */ `
             uniform sampler2D uAlbedo;
+            uniform vec3 uTint;
             varying vec2 vUv;
             void main() {
-                gl_FragColor = texture2D(uAlbedo, vUv);
+                gl_FragColor = vec4(texture2D(uAlbedo, vUv).rgb * uTint, 1.0);
             }
         `,
     });

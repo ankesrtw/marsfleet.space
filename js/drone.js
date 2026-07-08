@@ -37,7 +37,7 @@ export function createDrone(site, terrain) {
         mesh.rotation.y = heading;
     }
 
-    return { mesh, update, get position() { return mesh.position; } };
+    return { mesh, update, get position() { return mesh.position; }, get heading() { return heading; } };
 }
 
 function buildDroneMesh() {

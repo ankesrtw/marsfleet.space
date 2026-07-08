@@ -65,7 +65,8 @@ async function startGame(site) {
     const scene = new THREE.Scene();
     scene.background = new THREE.Color(0x3a1f14);
 
-    const camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.1, 5000);
+    // Far plane must cover the largest site diagonal (Gale is 9km square).
+    const camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.1, 20000);
 
     const sun = new THREE.DirectionalLight(0xfff2e0, 1.2);
     sun.position.set(300, 500, 200);
@@ -101,6 +102,20 @@ async function startGame(site) {
     const touchZones = setupTouchControls();
     const keys = setupKeyboard();
 
+    // Start the follow-cam at the rover's spawn instead of lerping down
+    // from the origin (real elevations are negative — ~-2500m at Jezero).
+    camera.position.set(
+        rover.position.x + Math.sin(rover.heading) * 12,
+        rover.position.y + 6,
+        rover.position.z + Math.cos(rover.heading) * 12
+    );
+    camera.lookAt(rover.position.x, rover.position.y + 1, rover.position.z);
+
+    // Debug/E2E handle (also used by the sampleHeight ground-truth check;
+    // renderer/scene/camera exposed so tests on software-GL boxes can pause
+    // the loop and capture canvas pixels via a same-task render+toDataURL).
+    window.__mc = { site, terrain, rover, drone, humanoid, samples, renderer, scene, camera };
+
     function switchUnit() {
         activeIndex = (activeIndex + 1) % units.length;
         hud.setActiveUnit(units[activeIndex].name);
@@ -122,9 +137,10 @@ async function startGame(site) {
         renderer.setSize(window.innerWidth, window.innerHeight);
     });
 
-    const clock = new THREE.Clock();
+    const timer = new THREE.Timer(); // Clock is deprecated in three 0.185+
     renderer.setAnimationLoop(() => {
-        const dt = Math.min(clock.getDelta(), 0.1);
+        timer.update();
+        const dt = Math.min(timer.getDelta(), 0.1);
         const active = units[activeIndex];
 
         const moveInput = readMoveInput(keys, touchZones.move);
@@ -147,11 +163,17 @@ async function startGame(site) {
         }
 
         const target = active.unit.position;
-        const camOffset = active.kind === 'fly'
-            ? new THREE.Vector3(0, 12, 18)
-            : new THREE.Vector3(0, 6, 12);
+        // Chase-cam sits behind the unit's travel direction (W drives along
+        // -[sin h, cos h], so "behind" = +[sin h, cos h]) and turns with it.
+        const h = active.unit.heading;
+        const dist = active.kind === 'fly' ? 18 : 12;
+        const lift = active.kind === 'fly' ? 12 : 6;
         camera.position.lerp(
-            new THREE.Vector3(target.x + camOffset.x, target.y + camOffset.y, target.z + camOffset.z),
+            new THREE.Vector3(
+                target.x + Math.sin(h) * dist,
+                target.y + lift,
+                target.z + Math.cos(h) * dist
+            ),
             0.08
         );
         camera.lookAt(target.x, target.y + 1, target.z);

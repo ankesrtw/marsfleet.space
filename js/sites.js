@@ -30,8 +30,11 @@ export const SITES = {
         // 6km x 6km crop centered at (77.415E, 18.455N): landing site ->
         // Séítah -> western delta front -> Neretva Vallis.
         worldSize: 6000,
-        // Octavia E. Butler Landing (77.45088E, 18.44463N)
-        spawn: { x: 2127, z: 615, heading: 0 },
+        // CTX ortho is grayscale — multiply in a Mars-rust tint (see terrain.js).
+        tint: 0xc98a5e,
+        // Octavia E. Butler Landing (77.45088E, 18.44463N); heading faces
+        // northwest so W drives toward Séítah and the delta front.
+        spawn: { x: 2127, z: 615, heading: Math.PI / 4 },
         samples: [
             { id: 'rochette', name: 'Rochette', x: 1660, z: 1067, note: 'First cored sample, Sep 2021' },
             { id: 'seitah', name: 'Séítah', x: 1008, z: 415, note: 'Ridge-forming igneous rock' },
@@ -55,8 +58,12 @@ export const SITES = {
         // Width fixed at 9km by the HiRISE ortho corridor; spans the real
         // traverse: Bradbury Landing -> Yellowknife Bay -> Vera Rubin Ridge.
         worldSize: 9000,
-        // Bradbury Landing (137.4417E, 4.5895S)
-        spawn: { x: 2315, z: -3959, heading: 0 },
+        // HiRISE ortho is real color — no tint needed.
+        tint: 0xffffff,
+        // Bradbury Landing (137.4417E, 4.5895S); heading faces south so W
+        // drives into the map toward Yellowknife Bay and Mount Sharp
+        // (spawn is only ~540m from the crop's north edge).
+        spawn: { x: 2315, z: -3959, heading: Math.PI },
         samples: [
             { id: 'john-klein', name: 'John Klein', x: 2386, z: -3550, note: 'Yellowknife Bay, first MSL drill site' },
             { id: 'cumberland', name: 'Cumberland', x: 2363, z: -3579, note: 'Yellowknife Bay, second drill target' },

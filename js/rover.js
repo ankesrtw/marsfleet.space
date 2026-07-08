@@ -49,7 +49,7 @@ export function createRover(site, terrain) {
         );
     }
 
-    return { mesh, update, get position() { return mesh.position; } };
+    return { mesh, update, get position() { return mesh.position; }, get heading() { return heading; } };
 }
 
 function buildRoverMesh() {
