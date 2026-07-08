@@ -18,6 +18,14 @@ html, body {
     padding: 24px;
 }
 
+/* Author `display` values override the UA's [hidden] rule — without this,
+   the empty site-select div keeps covering the game in ?site= mode
+   (uniform dark screen, no HUD). Same guard for game-root in reverse. */
+#site-select[hidden],
+#game-root[hidden] {
+    display: none !important;
+}
+
 .site-select {
     text-align: center;
     max-width: 640px;
