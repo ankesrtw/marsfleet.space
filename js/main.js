@@ -93,6 +93,7 @@ async function startGame(site) {
 
     const hudRoot = document.getElementById('mc-hud');
     const hud = createHud(hudRoot, {
+        site,
         onSwitchUnit: () => switchUnit(),
         onCollect: () => tryCollect(),
     });
@@ -138,6 +139,8 @@ async function startGame(site) {
     });
 
     const timer = new THREE.Timer(); // Clock is deprecated in three 0.185+
+    const prevPos = new THREE.Vector3().copy(rover.position);
+    let teleAccum = 0;
     renderer.setAnimationLoop(() => {
         timer.update();
         const dt = Math.min(timer.getDelta(), 0.1);
@@ -160,6 +163,27 @@ async function startGame(site) {
             hud.setPrompt(nearest ? nearest.name : null);
         } else {
             hud.setPrompt(null);
+        }
+
+        // Telemetry at ~10Hz: speed from position delta (uniform across all
+        // unit types), slope from the shared terrain normal, real lat/lon
+        // derived in hud.js from the world offset.
+        teleAccum += dt;
+        if (teleAccum >= 0.1) {
+            const pos = active.unit.position;
+            const speed = pos.distanceTo(prevPos) / teleAccum;
+            const normal = terrain.sampleNormal(pos.x, pos.z);
+            const slopeDeg = Math.acos(Math.min(1, Math.max(0, normal.y))) * 180 / Math.PI;
+            hud.setTelemetry({
+                speed,
+                heading: active.unit.heading,
+                elevation: terrain.sampleHeight(pos.x, pos.z),
+                slopeDeg,
+                x: pos.x,
+                z: pos.z,
+            });
+            prevPos.copy(pos);
+            teleAccum = 0;
         }
 
         const target = active.unit.position;
@@ -192,6 +216,7 @@ function setupKeyboard() {
     document.addEventListener('keydown', (e) => {
         if (e.code === 'Tab') document.dispatchEvent(new CustomEvent('mc-switch-unit'));
         if (e.code === 'KeyE') document.dispatchEvent(new CustomEvent('mc-collect'));
+        if (e.code === 'KeyM' || e.code === 'Escape') document.dispatchEvent(new CustomEvent('mc-menu'));
     });
     return keys;
 }
@@ -227,5 +252,9 @@ function readLookInput(joystick) {
 
 document.addEventListener('mc-switch-unit', () => document.getElementById('mc-switch')?.click());
 document.addEventListener('mc-collect', () => document.getElementById('mc-collect')?.click());
+document.addEventListener('mc-menu', () => {
+    const menu = document.getElementById('mc-menu');
+    if (menu) menu.dataset.open = menu.dataset.open === 'true' ? 'false' : 'true';
+});
 
 boot();

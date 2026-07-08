@@ -16,6 +16,10 @@
    plus its two asset files.
    ============================================================ */
 
+// Mars 2000 sphere (R=3396190m): meters per degree of lat/lon at the equator
+// of the equirectangular projection all site rasters use.
+export const M_PER_DEG = 59274.697523;
+
 export const SITES = {
     jezero: {
         id: 'jezero',
@@ -30,6 +34,7 @@ export const SITES = {
         // 6km x 6km crop centered at (77.415E, 18.455N): landing site ->
         // Séítah -> western delta front -> Neretva Vallis.
         worldSize: 6000,
+        center: { lon: 77.415, lat: 18.455 },
         // CTX ortho is grayscale — multiply in a Mars-rust tint (see terrain.js).
         tint: 0xc98a5e,
         // Octavia E. Butler Landing (77.45088E, 18.44463N); heading faces
@@ -58,6 +63,7 @@ export const SITES = {
         // Width fixed at 9km by the HiRISE ortho corridor; spans the real
         // traverse: Bradbury Landing -> Yellowknife Bay -> Vera Rubin Ridge.
         worldSize: 9000,
+        center: { lon: 137.40264, lat: -4.65629 },
         // HiRISE ortho is real color — no tint needed.
         tint: 0xffffff,
         // Bradbury Landing (137.4417E, 4.5895S); heading faces south so W

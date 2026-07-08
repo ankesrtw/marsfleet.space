@@ -1,27 +1,71 @@
 /* ============================================================
-   hud.js — DOM/CSS overlay: unit switch, collect prompt, inventory.
+   hud.js — DOM/CSS overlay: unit switch, collect prompt, inventory,
+   scientific telemetry readout, and the in-game menu.
 
    Touch-first: the collect action and unit-switch are always
    on-screen tappable buttons (not keyboard-only), with a keyboard
    hint shown only on non-touch devices.
+
+   Telemetry shows real mission-style data: speed, bearing, elevation
+   (Mars areoid-relative, from the site DEM), local slope, and the
+   unit's actual planetary lat/lon derived from its world position
+   (see sites.js M_PER_DEG). The menu switches sites in-game without
+   returning to the landing screen.
+
+   Visibility toggles use explicit classes/attributes with matching
+   CSS — never bare [hidden] against an author `display` rule (that
+   exact conflict caused the launch black-screen bug).
    ============================================================ */
 
 import { isTouchDevice } from './touch.js';
+import { SITES, M_PER_DEG } from './sites.js';
 
-export function createHud(rootEl, { onSwitchUnit, onCollect }) {
+export function createHud(rootEl, { site, onSwitchUnit, onCollect }) {
     rootEl.innerHTML = `
         <div class="mars-hud">
             <div class="mars-hud__top">
                 <button class="mars-btn mars-btn--switch" id="mc-switch">SWITCH UNIT<span class="mars-btn__hint">[TAB]</span></button>
                 <div class="mars-hud__unit" id="mc-active-unit">ROVER</div>
+                <button class="mars-btn mars-btn--menu" id="mc-menu-btn">MENU<span class="mars-btn__hint">[M]</span></button>
             </div>
             <div class="mars-hud__minimap" id="mc-minimap"></div>
+            <div class="mars-hud__telemetry" id="mc-telemetry">
+                <div class="mars-tele__site"></div>
+                <div class="mars-tele__grid">
+                    <span>SPD</span><b id="mc-t-spd">0.0 m/s</b>
+                    <span>HDG</span><b id="mc-t-hdg">000° N</b>
+                    <span>ELEV</span><b id="mc-t-elev">—</b>
+                    <span>SLOPE</span><b id="mc-t-slope">—</b>
+                    <span>LAT</span><b id="mc-t-lat">—</b>
+                    <span>LON</span><b id="mc-t-lon">—</b>
+                </div>
+            </div>
             <div class="mars-hud__prompt" id="mc-prompt" hidden>
                 <button class="mars-btn mars-btn--collect" id="mc-collect">COLLECT<span class="mars-btn__hint">[E]</span></button>
             </div>
             <div class="mars-hud__inventory" id="mc-inventory">
                 <div class="mars-hud__inventory-title">SAMPLES <span id="mc-inv-count">0</span></div>
                 <ul id="mc-inv-list"></ul>
+            </div>
+        </div>
+        <div class="mars-menu" id="mc-menu" data-open="false">
+            <div class="mars-menu__panel">
+                <h2>MARS COLONY</h2>
+                <div class="mars-menu__section">
+                    <h3>LANDING SITES</h3>
+                    <div class="mars-menu__sites" id="mc-menu-sites"></div>
+                </div>
+                <div class="mars-menu__section">
+                    <h3>CONTROLS</h3>
+                    <ul class="mars-menu__controls">
+                        <li>Drive / walk / fly — WASD or left joystick</li>
+                        <li>Turn (drone) — right joystick</li>
+                        <li>Switch unit — TAB or SWITCH UNIT</li>
+                        <li>Collect sample — E or COLLECT</li>
+                        <li>Menu — M or MENU</li>
+                    </ul>
+                </div>
+                <button class="mars-btn mars-btn--resume" id="mc-resume">RESUME</button>
             </div>
         </div>
     `;
@@ -33,12 +77,53 @@ export function createHud(rootEl, { onSwitchUnit, onCollect }) {
     const invCount = rootEl.querySelector('#mc-inv-count');
     const invList = rootEl.querySelector('#mc-inv-list');
     const minimapEl = rootEl.querySelector('#mc-minimap');
+    const menuEl = rootEl.querySelector('#mc-menu');
+
+    // Site name in the telemetry header + site cards in the menu (all via
+    // textContent — config is trusted, but keep the habit).
+    rootEl.querySelector('.mars-tele__site').textContent =
+        `${site.name.toUpperCase()} · ${site.mission.toUpperCase()}`;
+    const sitesEl = rootEl.querySelector('#mc-menu-sites');
+    for (const s of Object.values(SITES)) {
+        const a = document.createElement('a');
+        a.className = 'mars-menu__site' + (s.id === site.id ? ' is-current' : '');
+        a.href = `?site=${encodeURIComponent(s.id)}`;
+        const name = document.createElement('b');
+        name.textContent = s.name;
+        const mission = document.createElement('span');
+        mission.textContent = s.id === site.id ? `${s.mission} — CURRENT` : s.mission;
+        a.append(name, mission);
+        sitesEl.appendChild(a);
+    }
+
+    const tele = {
+        spd: rootEl.querySelector('#mc-t-spd'),
+        hdg: rootEl.querySelector('#mc-t-hdg'),
+        elev: rootEl.querySelector('#mc-t-elev'),
+        slope: rootEl.querySelector('#mc-t-slope'),
+        lat: rootEl.querySelector('#mc-t-lat'),
+        lon: rootEl.querySelector('#mc-t-lon'),
+    };
+    const CARDINALS = ['N', 'NE', 'E', 'SE', 'S', 'SW', 'W', 'NW'];
 
     switchBtn.addEventListener('click', onSwitchUnit);
     collectBtn.addEventListener('click', onCollect);
+    rootEl.querySelector('#mc-menu-btn').addEventListener('click', () => setMenuOpen(true));
+    rootEl.querySelector('#mc-resume').addEventListener('click', () => setMenuOpen(false));
+    menuEl.addEventListener('click', (e) => {
+        if (e.target === menuEl) setMenuOpen(false); // tap outside the panel
+    });
 
     if (!isTouchDevice()) {
         rootEl.classList.add('mars-hud--desktop');
+    }
+
+    function setMenuOpen(open) {
+        menuEl.dataset.open = String(open);
+    }
+
+    function isMenuOpen() {
+        return menuEl.dataset.open === 'true';
     }
 
     function setActiveUnit(name) {
@@ -63,5 +148,23 @@ export function createHud(rootEl, { onSwitchUnit, onCollect }) {
         }));
     }
 
-    return { minimapEl, setActiveUnit, setPrompt, setInventory };
+    // speed m/s, heading rad (unit convention: W travels along
+    // -[sin h, cos h], so bearing-from-north = -h), elev m, slope deg.
+    function setTelemetry({ speed, heading, elevation, slopeDeg, x, z }) {
+        const bearing = ((-heading * 180 / Math.PI) % 360 + 360) % 360;
+        const card = CARDINALS[Math.round(bearing / 45) % 8];
+        const lat = site.center.lat - z / M_PER_DEG;
+        const lon = site.center.lon + x / M_PER_DEG;
+        tele.spd.textContent = `${speed.toFixed(1)} m/s`;
+        tele.hdg.textContent = `${String(Math.round(bearing)).padStart(3, '0')}° ${card}`;
+        tele.elev.textContent = `${elevation.toFixed(1)} m`;
+        tele.slope.textContent = `${slopeDeg.toFixed(1)}°`;
+        tele.lat.textContent = `${Math.abs(lat).toFixed(5)}° ${lat >= 0 ? 'N' : 'S'}`;
+        tele.lon.textContent = `${Math.abs(lon).toFixed(5)}° ${lon >= 0 ? 'E' : 'W'}`;
+    }
+
+    return {
+        minimapEl, setActiveUnit, setPrompt, setInventory,
+        setTelemetry, setMenuOpen, isMenuOpen,
+    };
 }

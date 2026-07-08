@@ -157,6 +157,156 @@ html, body {
     display: block;
 }
 
+.mars-btn--menu {
+    margin-left: auto;
+}
+
+/* ---- Telemetry readout ---- */
+
+.mars-hud__telemetry {
+    position: absolute;
+    right: 12px;
+    bottom: max(12px, env(safe-area-inset-bottom));
+    background: rgba(20, 12, 8, 0.75);
+    border: 1px solid #7a4f30;
+    border-radius: 8px;
+    padding: 10px 14px;
+    font-family: 'SF Mono', ui-monospace, Menlo, Consolas, monospace;
+    font-size: 0.72rem;
+    min-width: 180px;
+    pointer-events: none;
+}
+
+.mars-tele__site {
+    letter-spacing: 0.08em;
+    opacity: 0.7;
+    font-size: 0.62rem;
+    margin-bottom: 6px;
+    white-space: nowrap;
+}
+
+.mars-tele__grid {
+    display: grid;
+    grid-template-columns: auto 1fr;
+    gap: 2px 12px;
+}
+
+.mars-tele__grid span {
+    opacity: 0.6;
+    letter-spacing: 0.08em;
+}
+
+.mars-tele__grid b {
+    font-weight: 500;
+    text-align: right;
+    color: #e0b95e;
+}
+
+/* On phones the joystick zones own the bottom corners — lift the
+   telemetry above the right-hand (look) zone. */
+@media (max-width: 899px), (pointer: coarse) {
+    .mars-hud__telemetry {
+        bottom: max(calc(45vw + 16px), calc(env(safe-area-inset-bottom) + 200px));
+        min-width: 150px;
+        font-size: 0.65rem;
+    }
+}
+
+/* ---- In-game menu ---- */
+
+.mars-menu {
+    position: absolute;
+    inset: 0;
+    display: none;
+    align-items: center;
+    justify-content: center;
+    background: rgba(10, 6, 4, 0.82);
+    pointer-events: auto;
+    z-index: 20;
+}
+
+.mars-menu[data-open="true"] {
+    display: flex;
+}
+
+.mars-menu__panel {
+    background: #1d110a;
+    border: 1px solid #7a4f30;
+    border-radius: 12px;
+    padding: 24px 28px;
+    max-width: 420px;
+    width: calc(100vw - 48px);
+    max-height: 82vh;
+    overflow-y: auto;
+}
+
+.mars-menu__panel h2 {
+    margin: 0 0 14px;
+    font-size: 1.1rem;
+    letter-spacing: 0.12em;
+}
+
+.mars-menu__section h3 {
+    font-size: 0.72rem;
+    letter-spacing: 0.12em;
+    opacity: 0.6;
+    margin: 16px 0 8px;
+}
+
+.mars-menu__sites {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.mars-menu__site {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    padding: 10px 14px;
+    border: 1px solid #5a3a26;
+    border-radius: 8px;
+    color: inherit;
+    text-decoration: none;
+    background: rgba(90, 58, 38, 0.15);
+}
+
+.mars-menu__site:hover, .mars-menu__site:active {
+    border-color: #e0b95e;
+    background: rgba(224, 185, 94, 0.15);
+}
+
+.mars-menu__site.is-current {
+    border-color: #e0b95e;
+}
+
+.mars-menu__site b {
+    font-size: 0.9rem;
+}
+
+.mars-menu__site span {
+    font-size: 0.72rem;
+    opacity: 0.7;
+}
+
+.mars-menu__controls {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    font-size: 0.8rem;
+    opacity: 0.85;
+}
+
+.mars-menu__controls li {
+    padding: 3px 0;
+}
+
+.mars-btn--resume {
+    margin-top: 18px;
+    width: 100%;
+    justify-content: center;
+}
+
 .mars-hud__prompt {
     position: absolute;
     bottom: max(140px, calc(env(safe-area-inset-bottom) + 130px));
