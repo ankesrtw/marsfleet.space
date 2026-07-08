@@ -13,6 +13,8 @@ import { createSamples } from './samples.js';
 import { createHud } from './hud.js';
 import { createJoystick, isTouchDevice } from './touch.js';
 import { createCameraRig } from './camera.js';
+import { createEnvironment, FOG } from './environment.js';
+import { createRocks } from './rocks.js';
 
 const QUALITY = {
     terrainSegments: window.matchMedia('(pointer: coarse)').matches ? 128 : 256,
@@ -64,18 +66,18 @@ async function startGame(site) {
     renderer.setSize(window.innerWidth, window.innerHeight);
 
     const scene = new THREE.Scene();
-    scene.background = new THREE.Color(0x3a1f14);
+    scene.background = FOG.color; // only visible beyond the sky dome
 
     // Far plane must cover the largest site diagonal (Gale is 9km square).
     const camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.1, 20000);
 
-    const sun = new THREE.DirectionalLight(0xfff2e0, 1.2);
-    sun.position.set(300, 500, 200);
-    scene.add(sun);
-    scene.add(new THREE.AmbientLight(0x554433, 0.6));
+    // Sky dome + sun disc + dust haze + unit lighting (see environment.js).
+    const env = createEnvironment(scene);
 
     const terrain = await loadTerrain(site, QUALITY);
     scene.add(terrain.mesh);
+    const rocks = createRocks(site, terrain, QUALITY);
+    scene.add(rocks.mesh);
 
     const rover = createRover(site, terrain);
     const drone = createDrone(site, terrain);
@@ -217,6 +219,8 @@ async function startGame(site) {
         }
 
         camRig.update(active.unit.position, active.unit.heading, active.kind);
+        env.update(camera);
+        rocks.update(active.unit.position);
 
         renderer.render(scene, camera);
     });

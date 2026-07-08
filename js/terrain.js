@@ -17,6 +17,7 @@
    ============================================================ */
 
 import * as THREE from 'three';
+import { SUN_DIR, FOG, createDetailTexture } from './environment.js';
 
 export async function loadTerrain(site, quality) {
     const img = await loadImageBitmap(site.heightmapUrl);
@@ -50,8 +51,14 @@ export async function loadTerrain(site, quality) {
     const uniforms = {
         uHeightmap: { value: heightTexture },
         uAlbedo: { value: albedoTexture },
+        uDetail: { value: createDetailTexture() },
         uElevMin: { value: site.elevMin },
         uElevRange: { value: range },
+        uTexel: { value: 1 / res },
+        uWorldStep: { value: site.worldSize / res },
+        uSunDir: { value: SUN_DIR },
+        uFogColor: { value: FOG.color },
+        uFogDensity: { value: FOG.density },
         // Per-site albedo tint: grayscale source imagery (Jezero's CTX
         // ortho) gets a Mars-rust multiply; real-color sources use white.
         uTint: { value: new THREE.Color(site.tint ?? 0xffffff) },
@@ -62,21 +69,57 @@ export async function loadTerrain(site, quality) {
         lights: false,
         vertexShader: /* glsl */ `
             uniform sampler2D uHeightmap;
-            uniform float uElevMin, uElevRange;
+            uniform float uElevMin, uElevRange, uTexel, uWorldStep;
             varying vec2 vUv;
+            varying vec3 vNormal;
+            varying float vViewDist;
             void main() {
                 vUv = uv;
                 float h = uElevMin + texture2D(uHeightmap, uv).r * uElevRange;
                 vec3 displaced = position + normal * h;
-                gl_Position = projectionMatrix * modelViewMatrix * vec4(displaced, 1.0);
+
+                // Relief normal from heightmap central differences — this is
+                // what turns the flat ortho into visibly 3D terrain.
+                float hL = texture2D(uHeightmap, uv - vec2(uTexel, 0.0)).r * uElevRange;
+                float hR = texture2D(uHeightmap, uv + vec2(uTexel, 0.0)).r * uElevRange;
+                float hD = texture2D(uHeightmap, uv - vec2(0.0, uTexel)).r * uElevRange;
+                float hU = texture2D(uHeightmap, uv + vec2(0.0, uTexel)).r * uElevRange;
+                // uv v runs north->south flipped vs world z (flipY texture),
+                // so the v-difference sign flips into world space here.
+                vNormal = normalize(vec3(hL - hR, 2.0 * uWorldStep, hU - hD));
+
+                vec4 mv = modelViewMatrix * vec4(displaced, 1.0);
+                vViewDist = -mv.z;
+                gl_Position = projectionMatrix * mv;
             }
         `,
         fragmentShader: /* glsl */ `
             uniform sampler2D uAlbedo;
+            uniform sampler2D uDetail;
             uniform vec3 uTint;
+            uniform vec3 uSunDir;
+            uniform vec3 uFogColor;
+            uniform float uFogDensity;
             varying vec2 vUv;
+            varying vec3 vNormal;
+            varying float vViewDist;
             void main() {
-                gl_FragColor = vec4(texture2D(uAlbedo, vUv).rgb * uTint, 1.0);
+                vec3 albedo = texture2D(uAlbedo, vUv).rgb * uTint;
+
+                // High-frequency detail so the ground is not a blur at
+                // rover scale; fades out with distance to avoid tiling.
+                float detail = texture2D(uDetail, vUv * 96.0).r;
+                float detailAmt = 1.0 - smoothstep(200.0, 900.0, vViewDist);
+                albedo *= mix(1.0, 0.72 + 0.56 * detail, detailAmt);
+
+                // Sun + ambient relief shading from the real DEM normals.
+                vec3 n = normalize(vNormal);
+                float diff = max(dot(n, uSunDir), 0.0);
+                vec3 lit = albedo * (0.38 + 0.85 * diff);
+
+                // Dust haze, same params as scene.fog on standard materials.
+                float fogAmt = 1.0 - exp(-uFogDensity * uFogDensity * vViewDist * vViewDist);
+                gl_FragColor = vec4(mix(lit, uFogColor, fogAmt), 1.0);
             }
         `,
     });
