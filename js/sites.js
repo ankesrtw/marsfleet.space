@@ -23,10 +23,10 @@ export const SITES = {
         mission: 'Perseverance · Mars 2020',
         heightmapUrl: 'assets/jezero/heightmap.png',
         textureUrl: 'assets/jezero/albedo.jpg',
-        // Baked from `gdalinfo -stats` on the cropped DTM — placeholder until
-        // scripts/mars-terrain/prep_site.sh jezero has actually been run.
-        elevMin: -2710.7,
-        elevMax: -1515.5,
+        // Baked from `gdalinfo -stats` on the real cropped DTM
+        // (prep_site.sh jezero, run 2026-07-08).
+        elevMin: -2596.4763183594,
+        elevMax: -2396.3757324219,
         // 6km x 6km crop centered at (77.415E, 18.455N): landing site ->
         // Séítah -> western delta front -> Neretva Vallis.
         worldSize: 6000,
