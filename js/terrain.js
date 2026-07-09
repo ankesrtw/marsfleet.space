@@ -31,10 +31,6 @@ export async function loadTerrain(site, quality) {
     const pixels = ctx.getImageData(0, 0, res, res).data;
 
     const range = site.elevMax - site.elevMin;
-    const heights = new Float32Array(res * res);
-    for (let i = 0; i < res * res; i++) {
-        heights[i] = site.elevMin + (pixels[i * 4] / 255) * range;
-    }
 
     const heightTexture = new THREE.CanvasTexture(canvas);
     heightTexture.minFilter = THREE.LinearFilter;
@@ -130,11 +126,36 @@ export async function loadTerrain(site, quality) {
     const mesh = new THREE.Mesh(geo, mat);
     mesh.name = 'terrain';
 
-    // CPU-side mirror of the same source data, for height/slope queries.
+    // CPU-side mirror of the RENDERED surface, for height/slope queries.
+    //
+    // Sampling the full-res height data directly made units sink into the
+    // ground: the mesh only displaces its (seg+1)² vertices, so between
+    // vertices the drawn triangles sit above the finer data in concave
+    // spots. Instead, mirror what the GPU actually renders — the heights
+    // at the mesh vertices (GL-exact bilinear texture filtering), then
+    // interpolate across the same triangles the rasterizer draws
+    // (PlaneGeometry splits each quad along the b–d diagonal).
+    const gridN = seg + 1;
+    const grid = new Float32Array(gridN * gridN);
+    for (let iy = 0; iy <= seg; iy++) {
+        for (let ix = 0; ix <= seg; ix++) {
+            grid[iy * gridN + ix] = site.elevMin + texelFetchBilinear(pixels, res, ix / seg, iy / seg) * range;
+        }
+    }
+
     function sampleHeight(worldX, worldZ) {
-        const u = (worldX / site.worldSize) + 0.5;
-        const v = (worldZ / site.worldSize) + 0.5;
-        return bilinear(heights, res, u, v);
+        const fx = clamp01(worldX / site.worldSize + 0.5) * seg;
+        const fz = clamp01(worldZ / site.worldSize + 0.5) * seg;
+        const ix = Math.min(Math.floor(fx), seg - 1);
+        const iz = Math.min(Math.floor(fz), seg - 1);
+        const tx = fx - ix, tz = fz - iz;
+        const ha = grid[iz * gridN + ix];
+        const hb = grid[(iz + 1) * gridN + ix];
+        const hc = grid[(iz + 1) * gridN + ix + 1];
+        const hd = grid[iz * gridN + ix + 1];
+        return (tx + tz <= 1)
+            ? ha + (hb - ha) * tz + (hd - ha) * tx
+            : hc + (hb - hc) * (1 - tx) + (hd - hc) * (1 - tz);
     }
 
     function sampleNormal(worldX, worldZ, eps = 2) {
@@ -149,21 +170,24 @@ export async function loadTerrain(site, quality) {
     return { mesh, sampleHeight, sampleNormal, worldSize: site.worldSize };
 }
 
-function bilinear(heights, res, u, v) {
-    const x = clamp01(u) * (res - 1);
-    const y = clamp01(v) * (res - 1);
+/** GL-exact LinearFilter lookup of the heightmap's red channel (0..1),
+    replicating how the vertex shader samples uHeightmap: texel space is
+    u*res - 0.5 with clamp-to-edge, NOT pixel space u*(res-1). */
+function texelFetchBilinear(pixels, res, u, v) {
+    const x = Math.min(Math.max(u * res - 0.5, 0), res - 1);
+    const y = Math.min(Math.max(v * res - 0.5, 0), res - 1);
     const x0 = Math.floor(x), y0 = Math.floor(y);
     const x1 = Math.min(x0 + 1, res - 1), y1 = Math.min(y0 + 1, res - 1);
     const tx = x - x0, ty = y - y0;
 
-    const h00 = heights[y0 * res + x0];
-    const h10 = heights[y0 * res + x1];
-    const h01 = heights[y1 * res + x0];
-    const h11 = heights[y1 * res + x1];
+    const h00 = pixels[(y0 * res + x0) * 4];
+    const h10 = pixels[(y0 * res + x1) * 4];
+    const h01 = pixels[(y1 * res + x0) * 4];
+    const h11 = pixels[(y1 * res + x1) * 4];
 
     const a = h00 * (1 - tx) + h10 * tx;
     const b = h01 * (1 - tx) + h11 * tx;
-    return a * (1 - ty) + b * ty;
+    return (a * (1 - ty) + b * ty) / 255;
 }
 
 function clamp01(v) {

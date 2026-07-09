@@ -24,42 +24,15 @@ const QUALITY = {
 };
 
 async function boot() {
-    const site = getSiteFromUrl();
-    const selectEl = document.getElementById('site-select');
-    const gameEl = document.getElementById('game-root');
-
-    if (!site) {
-        selectEl.hidden = false;
-        gameEl.hidden = true;
-        renderSiteSelect(selectEl);
-        return;
-    }
-
-    selectEl.hidden = true;
-    gameEl.hidden = false;
+    // Straight into the sim — no landing screen. Priority: ?site= deep
+    // link, then last-played site, then Jezero. Switching sites lives in
+    // the in-game MENU (which navigates with ?site=, feeding this).
+    const site = getSiteFromUrl()
+        || SITES[localStorage.getItem('mc-site')]
+        || SITES.jezero;
+    try { localStorage.setItem('mc-site', site.id); } catch { /* private mode */ }
+    document.getElementById('game-root').hidden = false;
     await startGame(site);
-}
-
-function renderSiteSelect(el) {
-    el.innerHTML = `
-        <div class="site-select">
-            <h1>MARS COLONY</h1>
-            <p>Choose a landing site.</p>
-            <div class="site-select__cards"></div>
-        </div>
-    `;
-    const cardsEl = el.querySelector('.site-select__cards');
-    for (const s of Object.values(SITES)) {
-        const card = document.createElement('a');
-        card.className = 'site-card';
-        card.href = `?site=${encodeURIComponent(s.id)}`;
-        const h2 = document.createElement('h2');
-        h2.textContent = s.name;
-        const p = document.createElement('p');
-        p.textContent = s.mission;
-        card.append(h2, p);
-        cardsEl.appendChild(card);
-    }
 }
 
 async function startGame(site) {
@@ -82,9 +55,9 @@ async function startGame(site) {
     const rocks = createRocks(site, terrain, QUALITY);
     scene.add(rocks.mesh);
 
-    const rover = createRover(site, terrain);
+    const rover = createRover(site, terrain, rocks);
     const drone = createDrone(site, terrain);
-    const humanoid = createHumanoid(site, terrain);
+    const humanoid = createHumanoid(site, terrain, rocks);
     scene.add(rover.mesh, drone.mesh, humanoid.mesh);
 
     const samples = createSamples(site, terrain);
@@ -102,10 +75,12 @@ async function startGame(site) {
     // Per-unit sim state: battery (drains with movement, solar-recharges
     // when idle; an empty battery immobilises the unit until it recovers
     // above the restart threshold) and odometer.
+    // Drain rates retuned for real-scale speeds (range per charge stays
+    // sane: rover ~2.6km at x50 assist, drone ~2.8km, walk ~1.2km).
     const units = [
-        { name: 'Rover', unit: rover, kind: 'ground', charge: 100, odo: 0, drainRate: 0.5 },
-        { name: 'Drone', unit: drone, kind: 'fly', charge: 100, odo: 0, drainRate: 0.9 },
-        { name: 'Humanoid', unit: humanoid, kind: 'ground', charge: 100, odo: 0, drainRate: 0.3 },
+        { name: 'Rover', unit: rover, kind: 'ground', charge: 100, odo: 0, drainRate: 0.08 },
+        { name: 'Drone', unit: drone, kind: 'fly', charge: 100, odo: 0, drainRate: 0.35 },
+        { name: 'Humanoid', unit: humanoid, kind: 'ground', charge: 100, odo: 0, drainRate: 0.12 },
     ];
     const SOLAR_RATE = 0.6;      // %/s recharge while not driving
     const RESTART_CHARGE = 10;   // empty units stay dead until this
@@ -118,6 +93,8 @@ async function startGame(site) {
         onCollect: () => tryCollect(),
         onToggleSfx: () => sound.toggle(),
         sfxEnabled: sound.enabled,
+        onCycleAssist: () => rover.cycleAssist(),
+        assist: rover.assist,
     });
     const fog = createFog(site, hud.minimapEl);
     hud.setActiveUnit(units[activeIndex].name);
@@ -139,7 +116,7 @@ async function startGame(site) {
     // Debug/E2E handle (also used by the sampleHeight ground-truth check;
     // renderer/scene/camera exposed so tests on software-GL boxes can pause
     // the loop and capture canvas pixels via a same-task render+toDataURL).
-    window.__mc = { site, terrain, rover, drone, humanoid, samples, renderer, scene, camera, camRig, units, env, effects, waypoint, sound };
+    window.__mc = { site, terrain, rover, drone, humanoid, samples, renderer, scene, camera, camRig, units, env, effects, waypoint, sound, rocks };
 
     function switchUnit() {
         activeIndex = (activeIndex + 1) % units.length;
@@ -215,7 +192,7 @@ async function startGame(site) {
         const targetInfo = samples.nearestInfo(active.unit.position);
         waypoint.update(dt, targetInfo);
         effects.update(dt, active, speedNow, env.daylight());
-        const speedCap = active.kind === 'fly' ? 22 : active.name === 'Humanoid' ? 3.2 : 14;
+        const speedCap = active.kind === 'fly' ? 10 : active.name === 'Humanoid' ? 1.4 : Math.max(0.042, rover.maxSpeed);
         sound.update(active.name, Math.min(1, speedNow / speedCap));
 
         if (active.kind === 'ground') {

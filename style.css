@@ -10,67 +10,12 @@ html, body {
     touch-action: none;
 }
 
-#site-select {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    min-height: 100vh;
-    padding: 24px;
-}
-
-/* Author `display` values override the UA's [hidden] rule — without this,
-   the empty site-select div keeps covering the game in ?site= mode
-   (uniform dark screen, no HUD). Same guard for game-root in reverse. */
-#site-select[hidden],
+/* Author `display` values override the UA's [hidden] rule — without
+   this the game div can cover the page while "hidden" (the launch
+   black-screen bug). The site-select landing screen was removed
+   2026-07-09 — boot goes straight into the sim. */
 #game-root[hidden] {
     display: none !important;
-}
-
-.site-select {
-    text-align: center;
-    max-width: 640px;
-}
-
-.site-select h1 {
-    font-size: clamp(1.8rem, 6vw, 3rem);
-    letter-spacing: 0.08em;
-    margin-bottom: 0.4em;
-}
-
-.site-select__cards {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 16px;
-    justify-content: center;
-    margin-top: 24px;
-}
-
-.site-card {
-    display: block;
-    width: 220px;
-    padding: 20px;
-    border: 1px solid #5a3a26;
-    border-radius: 8px;
-    background: rgba(90, 58, 38, 0.15);
-    color: inherit;
-    text-decoration: none;
-    transition: background 0.15s, border-color 0.15s;
-}
-
-.site-card:hover, .site-card:active {
-    background: rgba(224, 185, 94, 0.15);
-    border-color: #e0b95e;
-}
-
-.site-card h2 {
-    margin: 0 0 6px;
-    font-size: 1.2rem;
-}
-
-.site-card p {
-    margin: 0;
-    opacity: 0.8;
-    font-size: 0.9rem;
 }
 
 #game-root {
@@ -226,6 +171,26 @@ html, body {
     transition: transform 0.2s linear;
 }
 
+/* collapse toggle — only surfaced on phones (see the coarse media query) */
+.mars-tele__toggle {
+    display: none;
+    position: absolute;
+    top: 2px;
+    right: 4px;
+    background: none;
+    border: none;
+    color: #e0b95e;
+    font-size: 0.85rem;
+    padding: 4px 8px;
+    pointer-events: auto;
+    cursor: pointer;
+}
+
+#mc-telemetry[data-collapsed="true"] .mars-tele__clock,
+#mc-telemetry[data-collapsed="true"] .mars-tele__grid {
+    display: none;
+}
+
 /* On phones the joystick zones own the bottom corners and the chase cam
    frames the unit near screen center — lifting the card above the look
    zone parked it right on top of the unit. Dock it top-left under the
@@ -245,6 +210,11 @@ html, body {
     /* the nowrap site line otherwise stretches the card across the screen */
     .mars-hud__telemetry .mars-tele__site {
         white-space: normal;
+        padding-right: 22px; /* clear the collapse toggle */
+    }
+
+    .mars-tele__toggle {
+        display: block;
     }
 
     .mars-hud__telemetry .mars-tele__grid b {
@@ -340,6 +310,13 @@ html, body {
 .mars-menu__site span {
     font-size: 0.72rem;
     opacity: 0.7;
+}
+
+.mars-menu__note {
+    margin: 8px 0 0;
+    font-size: 0.7rem;
+    line-height: 1.5;
+    opacity: 0.6;
 }
 
 .mars-menu__lab {

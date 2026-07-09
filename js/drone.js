@@ -10,7 +10,9 @@
 import * as THREE from 'three';
 import { attachUnitModel } from './models.js';
 
-const SPEED = 22;      // m/s
+// Ingenuity's fastest recorded horizontal speed is 10 m/s, flown at
+// 10-24m altitude — both real-scale here (hover height already was).
+const SPEED = 10;      // m/s
 const TURN_RATE = 2.0; // rad/s
 const HOVER_HEIGHT = 18;
 

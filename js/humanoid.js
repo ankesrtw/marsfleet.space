@@ -11,10 +11,13 @@
 import * as THREE from 'three';
 import { attachUnitModel } from './models.js';
 
-const WALK_SPEED = 3.2;  // m/s
+// ~5 km/h — a brisk suited walk (Apollo EVAs averaged ~2.2 km/h with
+// loping bursts near 5). Real scale, no assist needed to stay playable.
+const WALK_SPEED = 1.4;  // m/s
 const TURN_RATE = 2.4;   // rad/s
 const SLOPE_K = 0.8;     // much gentler falloff than the rover
 const MIN_SPEED_FACTOR = 0.3;
+const BODY_RADIUS = 0.35; // m, collision footprint against boulders
 
 // Procedural walk cycle on the GLB's rig (the Tripo export is rigged
 // but ships zero animation clips, so we drive the bones ourselves).
@@ -30,7 +33,7 @@ const WALK_BONES = [
     { name: 'R_Forearm', amp: 0.2, phase: Math.PI * 0.3 },
 ];
 
-export function createHumanoid(site, terrain) {
+export function createHumanoid(site, terrain, rocks) {
     const mesh = buildHumanoidMesh();
     mesh.position.set(site.spawn.x + 5, 0, site.spawn.z);
     mesh.rotation.y = site.spawn.heading;
@@ -62,8 +65,14 @@ export function createHumanoid(site, terrain) {
         const speedFactor = Math.max(MIN_SPEED_FACTOR, 1 - slopeMag * SLOPE_K);
         const speed = input.throttle * WALK_SPEED * speedFactor;
 
-        mesh.position.x += Math.sin(heading) * speed * dt;
-        mesh.position.z += Math.cos(heading) * speed * dt;
+        const nx = mesh.position.x + Math.sin(heading) * speed * dt;
+        const nz = mesh.position.z + Math.cos(heading) * speed * dt;
+        const blocked = rocks?.collides(nx, nz, BODY_RADIUS)
+            && !rocks.collides(mesh.position.x, mesh.position.z, BODY_RADIUS);
+        if (!blocked) {
+            mesh.position.x = nx;
+            mesh.position.z = nz;
+        }
         mesh.position.y = terrain.sampleHeight(mesh.position.x, mesh.position.z);
 
         const moving = Math.abs(input.throttle) > 0.05;

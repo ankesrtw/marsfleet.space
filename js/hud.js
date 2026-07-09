@@ -20,7 +20,7 @@
 import { isTouchDevice } from './touch.js';
 import { SITES, M_PER_DEG, SOL_MS } from './sites.js';
 
-export function createHud(rootEl, { site, onSwitchUnit, onCollect, onToggleSfx, sfxEnabled = true }) {
+export function createHud(rootEl, { site, onSwitchUnit, onCollect, onToggleSfx, sfxEnabled = true, onCycleAssist, assist = 50 }) {
     rootEl.innerHTML = `
         <div class="mars-hud">
             <div class="mars-hud__top">
@@ -31,6 +31,7 @@ export function createHud(rootEl, { site, onSwitchUnit, onCollect, onToggleSfx, 
             </div>
             <div class="mars-hud__minimap" id="mc-minimap"></div>
             <div class="mars-hud__telemetry" id="mc-telemetry">
+                <button class="mars-tele__toggle" id="mc-tele-toggle" aria-label="Collapse telemetry">▾</button>
                 <div class="mars-tele__site"></div>
                 <div class="mars-tele__clock" id="mc-t-clock">SOL — · MET 00:00:00</div>
                 <div class="mars-tele__grid">
@@ -59,6 +60,12 @@ export function createHud(rootEl, { site, onSwitchUnit, onCollect, onToggleSfx, 
                 <div class="mars-menu__section">
                     <h3>LANDING SITES</h3>
                     <div class="mars-menu__sites" id="mc-menu-sites"></div>
+                </div>
+                <div class="mars-menu__section">
+                    <h3>SIM</h3>
+                    <button class="mars-btn" id="mc-assist">ROVER DRIVE ASSIST ×${assist}</button>
+                    <p class="mars-menu__note">Real Perseverance tops out at 4.2 cm/s — assist time-compresses
+                    the rover for playability (×1 = true speed). Drone 10 m/s and 1.4 m/s walk are real-scale.</p>
                 </div>
                 <div class="mars-menu__section">
                     <h3>LAB — COLLECTED SAMPLES</h3>
@@ -131,6 +138,26 @@ export function createHud(rootEl, { site, onSwitchUnit, onCollect, onToggleSfx, 
     sfxBtn.addEventListener('click', () => {
         const on = onToggleSfx ? onToggleSfx() : false;
         sfxBtn.textContent = `SFX ${on ? 'ON' : 'OFF'}`;
+    });
+    const assistBtn = rootEl.querySelector('#mc-assist');
+    assistBtn.addEventListener('click', () => {
+        const a = onCycleAssist ? onCycleAssist() : assist;
+        assistBtn.textContent = `ROVER DRIVE ASSIST ×${a}`;
+    });
+
+    // Telemetry collapse (a mobile-facing control — the button is only
+    // shown by the coarse-pointer CSS). Persisted like the SFX toggle.
+    const teleEl = rootEl.querySelector('#mc-telemetry');
+    const teleToggle = rootEl.querySelector('#mc-tele-toggle');
+    function applyTeleCollapsed(collapsed) {
+        teleEl.dataset.collapsed = String(collapsed);
+        teleToggle.textContent = collapsed ? '▸' : '▾';
+    }
+    applyTeleCollapsed(localStorage.getItem('mc-tele') === 'collapsed');
+    teleToggle.addEventListener('click', () => {
+        const collapsed = teleEl.dataset.collapsed !== 'true';
+        applyTeleCollapsed(collapsed);
+        try { localStorage.setItem('mc-tele', collapsed ? 'collapsed' : 'open'); } catch { /* private mode */ }
     });
     rootEl.querySelector('#mc-menu-btn').addEventListener('click', () => setMenuOpen(true));
     rootEl.querySelector('#mc-resume').addEventListener('click', () => setMenuOpen(false));

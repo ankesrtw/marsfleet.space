@@ -13,17 +13,24 @@
 import * as THREE from 'three';
 import { attachUnitModel } from './models.js';
 
-const BASE_SPEED = 14;   // m/s
-const TURN_RATE = 1.6;   // rad/s
-const CLEARANCE = 0.6;   // meters, wheel-to-chassis (procedural mesh)
-const SLOPE_K = 3.0;     // speed falloff strength
+// Perseverance/Curiosity top out at ~4.2 cm/s on flat hard ground (~152
+// m/h). True realism makes the 6-9km sites unplayable (Rochette would be
+// a six-hour drive), so a DRIVE ASSIST time-compression multiplies it —
+// cycle x50/x10/x1 in the menu, persisted. Turn rate scales with assist
+// (real turn-in-place is a few deg/s) but is capped for control feel.
+const REAL_SPEED = 0.042;    // m/s — real rover top speed
+const REAL_TURN = 0.06;      // rad/s
+const ASSIST_STEPS = [50, 10, 1];
+const CLEARANCE = 0.6;       // meters, wheel-to-chassis (procedural mesh)
+const SLOPE_K = 3.0;         // speed falloff strength
 const MIN_SPEED_FACTOR = 0.15;
+const BODY_RADIUS = 1.4;     // m, collision footprint against boulders
 
 const _up = new THREE.Vector3(0, 1, 0);
 const _tiltQuat = new THREE.Quaternion();
 const _yawQuat = new THREE.Quaternion();
 
-export function createRover(site, terrain) {
+export function createRover(site, terrain, rocks) {
     const mesh = buildRoverMesh();
     mesh.position.set(site.spawn.x, 0, site.spawn.z);
     mesh.rotation.y = site.spawn.heading;
@@ -31,23 +38,41 @@ export function createRover(site, terrain) {
     // GLB is normalized base-at-y=0, so it needs (almost) no clearance;
     // the procedural box chassis keeps the original 0.6.
     let clearance = CLEARANCE;
-    attachUnitModel(mesh, 'rover', () => { clearance = 0.05; });
+    attachUnitModel(mesh, 'rover', () => { clearance = 0.12; });
+
+    let assist = Number(localStorage.getItem('mc-assist'));
+    if (!ASSIST_STEPS.includes(assist)) assist = ASSIST_STEPS[0];
 
     let heading = site.spawn.heading;
     let speed = 0;
 
+    function cycleAssist() {
+        assist = ASSIST_STEPS[(ASSIST_STEPS.indexOf(assist) + 1) % ASSIST_STEPS.length];
+        try { localStorage.setItem('mc-assist', String(assist)); } catch { /* private mode */ }
+        return assist;
+    }
+
     function update(dt, input) {
         // input: { throttle: -1..1, steer: -1..1 }
-        heading += input.steer * TURN_RATE * dt;
+        heading += input.steer * Math.min(1.2, REAL_TURN * assist) * dt;
 
         const normal = terrain.sampleNormal(mesh.position.x, mesh.position.z);
         const slopeMag = 1 - normal.y; // 0 = flat, up to ~1 = vertical
         const speedFactor = Math.max(MIN_SPEED_FACTOR, 1 - slopeMag * SLOPE_K);
 
-        speed = input.throttle * BASE_SPEED * speedFactor;
+        speed = input.throttle * REAL_SPEED * assist * speedFactor;
 
-        mesh.position.x += Math.sin(heading) * speed * dt;
-        mesh.position.z += Math.cos(heading) * speed * dt;
+        const nx = mesh.position.x + Math.sin(heading) * speed * dt;
+        const nz = mesh.position.z + Math.cos(heading) * speed * dt;
+        // Boulders block entry; steering above still applies, so the player
+        // can turn in place and drive around. Movement is never blocked
+        // while already overlapping (spawn edge case) — always escapable.
+        const blocked = rocks?.collides(nx, nz, BODY_RADIUS)
+            && !rocks.collides(mesh.position.x, mesh.position.z, BODY_RADIUS);
+        if (!blocked) {
+            mesh.position.x = nx;
+            mesh.position.z = nz;
+        }
         mesh.position.y = terrain.sampleHeight(mesh.position.x, mesh.position.z) + clearance;
 
         // Stay in quaternion space end-to-end: assigning mesh.rotation.y
@@ -60,7 +85,13 @@ export function createRover(site, terrain) {
         mesh.quaternion.slerp(_tiltQuat, 1 - Math.exp(-12 * dt));
     }
 
-    return { mesh, update, get position() { return mesh.position; }, get heading() { return heading; } };
+    return {
+        mesh, update, cycleAssist,
+        get position() { return mesh.position; },
+        get heading() { return heading; },
+        get assist() { return assist; },
+        get maxSpeed() { return REAL_SPEED * assist; },
+    };
 }
 
 function buildRoverMesh() {
