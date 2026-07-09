@@ -18,10 +18,25 @@ import { createRocks } from './rocks.js';
 import { createEffects } from './effects.js';
 import { createWaypoint } from './waypoint.js';
 import { createSound } from './sound.js';
+import { createLab, createSling } from './lab.js';
 
-const QUALITY = {
-    terrainSegments: window.matchMedia('(pointer: coarse)').matches ? 128 : 256,
-};
+// Lift-drone logistics interaction envelope (see lab.js):
+const SLING_ALT = 8;      // m AGL — must hover this low to hook a container
+const SLING_RADIUS = 7;   // m horizontal to the container
+const DELIVER_ALT = 16;   // m AGL over the pad — ABOVE cruiseAlt (12), so
+                          // arriving at cruise height delivers, no hunt-the-
+                          // altitude (the 4.2m cable sells the lowering)
+
+// Per-site mesh density (sites.js `segments`) by device class — Gale's 1m
+// DEM earns 512 desktop quads, Jezero's 20m DEM doesn't. Fallback for
+// sites without the field keeps the old shared 256/128.
+function qualityFor(site) {
+    const coarse = window.matchMedia('(pointer: coarse)').matches;
+    return {
+        terrainSegments: (coarse ? site.segments?.mobile : site.segments?.desktop)
+            ?? (coarse ? 128 : 256),
+    };
+}
 
 async function boot() {
     // Straight into the sim — no landing screen. Priority: ?site= deep
@@ -36,6 +51,7 @@ async function boot() {
 }
 
 async function startGame(site) {
+    const QUALITY = qualityFor(site);
     const canvas = document.getElementById('mc-canvas');
     const renderer = new THREE.WebGLRenderer({ canvas, antialias: QUALITY.terrainSegments > 128 });
     renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
@@ -63,12 +79,19 @@ async function startGame(site) {
     });
     const lift = createDrone(site, terrain, {
         modelName: 'drone', maxSpeed: 6, climbRate: 2, cruiseAlt: 12, spawnDx: 8, spawnDz: 6,
+        canSling: true,
     });
     const humanoid = createHumanoid(site, terrain, rocks);
     scene.add(rover.mesh, recon.mesh, lift.mesh, humanoid.mesh);
 
     const samples = createSamples(site, terrain);
     scene.add(samples.group);
+
+    // FIELD LAB base + the sling that feeds it (lab.js): collect leaves a
+    // cache container in the field, the lift drone slings it to the pad.
+    const lab = createLab(scene, site, terrain, rocks);
+    const sling = createSling(scene, terrain);
+    const deliveredIds = new Set();
 
     // Blob shadows, drive dust, wheel tracks (effects.js); beacon column
     // on the current TGT sample (waypoint.js); synthesized audio (sound.js).
@@ -111,9 +134,16 @@ async function startGame(site) {
     });
     const fog = createFog(site, hud.minimapEl);
 
+    hud.setLab(0, site.samples.length);
+
     const touchZones = setupTouchControls();
     const keys = setupKeyboard();
     applyUnitMode();
+
+    /** targetInfo-shaped wrapper for non-sample objectives (cache, lab). */
+    function pseudoTarget(id, name, x, z, from) {
+        return { sample: { id, name, x, z }, dist: Math.hypot(from.x - x, from.z - z) };
+    }
 
     // Ground every unit once before the first camera snap — constructors
     // leave y=0 and only the first update() drops them onto the terrain
@@ -129,7 +159,7 @@ async function startGame(site) {
     // Debug/E2E handle (also used by the sampleHeight ground-truth check;
     // renderer/scene/camera exposed so tests on software-GL boxes can pause
     // the loop and capture canvas pixels via a same-task render+toDataURL).
-    window.__mc = { site, terrain, rover, drone: recon, recon, lift, humanoid, samples, renderer, scene, camera, camRig, units, env, effects, waypoint, sound, rocks };
+    window.__mc = { site, terrain, rover, drone: recon, recon, lift, humanoid, samples, renderer, scene, camera, camRig, units, env, effects, waypoint, sound, rocks, lab, sling };
 
     function applyUnitMode() {
         const active = units[activeIndex];
@@ -154,12 +184,45 @@ async function startGame(site) {
 
     function tryCollect() {
         const active = units[activeIndex];
-        if (active.kind !== 'ground') return;
-        const sample = samples.nearestUncollected(active.unit.position);
-        if (sample) {
-            samples.collect(sample);
-            hud.setInventory(samples.inventory);
-            sound.collect();
+        if (active.kind === 'ground') {
+            const sample = samples.nearestUncollected(active.unit.position);
+            if (sample) {
+                samples.collect(sample);
+                hud.setInventory(samples.inventory, deliveredIds);
+                sound.collect();
+            }
+            return;
+        }
+        // Lift drone: the same E action hooks, releases and delivers.
+        const unit = active.unit;
+        if (!unit.canSling || active.dead) return;
+        if (sling.carrying) {
+            if (lab.isOverPad(unit.position) && unit.alt <= DELIVER_ALT) {
+                const c = sling.detach();
+                unit.setSlung(false);
+                lab.deliver(c);
+                deliveredIds.add(c.id);
+                hud.setLab(lab.delivered.length, site.samples.length);
+                hud.setInventory(samples.inventory, deliveredIds);
+                sound.deliver();
+            } else {
+                // field release: set the container back down where it hangs
+                const c = sling.detach();
+                unit.setSlung(false);
+                c.state = 'field';
+                c.mesh.position.y = terrain.sampleHeight(c.mesh.position.x, c.mesh.position.z) + 0.28;
+                c.mesh.rotation.set(0, c.mesh.rotation.y, 0);
+                sound.sling();
+            }
+            return;
+        }
+        if (!unit.landed && unit.alt <= SLING_ALT) {
+            const c = samples.nearestContainer(unit.position, SLING_RADIUS);
+            if (c) {
+                sling.attach(c);
+                unit.setSlung(true);
+                sound.sling();
+            }
         }
     }
 
@@ -235,8 +298,20 @@ async function startGame(site) {
         if (active.kind === 'ground') fog.reveal(active.unit.position.x, active.unit.position.z);
         fog.render(samples.markers);
 
-        const targetInfo = samples.nearestInfo(active.unit.position);
+        // TGT: ground units chase uncollected samples; the lift drone's
+        // objective is logistics — nearest field cache, or the LAB when loaded.
+        let targetInfo = samples.nearestInfo(active.unit.position);
+        if (active.unit.canSling) {
+            if (sling.carrying) {
+                targetInfo = pseudoTarget('lab', 'FIELD LAB', lab.padPos.x, lab.padPos.z, active.unit.position);
+            } else {
+                const c = samples.nearestContainer(active.unit.position, Infinity);
+                if (c) targetInfo = pseudoTarget(`${c.id}-cache`, `${c.name} CACHE`, c.mesh.position.x, c.mesh.position.z, active.unit.position);
+            }
+        }
         waypoint.update(dt, targetInfo);
+        sling.update(dt, lift.position);
+        lab.update(dt);
         effects.update(dt, active, speedNow, env.daylight());
         const engineNorm = active.kind === 'fly'
             ? (active.unit.landed ? 0 : Math.max(0.35, speedNow / active.unit.maxSpeed))
@@ -245,7 +320,18 @@ async function startGame(site) {
 
         if (active.kind === 'ground') {
             const nearest = samples.nearestUncollected(active.unit.position);
-            hud.setPrompt(nearest ? nearest.name : null);
+            hud.setPrompt(nearest ? `COLLECT: ${nearest.name}` : null);
+        } else if (active.unit.canSling && !active.dead) {
+            if (sling.carrying) {
+                hud.setPrompt(lab.isOverPad(active.unit.position) && active.unit.alt <= DELIVER_ALT
+                    ? 'DELIVER TO LAB'
+                    : 'RELEASE LOAD');
+            } else {
+                const c = !active.unit.landed && active.unit.alt <= SLING_ALT
+                    ? samples.nearestContainer(active.unit.position, SLING_RADIUS)
+                    : null;
+                hud.setPrompt(c ? `SLING: ${c.name} CACHE` : null);
+            }
         } else {
             hud.setPrompt(null);
         }

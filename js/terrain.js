@@ -9,11 +9,14 @@
    and sample-marker placement. Two reads of the same source, never
    a GPU readback.
 
-   Heightmap is an 8-bit grayscale PNG (see scripts/mars-terrain/
-   prep_site.sh) — canvas getImageData() is always 8-bit-per-channel
-   regardless of source PNG bit depth, so 8-bit is what the browser
-   actually gives us; real-world meters are recovered via the site's
-   baked elevMin/elevMax.
+   Heightmap is an RG-packed 16-bit PNG (R=high byte, G=low byte —
+   see scripts/mars-terrain/pack_rg16.py): canvas getImageData() is
+   always 8-bit-per-channel regardless of source PNG bit depth, so
+   16-bit elevation ships as two 8-bit channels and both samplers
+   decode (R*256+G)/65535. The decode is exactly backward-compatible
+   with the old 8-bit grayscale maps (R=G=v ⇒ v*257/65535 = v/255),
+   and it survives LinearFilter because the combine is linear in R,G.
+   Real-world meters are recovered via the site's baked elevMin/Max.
    ============================================================ */
 
 import * as THREE from 'three';
@@ -69,17 +72,25 @@ export async function loadTerrain(site, quality) {
             varying vec2 vUv;
             varying vec3 vNormal;
             varying float vViewDist;
+
+            // RG-packed 16-bit decode: (R*256 + G) / 65535, in 0..1.
+            // Matches texelFetchBilinear() on the CPU exactly.
+            float heightAt(vec2 uv) {
+                vec2 rg = texture2D(uHeightmap, uv).rg;
+                return dot(rg, vec2(65280.0, 255.0)) / 65535.0;
+            }
+
             void main() {
                 vUv = uv;
-                float h = uElevMin + texture2D(uHeightmap, uv).r * uElevRange;
+                float h = uElevMin + heightAt(uv) * uElevRange;
                 vec3 displaced = position + normal * h;
 
                 // Relief normal from heightmap central differences — this is
                 // what turns the flat ortho into visibly 3D terrain.
-                float hL = texture2D(uHeightmap, uv - vec2(uTexel, 0.0)).r * uElevRange;
-                float hR = texture2D(uHeightmap, uv + vec2(uTexel, 0.0)).r * uElevRange;
-                float hD = texture2D(uHeightmap, uv - vec2(0.0, uTexel)).r * uElevRange;
-                float hU = texture2D(uHeightmap, uv + vec2(0.0, uTexel)).r * uElevRange;
+                float hL = heightAt(uv - vec2(uTexel, 0.0)) * uElevRange;
+                float hR = heightAt(uv + vec2(uTexel, 0.0)) * uElevRange;
+                float hD = heightAt(uv - vec2(0.0, uTexel)) * uElevRange;
+                float hU = heightAt(uv + vec2(0.0, uTexel)) * uElevRange;
                 // uv v runs north->south flipped vs world z (flipY texture),
                 // so the v-difference sign flips into world space here.
                 vNormal = normalize(vec3(hL - hR, 2.0 * uWorldStep, hU - hD));
@@ -101,6 +112,21 @@ export async function loadTerrain(site, quality) {
             varying float vViewDist;
             void main() {
                 vec3 albedo = texture2D(uAlbedo, vUv).rgb * uTint;
+
+                // Slope-driven material blend ON TOP of the real ortho (the
+                // photo stays the base — this only nudges): flats collect
+                // bright red dust (patchy, via low-freq noise), steep faces
+                // read as darker desaturated bedrock with fine grain.
+                vec3 nMat = normalize(vNormal);
+                float slope = 1.0 - nMat.y;
+                // ("patch" is a GLSL reserved word — hence patchN)
+                float patchN = texture2D(uDetail, vUv * 6.0).r;
+                float grain = texture2D(uDetail, vUv * 340.0).r;
+                float dustAmt = smoothstep(0.10, 0.02, slope) * (0.30 + 0.70 * patchN);
+                float rockAmt = smoothstep(0.16, 0.40, slope);
+                vec3 dustCol = albedo * vec3(1.10, 0.97, 0.88);
+                vec3 rockCol = albedo * vec3(0.80, 0.79, 0.82) * (0.82 + 0.36 * grain);
+                albedo = mix(mix(albedo, dustCol, dustAmt * 0.55), rockCol, rockAmt * 0.65);
 
                 // High-frequency detail so the ground is not a blur at
                 // rover scale; fades out with distance to avoid tiling.
@@ -170,7 +196,7 @@ export async function loadTerrain(site, quality) {
     return { mesh, sampleHeight, sampleNormal, worldSize: site.worldSize };
 }
 
-/** GL-exact LinearFilter lookup of the heightmap's red channel (0..1),
+/** GL-exact LinearFilter lookup of the RG-packed 16-bit height (0..1),
     replicating how the vertex shader samples uHeightmap: texel space is
     u*res - 0.5 with clamp-to-edge, NOT pixel space u*(res-1). */
 function texelFetchBilinear(pixels, res, u, v) {
@@ -180,14 +206,17 @@ function texelFetchBilinear(pixels, res, u, v) {
     const x1 = Math.min(x0 + 1, res - 1), y1 = Math.min(y0 + 1, res - 1);
     const tx = x - x0, ty = y - y0;
 
-    const h00 = pixels[(y0 * res + x0) * 4];
-    const h10 = pixels[(y0 * res + x1) * 4];
-    const h01 = pixels[(y1 * res + x0) * 4];
-    const h11 = pixels[(y1 * res + x1) * 4];
+    // (R*256 + G) — same decode as the shader's heightAt()
+    const i00 = (y0 * res + x0) * 4, i10 = (y0 * res + x1) * 4;
+    const i01 = (y1 * res + x0) * 4, i11 = (y1 * res + x1) * 4;
+    const h00 = pixels[i00] * 256 + pixels[i00 + 1];
+    const h10 = pixels[i10] * 256 + pixels[i10 + 1];
+    const h01 = pixels[i01] * 256 + pixels[i01 + 1];
+    const h11 = pixels[i11] * 256 + pixels[i11 + 1];
 
     const a = h00 * (1 - tx) + h10 * tx;
     const b = h01 * (1 - tx) + h11 * tx;
-    return (a * (1 - ty) + b * ty) / 255;
+    return (a * (1 - ty) + b * ty) / 65535;
 }
 
 function clamp01(v) {

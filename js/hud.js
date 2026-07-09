@@ -59,6 +59,7 @@ export function createHud(rootEl, { site, onSwitchUnit, onCollect, onToggleSfx, 
             </div>
             <div class="mars-hud__inventory" id="mc-inventory">
                 <div class="mars-hud__inventory-title">SAMPLES <span id="mc-inv-count">0</span></div>
+                <div class="mars-hud__inventory-title">LAB <span id="mc-lab-count">0/0</span></div>
                 <ul id="mc-inv-list"></ul>
             </div>
         </div>
@@ -91,6 +92,7 @@ export function createHud(rootEl, { site, onSwitchUnit, onCollect, onToggleSfx, 
                         <li>Drone touch (RC Mode 2) — left stick throttle+yaw, right stick pitch+roll</li>
                         <li>Take off / land — L or the drone panel button</li>
                         <li>Switch unit — TAB · Collect — E · Menu — M</li>
+                        <li>Lift drone — hover low over a cache container, E to sling it, fly to the FIELD LAB pad, E to deliver</li>
                         <li>Sol cycle — drones recharge only when landed, nothing recharges at night</li>
                     </ul>
                 </div>
@@ -219,22 +221,31 @@ export function createHud(rootEl, { site, onSwitchUnit, onCollect, onToggleSfx, 
         unitLabel.textContent = name.toUpperCase();
     }
 
-    function setPrompt(sampleName) {
-        if (sampleName) {
+    /** Full action label ("COLLECT: Rochette", "SLING: … CACHE",
+        "DELIVER TO LAB") or null to hide — the one E-button serves
+        ground collection and the lift drone's sling/deliver. */
+    function setPrompt(label) {
+        if (label) {
             promptEl.hidden = false;
-            collectBtn.firstChild.textContent = `COLLECT: ${sampleName}`;
+            collectBtn.firstChild.textContent = label;
         } else {
             promptEl.hidden = true;
         }
     }
 
     const labList = rootEl.querySelector('#mc-lab-list');
+    const labCount = rootEl.querySelector('#mc-lab-count');
 
-    function setInventory(items) {
+    /** HUD LAB line: containers delivered to the pad / total samples. */
+    function setLab(delivered, total) {
+        labCount.textContent = `${delivered}/${total}`;
+    }
+
+    function setInventory(items, deliveredIds) {
         invCount.textContent = items.length;
         invList.replaceChildren(...items.map((i) => {
             const li = document.createElement('li');
-            li.textContent = i.name;
+            li.textContent = deliveredIds?.has(i.id) ? `${i.name} ✓` : i.name;
             return li;
         }));
         // menu LAB panel: name + the sample's real mission note
@@ -242,7 +253,7 @@ export function createHud(rootEl, { site, onSwitchUnit, onCollect, onToggleSfx, 
             labList.replaceChildren(...items.map((i) => {
                 const li = document.createElement('li');
                 const name = document.createElement('b');
-                name.textContent = i.name;
+                name.textContent = deliveredIds?.has(i.id) ? `${i.name} — DELIVERED` : i.name;
                 const note = document.createElement('span');
                 note.textContent = i.note ?? '';
                 li.append(name, note);
@@ -290,7 +301,7 @@ export function createHud(rootEl, { site, onSwitchUnit, onCollect, onToggleSfx, 
     }
 
     return {
-        minimapEl, setActiveUnit, setPrompt, setInventory,
+        minimapEl, setActiveUnit, setPrompt, setInventory, setLab,
         setTelemetry, setMenuOpen, isMenuOpen,
         setDronePanel, setDroneState, setGear,
     };

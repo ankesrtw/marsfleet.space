@@ -8,9 +8,11 @@
    acceleration. That is exactly what a real quad does (one side's
    rotors spin up, the frame banks, THEN it translates), so the
    drone visibly noses/banks into a move and levels off at speed.
-   The GLBs are single fused meshes, so the bank IS the rotor-
-   differential visual — individual rotor spin needs a re-export
-   with separate rotor nodes.
+   The GLBs are single fused meshes (no separate rotor nodes), so
+   rotor spin comes from the rotors.js overlay rig: spinning blade
+   + blur-disc sets at box-derived hub positions, spooling with
+   take-off/landing/load. The bank remains the rotor-differential
+   visual.
 
    Travel convention matches the ground units and the chase cam:
    forward input moves along -[sin h, cos h] (W had the old drone
@@ -23,6 +25,7 @@
 
 import * as THREE from 'three';
 import { attachUnitModel } from './models.js';
+import { createRotorRig, hubsFromSize } from './rotors.js';
 
 const MAX_ALT = 60;      // m AGL ceiling
 const TAU = 0.8;         // s, velocity time constant (accel feel)
@@ -38,6 +41,12 @@ const GEARS = [
 ];
 const GEAR_KEY = 'mc-gear-drone';
 
+// Sling-load handicaps (lift drone with a cache container on the hook):
+// slower, weaker climb, hungrier — carrying should feel like work.
+const SLING_SPEED = 0.6;
+const SLING_CLIMB = 0.7;
+const SLING_DRAIN = 1.6;
+
 export function createDrone(site, terrain, opts = {}) {
     const {
         modelName = 'drone',
@@ -46,11 +55,13 @@ export function createDrone(site, terrain, opts = {}) {
         cruiseAlt = 18,     // toggleLanding() take-off target
         spawnDx = 0,
         spawnDz = 0,
+        canSling = false,   // lift drone only — see lab.js
     } = opts;
 
     let gearIdx = Math.max(0, GEARS.findIndex((g) => g.label === localStorage.getItem(GEAR_KEY)));
     if (localStorage.getItem(GEAR_KEY) == null) gearIdx = 1; // default G2
-    const speedCap = () => maxSpeed * GEARS[gearIdx].mult;
+    let slung = false;
+    const speedCap = () => maxSpeed * GEARS[gearIdx].mult * (slung ? SLING_SPEED : 1);
 
     function cycleGear() {
         gearIdx = (gearIdx + 1) % GEARS.length;
@@ -60,7 +71,18 @@ export function createDrone(site, terrain, opts = {}) {
 
     const mesh = buildDroneMesh();
     mesh.rotation.order = 'YXZ'; // yaw, then motion tilts
-    attachUnitModel(mesh, modelName);
+
+    // Spinning-rotor overlay (rotors.js): laid out for the procedural
+    // fallback now, re-laid from the GLB's bounds when it arrives —
+    // attachUnitModel clears the group, so the rig re-adds itself.
+    const rig = createRotorRig();
+    rig.layout([[0.8, 0.18, 0], [-0.8, 0.18, 0], [0, 0.18, 0.8], [0, 0.18, -0.8]], 0.28);
+    mesh.add(rig.group);
+    attachUnitModel(mesh, modelName, (_model, size) => {
+        const { hubs, radius } = hubsFromSize(size);
+        rig.layout(hubs, radius);
+        mesh.add(rig.group);
+    });
 
     let heading = site.spawn.heading;
     let landed = true;                 // starts parked on the surface
@@ -115,6 +137,8 @@ export function createDrone(site, terrain, opts = {}) {
             if (climb > 0.3) landed = false;
             mesh.position.y = terrain.sampleHeight(mesh.position.x, mesh.position.z);
             mesh.rotation.set(pitchTilt, heading, rollTilt, 'YXZ');
+            // rotors: spool up when a take-off is pending, else spin down
+            rig.update(dt, autoTakeoffTo != null || climb > 0.3 ? 0.9 : 0);
             return;
         }
 
@@ -150,7 +174,10 @@ export function createDrone(site, terrain, opts = {}) {
         mesh.position.x += vel.x * dt;
         mesh.position.z += vel.y * dt;
 
-        alt = THREE.MathUtils.clamp(alt + climb * climbRate * GEARS[gearIdx].climb * dt, 0, MAX_ALT);
+        alt = THREE.MathUtils.clamp(
+            alt + climb * climbRate * GEARS[gearIdx].climb * (slung ? SLING_CLIMB : 1) * dt,
+            0, MAX_ALT
+        );
         const groundY = terrain.sampleHeight(mesh.position.x, mesh.position.z);
         if (alt <= 0.05 && climb < 0) {
             // touchdown
@@ -160,22 +187,33 @@ export function createDrone(site, terrain, opts = {}) {
             vel.set(0, 0);
             mesh.position.y = groundY;
             mesh.rotation.set(pitchTilt, heading, rollTilt, 'YXZ');
+            rig.update(dt, 0);
             return;
         }
         mesh.position.y = groundY + alt + Math.sin(bob * 2) * 0.15;
         mesh.rotation.set(pitchTilt, heading, rollTilt, 'YXZ');
+
+        // airborne rotor effort: hover floor + speed/climb load
+        rig.update(dt, Math.min(1,
+            0.55 + 0.45 * (vel.length() / speedCap()) + 0.2 * Math.abs(climb)));
+    }
+
+    /** lab.js sling hook — only the lift drone is built with canSling. */
+    function setSlung(on) {
+        slung = !!on;
     }
 
     return {
-        mesh, update, toggleLanding, setPower, cycleGear,
+        mesh, update, toggleLanding, setPower, cycleGear, setSlung, canSling,
         get position() { return mesh.position; },
         get heading() { return heading; },
         get landed() { return landed; },
         get landing() { return autoLand; },
         get alt() { return alt; },
+        get slung() { return slung; },
         get maxSpeed() { return speedCap(); },
         get gearLabel() { return GEARS[gearIdx].label; },
-        get drainScale() { return GEARS[gearIdx].drain; },
+        get drainScale() { return GEARS[gearIdx].drain * (slung ? SLING_DRAIN : 1); },
     };
 }
 
@@ -196,14 +234,8 @@ function buildDroneMesh() {
     arm2.rotation.y = Math.PI / 2;
     group.add(arm1, arm2);
 
-    const rotorGeo = new THREE.CylinderGeometry(0.25, 0.25, 0.03, 8);
-    const rotorMat = new THREE.MeshStandardMaterial({ color: 0x222222 });
-    const rotorPositions = [[0.8, 0], [-0.8, 0], [0, 0.8], [0, -0.8]];
-    for (const [x, z] of rotorPositions) {
-        const rotor = new THREE.Mesh(rotorGeo, rotorMat);
-        rotor.position.set(x, 0.1, z);
-        group.add(rotor);
-    }
+    // (no static rotor discs here — the spinning rotor rig from rotors.js
+    // is laid out on these same arm tips by createDrone)
 
     return group;
 }

@@ -55,7 +55,9 @@ export function attachUnitModel(group, name, onReady) {
 
         group.clear();
         group.add(model);
-        onReady?.(model);
+        // size = the model's group-local extents after normalization
+        // (x/z centered, y from 0) — rotor overlays derive hubs from it.
+        onReady?.(model, box.getSize(new THREE.Vector3()));
     }, undefined, () => {
         /* keep the procedural fallback — never block the game on assets */
     });

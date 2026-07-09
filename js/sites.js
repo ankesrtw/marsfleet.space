@@ -3,8 +3,9 @@
 
    One plain object per landing site: heightmap/texture URLs,
    the elevation range baked in by scripts/mars-terrain/prep_site.sh
-   (needed to de-quantize the 8-bit heightmap back to real meters),
-   world scale, spawn point, and real named sample sites.
+   (needed to de-quantize the RG-packed 16-bit heightmap back to
+   real meters), world scale, per-device mesh density, spawn point,
+   and real named sample sites.
 
    World coordinates: origin = crop center, x = east, z = south
    (matches image rows top->bottom = north->south). All sample/spawn
@@ -37,6 +38,9 @@ export const SITES = {
         // 6km x 6km crop centered at (77.415E, 18.455N): landing site ->
         // Séítah -> western delta front -> Neretva Vallis.
         worldSize: 6000,
+        // Mesh density per device class. Jezero's 20m CTX DEM is fully
+        // expressed at 256 (23m quads) — more would invent nothing.
+        segments: { desktop: 256, mobile: 128 },
         center: { lon: 77.415, lat: 18.455 },
         // Perseverance touchdown (UTC) — drives the live mission sol counter.
         landingUtc: '2021-02-18T20:55:00Z',
@@ -60,14 +64,17 @@ export const SITES = {
         heightmapUrl: 'assets/gale/heightmap.png',
         textureUrl: 'assets/gale/albedo.jpg',
         // Baked from `gdalinfo -stats` on the real cropped DEM
-        // (prep_site.sh gale, run 2026-07-08 — streamed AOI, source never
-        // fetched whole). 805m relief: crater floor -> Mount Sharp foothills.
-        elevMin: -4529.212890625,
-        elevMax: -3723.7697753906,
+        // (prep_site.sh gale, run 2026-07-10 — 2048px 16-bit RG, streamed
+        // AOI). 806m relief: crater floor -> Mount Sharp foothills.
+        elevMin: -4529.3466796875,
+        elevMax: -3723.2702636719,
         // 9km x 9km crop centered at (8144500, -276000)m = (137.4026E, 4.6563S).
         // Width fixed at 9km by the HiRISE ortho corridor; spans the real
         // traverse: Bradbury Landing -> Yellowknife Bay -> Vera Rubin Ridge.
         worldSize: 9000,
+        // 1m-source DEM (2048px heightmap = 4.4m/px): 512 segments
+        // (17.6m quads) actually uses it. 256 was Jezero-sized waste.
+        segments: { desktop: 512, mobile: 192 },
         center: { lon: 137.40264, lat: -4.65629 },
         // Curiosity touchdown (UTC) — drives the live mission sol counter.
         landingUtc: '2012-08-06T05:17:00Z',
