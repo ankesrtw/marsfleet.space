@@ -56,9 +56,16 @@ async function startGame(site) {
     scene.add(rocks.mesh);
 
     const rover = createRover(site, terrain, rocks);
-    const drone = createDrone(site, terrain);
+    // Two quads, both spawn LANDED beside the rover: a fast recon scout
+    // and a slower heavy-lift frame (Ingenuity-class vs cargo-class).
+    const recon = createDrone(site, terrain, {
+        modelName: 'recon', maxSpeed: 10, climbRate: 3, cruiseAlt: 18, spawnDx: -6, spawnDz: 4,
+    });
+    const lift = createDrone(site, terrain, {
+        modelName: 'drone', maxSpeed: 6, climbRate: 2, cruiseAlt: 12, spawnDx: 8, spawnDz: 6,
+    });
     const humanoid = createHumanoid(site, terrain, rocks);
-    scene.add(rover.mesh, drone.mesh, humanoid.mesh);
+    scene.add(rover.mesh, recon.mesh, lift.mesh, humanoid.mesh);
 
     const samples = createSamples(site, terrain);
     scene.add(samples.group);
@@ -67,7 +74,8 @@ async function startGame(site) {
     // on the current TGT sample (waypoint.js); synthesized audio (sound.js).
     const effects = createEffects(scene, terrain);
     effects.addShadow(rover.mesh, 1.7);
-    effects.addShadow(drone.mesh, 0.85, true);
+    effects.addShadow(recon.mesh, 0.55, true);
+    effects.addShadow(lift.mesh, 1.0, true);
     effects.addShadow(humanoid.mesh, 0.5);
     const waypoint = createWaypoint(scene, terrain);
     const sound = createSound();
@@ -76,10 +84,12 @@ async function startGame(site) {
     // when idle; an empty battery immobilises the unit until it recovers
     // above the restart threshold) and odometer.
     // Drain rates retuned for real-scale speeds (range per charge stays
-    // sane: rover ~2.6km at x50 assist, drone ~2.8km, walk ~1.2km).
+    // sane). Drones burn charge the whole time they are AIRBORNE (hover
+    // isn't free) and only solar-recharge on the ground — land to charge.
     const units = [
         { name: 'Rover', unit: rover, kind: 'ground', charge: 100, odo: 0, drainRate: 0.08 },
-        { name: 'Drone', unit: drone, kind: 'fly', charge: 100, odo: 0, drainRate: 0.35 },
+        { name: 'Recon Drone', unit: recon, kind: 'fly', charge: 100, odo: 0, drainRate: 0.35 },
+        { name: 'Lift Drone', unit: lift, kind: 'fly', charge: 100, odo: 0, drainRate: 0.5 },
         { name: 'Humanoid', unit: humanoid, kind: 'ground', charge: 100, odo: 0, drainRate: 0.12 },
     ];
     const SOLAR_RATE = 0.6;      // %/s recharge while not driving
@@ -95,12 +105,13 @@ async function startGame(site) {
         sfxEnabled: sound.enabled,
         onCycleAssist: () => rover.cycleAssist(),
         assist: rover.assist,
+        onToggleLanding: () => toggleLanding(),
     });
     const fog = createFog(site, hud.minimapEl);
-    hud.setActiveUnit(units[activeIndex].name);
 
     const touchZones = setupTouchControls();
     const keys = setupKeyboard();
+    applyUnitMode();
 
     // Ground every unit once before the first camera snap — constructors
     // leave y=0 and only the first update() drops them onto the terrain
@@ -116,11 +127,25 @@ async function startGame(site) {
     // Debug/E2E handle (also used by the sampleHeight ground-truth check;
     // renderer/scene/camera exposed so tests on software-GL boxes can pause
     // the loop and capture canvas pixels via a same-task render+toDataURL).
-    window.__mc = { site, terrain, rover, drone, humanoid, samples, renderer, scene, camera, camRig, units, env, effects, waypoint, sound, rocks };
+    window.__mc = { site, terrain, rover, drone: recon, recon, lift, humanoid, samples, renderer, scene, camera, camRig, units, env, effects, waypoint, sound, rocks };
+
+    function applyUnitMode() {
+        const active = units[activeIndex];
+        hud.setActiveUnit(active.name);
+        hud.setDronePanel(active.kind === 'fly');
+        touchZones.setMode(active.kind);
+    }
 
     function switchUnit() {
         activeIndex = (activeIndex + 1) % units.length;
-        hud.setActiveUnit(units[activeIndex].name);
+        applyUnitMode();
+        sound.switchUnit();
+    }
+
+    function toggleLanding() {
+        const active = units[activeIndex];
+        if (active.kind !== 'fly' || active.dead) return;
+        active.unit.toggleLanding();
         sound.switchUnit();
     }
 
@@ -149,20 +174,34 @@ async function startGame(site) {
         const dt = Math.min(timer.getDelta(), 0.1);
         const active = units[activeIndex];
 
-        let moveInput = readMoveInput(keys, touchZones.move);
-        const lookInput = readLookInput(touchZones.look);
+        // Per-kind input. Drones use RC Mode 2 on touch (left stick =
+        // throttle/yaw, right stick = pitch/roll) and WASD+QERF on keys.
+        let input, inputMag;
+        if (active.kind === 'ground') {
+            const mv = readMoveInput(keys, touchZones.move);
+            input = { throttle: mv.y, steer: -mv.x };
+            inputMag = Math.min(1, Math.abs(mv.x) + Math.abs(mv.y));
+        } else {
+            input = readDroneInput(keys, touchZones.move, touchZones.look);
+            inputMag = Math.min(1, Math.abs(input.forward) + Math.abs(input.strafe)
+                + Math.abs(input.climb) + Math.abs(input.turn) * 0.3);
+        }
 
-        // Battery: the active unit drains proportionally to input; every
-        // idle unit solar-recharges — but only while the sun is up (the
-        // day/night cycle gates SOLAR_RATE through env.daylight()).
-        const inputMag = Math.min(1, Math.abs(moveInput.x) + Math.abs(moveInput.y) + Math.abs(lookInput.x) * 0.3);
+        // Battery: the active unit drains with input; AIRBORNE drones
+        // drain constantly (hover isn't free) and cannot solar-recharge
+        // until they land. Recharge is gated by daylight.
         active.dead = active.dead ? active.charge < RESTART_CHARGE : active.charge <= 0;
-        if (active.dead) moveInput = { x: 0, y: 0 };
+        if (active.dead) input = active.kind === 'ground'
+            ? { throttle: 0, steer: 0 }
+            : { forward: 0, strafe: 0, turn: 0, climb: 0 };
         const solarNow = SOLAR_RATE * env.daylight();
         for (const u of units) {
-            const driving = u === active && !active.dead && inputMag > 0.02;
-            u.charge = driving
-                ? Math.max(0, u.charge - u.drainRate * inputMag * dt)
+            if (u.kind === 'fly') u.unit.setPower(!u.dead); // dead => force-land
+            const airborne = u.kind === 'fly' && !u.unit.landed;
+            const activeLoad = u === active && !active.dead && inputMag > 0.02 ? inputMag : 0;
+            const load = airborne ? Math.max(0.4, activeLoad) : activeLoad;
+            u.charge = load > 0
+                ? Math.max(0, u.charge - u.drainRate * load * dt)
                 : Math.min(100, u.charge + solarNow * dt);
         }
 
@@ -173,10 +212,13 @@ async function startGame(site) {
         else if (!active.dead) active.deadWarned = false;
 
         const beforeMove = active.unit.position.clone();
-        if (active.kind === 'ground') {
-            active.unit.update(dt, { throttle: moveInput.y, steer: -moveInput.x });
-        } else {
-            active.unit.update(dt, { forward: -moveInput.y, strafe: moveInput.x, turn: lookInput.x });
+        active.unit.update(dt, input);
+        // idle drones keep simulating: hover physics settles, auto-land
+        // sequences (incl. dead-battery force-landing) complete
+        for (const u of units) {
+            if (u.kind === 'fly' && u !== active) {
+                u.unit.update(dt, { forward: 0, strafe: 0, turn: 0, climb: 0 });
+            }
         }
         const movedDist = Math.hypot(
             active.unit.position.x - beforeMove.x,
@@ -185,15 +227,18 @@ async function startGame(site) {
         active.odo += movedDist;
         const speedNow = dt > 0 ? movedDist / dt : 0;
 
-        fog.reveal(drone.position.x, drone.position.z);
+        fog.reveal(recon.position.x, recon.position.z);
+        fog.reveal(lift.position.x, lift.position.z);
         if (active.kind === 'ground') fog.reveal(active.unit.position.x, active.unit.position.z);
         fog.render(samples.markers);
 
         const targetInfo = samples.nearestInfo(active.unit.position);
         waypoint.update(dt, targetInfo);
         effects.update(dt, active, speedNow, env.daylight());
-        const speedCap = active.kind === 'fly' ? 10 : active.name === 'Humanoid' ? 1.4 : Math.max(0.042, rover.maxSpeed);
-        sound.update(active.name, Math.min(1, speedNow / speedCap));
+        const engineNorm = active.kind === 'fly'
+            ? (active.unit.landed ? 0 : Math.max(0.35, speedNow / active.unit.maxSpeed))
+            : speedNow / (active.name === 'Humanoid' ? 1.4 : Math.max(0.042, rover.maxSpeed));
+        sound.update(active.name, Math.min(1, engineNorm));
 
         if (active.kind === 'ground') {
             const nearest = samples.nearestUncollected(active.unit.position);
@@ -231,6 +276,13 @@ async function startGame(site) {
                 target: targetInfo,
                 tgtRelDeg,
             });
+            if (active.kind === 'fly') {
+                hud.setDroneState({
+                    landed: active.unit.landed,
+                    landing: active.unit.landing,
+                    alt: active.unit.alt,
+                });
+            }
             prevPos.copy(pos);
             teleAccum = 0;
         }
@@ -253,6 +305,7 @@ function setupKeyboard() {
     document.addEventListener('keydown', (e) => {
         if (e.code === 'Tab') document.dispatchEvent(new CustomEvent('mc-switch-unit'));
         if (e.code === 'KeyE') document.dispatchEvent(new CustomEvent('mc-collect'));
+        if (e.code === 'KeyL') document.dispatchEvent(new CustomEvent('mc-toggle-land'));
         if (e.code === 'KeyM' || e.code === 'Escape') document.dispatchEvent(new CustomEvent('mc-menu'));
     });
     return keys;
@@ -264,11 +317,24 @@ function setupTouchControls() {
     if (!isTouchDevice()) {
         moveZone.hidden = true;
         lookZone.hidden = true;
-        return { move: null, look: null };
+        return { move: null, look: null, setMode: () => {} };
     }
+    const move = createJoystick(moveZone);
+    const look = createJoystick(lookZone);
     return {
-        move: createJoystick(moveZone),
-        look: createJoystick(lookZone),
+        move, look,
+        // ground: one MOVE stick (right zone freed for camera drags on the
+        // canvas); fly: RC Mode 2 with both sticks labelled
+        setMode(kind) {
+            if (kind === 'fly') {
+                move.setLabel('THR · YAW');
+                look.setLabel('PITCH · ROLL');
+                look.setHidden(false);
+            } else {
+                move.setLabel('MOVE');
+                look.setHidden(true);
+            }
+        },
     };
 }
 
@@ -282,13 +348,30 @@ function readMoveInput(keys, joystick) {
     return { x, y };
 }
 
-function readLookInput(joystick) {
-    if (joystick && joystick.active) return joystick.value;
-    return { x: 0, y: 0 };
+// Keyboard: W/S pitch fwd/back, A/D yaw, Q/E strafe, R/F climb/descend.
+// Touch: RC Mode 2 — left stick throttle(y)+yaw(x), right stick
+// pitch(y)+roll(x); stick-up = positive.
+function readDroneInput(keys, joyLeft, joyRight) {
+    if ((joyLeft && joyLeft.active) || (joyRight && joyRight.active)) {
+        const l = joyLeft && joyLeft.active ? joyLeft.value : { x: 0, y: 0 };
+        const r = joyRight && joyRight.active ? joyRight.value : { x: 0, y: 0 };
+        return { forward: -r.y, strafe: r.x, turn: -l.x, climb: -l.y };
+    }
+    let forward = 0, strafe = 0, turn = 0, climb = 0;
+    if (keys.has('KeyW') || keys.has('ArrowUp')) forward += 1;
+    if (keys.has('KeyS') || keys.has('ArrowDown')) forward -= 1;
+    if (keys.has('KeyA') || keys.has('ArrowLeft')) turn += 1;
+    if (keys.has('KeyD') || keys.has('ArrowRight')) turn -= 1;
+    if (keys.has('KeyQ')) strafe -= 1;
+    if (keys.has('KeyE')) strafe += 1;
+    if (keys.has('KeyR')) climb += 1;
+    if (keys.has('KeyF')) climb -= 1;
+    return { forward, strafe, turn, climb };
 }
 
 document.addEventListener('mc-switch-unit', () => document.getElementById('mc-switch')?.click());
 document.addEventListener('mc-collect', () => document.getElementById('mc-collect')?.click());
+document.addEventListener('mc-toggle-land', () => document.getElementById('mc-land')?.click());
 document.addEventListener('mc-menu', () => {
     const menu = document.getElementById('mc-menu');
     if (menu) menu.dataset.open = menu.dataset.open === 'true' ? 'false' : 'true';

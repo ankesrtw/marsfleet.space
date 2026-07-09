@@ -84,15 +84,16 @@ export function createSound() {
 
     // per-unit engine voicing: base pitch + how loud it may get
     const ENGINE_VOICE = {
-        Rover: { freq: 42, vol: 0.14 },
-        Drone: { freq: 96, vol: 0.1 },
-        Humanoid: { freq: 60, vol: 0.05 },
+        'Rover': { freq: 42, vol: 0.14 },
+        'Recon Drone': { freq: 110, vol: 0.1 },
+        'Lift Drone': { freq: 68, vol: 0.13 },
+        'Humanoid': { freq: 60, vol: 0.05 },
     };
 
     /** Per frame: unitName + normalized speed 0..1 drive the hum. */
     function update(unitName, speedNorm) {
         if (!ctx || !engine) return;
-        const voice = ENGINE_VOICE[unitName] ?? ENGINE_VOICE.Rover;
+        const voice = ENGINE_VOICE[unitName] ?? ENGINE_VOICE['Rover'];
         const t = ctx.currentTime;
         const target = Math.min(1, Math.abs(speedNorm)) * voice.vol;
         engine.gain.gain.setTargetAtTime(target, t, 0.12);

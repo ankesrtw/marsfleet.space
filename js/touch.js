@@ -6,12 +6,19 @@
    fresh minimal implementation using the same unified Pointer
    Events API (works for mouse AND touch, one code path).
 
-   Two independent nub-style sticks: left = move (throttle/steer or
-   forward/strafe depending on active unit), right = look/camera.
-   Each exposes a normalized {x, y} in [-1, 1], read every frame by
-   whichever unit controller is active — same pattern as reading a
-   gamepad axis.
+   Each stick exposes a normalized {x, y} in [-1, 1], read every
+   frame by whichever unit controller is active — same pattern as
+   reading a gamepad axis.
+
+   The pads are ALWAYS visible on touch devices (dim base + role
+   label resting at the zone center; it brightens and re-anchors
+   under the finger on touch) — an invisible zone reads as "no
+   controls" on a phone. Roles are re-labelled per active unit:
+   ground = MOVE (right zone hidden), drones = RC Mode 2
+   (left stick throttle/yaw, right stick pitch/roll).
    ============================================================ */
+
+const IDLE_OPACITY = '0.3';
 
 export function createJoystick(zoneEl) {
     const nub = document.createElement('div');
@@ -19,7 +26,18 @@ export function createJoystick(zoneEl) {
     const base = document.createElement('div');
     base.className = 'joy-base';
     base.appendChild(nub);
+    const label = document.createElement('div');
+    label.className = 'joy-label';
     zoneEl.appendChild(base);
+    zoneEl.appendChild(label);
+
+    function rest() {
+        base.style.left = '50%';
+        base.style.top = '55%';
+        base.style.opacity = IDLE_OPACITY;
+        nub.style.transform = 'translate(0, 0)';
+    }
+    rest();
 
     let active = false;
     let originX = 0, originY = 0;
@@ -52,8 +70,7 @@ export function createJoystick(zoneEl) {
     function end() {
         active = false;
         value = { x: 0, y: 0 };
-        nub.style.transform = 'translate(0, 0)';
-        base.style.opacity = '0';
+        rest();
     }
 
     zoneEl.addEventListener('pointerdown', start);
@@ -64,6 +81,8 @@ export function createJoystick(zoneEl) {
     return {
         get value() { return value; },
         get active() { return active; },
+        setLabel(text) { label.textContent = text; },
+        setHidden(hidden) { zoneEl.dataset.off = String(hidden); },
     };
 }
 

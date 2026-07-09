@@ -21,11 +21,15 @@ const loader = new GLTFLoader();
 
 // axis = which post-yaw extent `size` measures (rover length, drone
 // span, humanoid height). yaw per model: Tripo orients each export
-// by its source image, so forward differs per asset (checked visually).
+// by its source image, so forward differs per asset. All yaws map the
+// model's face to local -Z — units travel along -[sin h, cos h] under
+// forward input (verified by chase-cam renders: we must see each
+// model's BACK while driving forward; +Z-facing had them all reversed).
 const MODELS = {
-    rover: { url: 'assets/models/rover.glb', yaw: Math.PI / 2, size: 3.0, axis: 'z' },
-    drone: { url: 'assets/models/drone.glb', yaw: -Math.PI / 2, size: 1.6, axis: 'x' },
-    humanoid: { url: 'assets/models/humanoid.glb', yaw: -Math.PI / 2, size: 1.8, axis: 'y' },
+    rover: { url: 'assets/models/rover.glb', yaw: -Math.PI / 2, size: 3.0, axis: 'z' },
+    drone: { url: 'assets/models/drone.glb', yaw: Math.PI / 2, size: 2.0, axis: 'x' },
+    recon: { url: 'assets/models/recon.glb', yaw: Math.PI / 2, size: 1.1, axis: 'x' },
+    humanoid: { url: 'assets/models/humanoid.glb', yaw: Math.PI / 2, size: 1.8, axis: 'y' },
 };
 
 export function attachUnitModel(group, name, onReady) {

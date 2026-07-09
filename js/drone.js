@@ -1,54 +1,157 @@
 /* ============================================================
-   drone.js — free-flying scout unit.
+   drone.js — quadcopter units (recon scout + heavy lift) with
+   tilt-driven flight physics and land/take-off.
 
-   Ignores terrain collision entirely; terrain.sampleHeight() only
-   sets a hover-altitude floor so it never clips into the ground.
-   Drives the fog-of-war reveal (see fog.js) by exposing its current
-   world position every frame — main.js feeds that into fog.reveal().
+   Movement is not kinematic anymore: input sets a TARGET velocity,
+   actual velocity chases it with a time constant, and the airframe
+   tilts proportionally to the velocity ERROR — i.e. commanded
+   acceleration. That is exactly what a real quad does (one side's
+   rotors spin up, the frame banks, THEN it translates), so the
+   drone visibly noses/banks into a move and levels off at speed.
+   The GLBs are single fused meshes, so the bank IS the rotor-
+   differential visual — individual rotor spin needs a re-export
+   with separate rotor nodes.
+
+   Travel convention matches the ground units and the chase cam:
+   forward input moves along -[sin h, cos h] (W had the old drone
+   flying INTO the camera).
+
+   Land/take-off: climb input (or toggleLanding()) moves altitude-
+   above-ground; touching down zeroes velocity and parks the frame
+   level on the terrain. A dead battery force-lands (setPower).
    ============================================================ */
 
 import * as THREE from 'three';
 import { attachUnitModel } from './models.js';
 
-// Ingenuity's fastest recorded horizontal speed is 10 m/s, flown at
-// 10-24m altitude — both real-scale here (hover height already was).
-const SPEED = 10;      // m/s
-const TURN_RATE = 2.0; // rad/s
-const HOVER_HEIGHT = 18;
+const MAX_ALT = 60;      // m AGL ceiling
+const TAU = 0.8;         // s, velocity time constant (accel feel)
+const TILT_MAX = 0.32;   // rad, max nose/bank angle
+const TURN_RATE = 2.0;   // rad/s
 
-export function createDrone(site, terrain) {
+export function createDrone(site, terrain, opts = {}) {
+    const {
+        modelName = 'drone',
+        maxSpeed = 10,      // Ingenuity's fastest recorded: 10 m/s
+        climbRate = 3,      // m/s vertical
+        cruiseAlt = 18,     // toggleLanding() take-off target
+        spawnDx = 0,
+        spawnDz = 0,
+    } = opts;
+
     const mesh = buildDroneMesh();
-    mesh.position.set(site.spawn.x, 0, site.spawn.z);
-    mesh.position.y = terrain.sampleHeight(mesh.position.x, mesh.position.z) + HOVER_HEIGHT;
-    attachUnitModel(mesh, 'drone');
+    mesh.rotation.order = 'YXZ'; // yaw, then motion tilts
+    attachUnitModel(mesh, modelName);
 
     let heading = site.spawn.heading;
+    let landed = true;                 // starts parked on the surface
+    let alt = 0;                       // m above ground
+    let autoLand = false;
+    let autoTakeoffTo = null;
+    let powered = true;
     let bob = 0;
+    const vel = new THREE.Vector2();   // world-plane velocity (x, z)
+    const targetVel = new THREE.Vector2();
     let pitchTilt = 0, rollTilt = 0;
-    mesh.rotation.order = 'YXZ'; // yaw, then motion tilts
+
+    mesh.position.set(site.spawn.x + spawnDx, 0, site.spawn.z + spawnDz);
+    mesh.position.y = terrain.sampleHeight(mesh.position.x, mesh.position.z);
+    mesh.rotation.y = heading;
+
+    function toggleLanding() {
+        if (!powered) return;
+        if (landed) {
+            landed = false;
+            autoLand = false;
+            autoTakeoffTo = cruiseAlt;
+        } else {
+            autoLand = true;
+            autoTakeoffTo = null;
+        }
+    }
+
+    /** Battery hook: dead drones ignore sticks and auto-land. */
+    function setPower(on) {
+        powered = on;
+        if (!on && !landed) { autoLand = true; autoTakeoffTo = null; }
+    }
 
     function update(dt, input) {
-        // input: { forward: -1..1, strafe: -1..1, turn: -1..1 }
-        heading += input.turn * TURN_RATE * dt;
+        // input: { forward: -1..1, strafe: -1..1, turn: -1..1, climb: -1..1 }
+        let { forward = 0, strafe = 0, turn = 0, climb = 0 } = powered ? input : {};
+
+        // autopilot overrides for take-off / landing sequences
+        if (autoTakeoffTo != null) {
+            climb = 1;
+            if (alt >= autoTakeoffTo) autoTakeoffTo = null;
+        } else if (autoLand) {
+            climb = -1;
+        }
+
+        if (landed) {
+            // parked: level out, no translation; climb starts a take-off
+            pitchTilt += (0 - pitchTilt) * Math.min(1, 6 * dt);
+            rollTilt += (0 - rollTilt) * Math.min(1, 6 * dt);
+            vel.set(0, 0);
+            if (climb > 0.3) landed = false;
+            mesh.position.y = terrain.sampleHeight(mesh.position.x, mesh.position.z);
+            mesh.rotation.set(pitchTilt, heading, rollTilt, 'YXZ');
+            return;
+        }
+
+        heading += turn * TURN_RATE * dt;
         bob += dt;
 
-        const fwd = new THREE.Vector3(Math.sin(heading), 0, Math.cos(heading));
-        const right = new THREE.Vector3(Math.cos(heading), 0, -Math.sin(heading));
+        // forward axis matches ground units: -[sin h, cos h]
+        const fx = -Math.sin(heading), fz = -Math.cos(heading);
+        const rx = Math.cos(heading), rz = -Math.sin(heading);
+        targetVel.set(
+            (fx * forward + rx * strafe) * maxSpeed,
+            (fz * forward + rz * strafe) * maxSpeed
+        );
 
-        mesh.position.addScaledVector(fwd, input.forward * SPEED * dt);
-        mesh.position.addScaledVector(right, input.strafe * SPEED * dt);
+        // velocity chases target; the ERROR is the commanded acceleration
+        // and drives the tilt — bank/nose first, translate as speed builds
+        const k = 1 - Math.exp(-dt / TAU);
+        const errX = targetVel.x - vel.x;
+        const errZ = targetVel.y - vel.y;
+        vel.x += errX * k;
+        vel.y += errZ * k;
 
+        const errFwd = (errX * fx + errZ * fz) / maxSpeed;   // -1..1
+        const errRight = (errX * rx + errZ * rz) / maxSpeed;
+        const tk = Math.min(1, 10 * dt); // fast rotor response
+        pitchTilt += (THREE.MathUtils.clamp(errFwd, -1, 1) * TILT_MAX - pitchTilt) * tk;
+        rollTilt += (THREE.MathUtils.clamp(-errRight, -1, 1) * TILT_MAX - rollTilt) * tk;
+
+        mesh.position.x += vel.x * dt;
+        mesh.position.z += vel.y * dt;
+
+        alt = THREE.MathUtils.clamp(alt + climb * climbRate * dt, 0, MAX_ALT);
         const groundY = terrain.sampleHeight(mesh.position.x, mesh.position.z);
-        mesh.position.y = groundY + HOVER_HEIGHT + Math.sin(bob * 2) * 0.3;
-
-        // quad-style attitude: nose dips into travel, banks into strafes
-        const k = Math.min(1, 9 * dt);
-        pitchTilt += (input.forward * 0.22 - pitchTilt) * k;
-        rollTilt += (-input.strafe * 0.16 - rollTilt) * k;
+        if (alt <= 0.05 && climb < 0) {
+            // touchdown
+            landed = true;
+            autoLand = false;
+            alt = 0;
+            vel.set(0, 0);
+            mesh.position.y = groundY;
+            mesh.rotation.set(pitchTilt, heading, rollTilt, 'YXZ');
+            return;
+        }
+        mesh.position.y = groundY + alt + Math.sin(bob * 2) * 0.15;
         mesh.rotation.set(pitchTilt, heading, rollTilt, 'YXZ');
     }
 
-    return { mesh, update, get position() { return mesh.position; }, get heading() { return heading; } };
+    return {
+        mesh, update, toggleLanding, setPower,
+        get position() { return mesh.position; },
+        get heading() { return heading; },
+        get landed() { return landed; },
+        get landing() { return autoLand; },
+        get alt() { return alt; },
+        get maxSpeed() { return maxSpeed; },
+    };
 }
 
 function buildDroneMesh() {

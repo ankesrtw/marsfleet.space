@@ -233,6 +233,7 @@ html, body {
         padding: 6px 8px;
         font-size: 0.72rem;
     }
+
 }
 
 /* ---- In-game menu ---- */
@@ -372,6 +373,61 @@ html, body {
     transform: translateX(-50%);
 }
 
+/* ---- drone control board (visible only while a drone is active) ---- */
+
+.mars-hud__dronectl {
+    position: absolute;
+    bottom: max(14px, env(safe-area-inset-bottom));
+    left: 50%;
+    transform: translateX(-50%);
+    display: none;
+    align-items: stretch;
+    gap: 10px;
+    pointer-events: none;
+    z-index: 15; /* above the touch zones so the LAND button stays tappable */
+}
+
+.mars-hud__dronectl[data-visible="true"] {
+    display: flex;
+}
+
+.mars-dronectl__stat {
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    gap: 2px;
+    background: rgba(20, 12, 8, 0.75);
+    border: 1px solid #7a4f30;
+    border-radius: 6px;
+    padding: 6px 14px;
+    font-family: 'SF Mono', ui-monospace, Menlo, Consolas, monospace;
+    font-size: 0.68rem;
+    text-align: center;
+}
+
+.mars-dronectl__stat b {
+    color: #e0b95e;
+    letter-spacing: 0.1em;
+    font-weight: 600;
+}
+
+.mars-dronectl__stat span {
+    opacity: 0.75;
+}
+
+.mars-btn--land {
+    min-width: 110px;
+    justify-content: center;
+}
+
+/* phones: lift the board clear of the joystick zones (must come after
+   the base rule above — same specificity, cascade order decides) */
+@media (max-width: 899px), (pointer: coarse) {
+    .mars-hud__dronectl {
+        bottom: calc(min(45vw, 260px) + 14px);
+    }
+}
+
 .mars-hud__inventory {
     position: absolute;
     bottom: max(12px, env(safe-area-inset-bottom));
@@ -420,6 +476,11 @@ html, body {
     right: 0;
 }
 
+/* zones the current unit doesn't use are hidden (touch.js setHidden) */
+.mars-touch-zone[data-off="true"] {
+    display: none;
+}
+
 .joy-base {
     position: absolute;
     width: 100px;
@@ -429,8 +490,21 @@ html, body {
     border-radius: 50%;
     background: rgba(224, 185, 94, 0.12);
     border: 1px solid rgba(224, 185, 94, 0.4);
-    opacity: 0;
+    opacity: 0.3; /* resting pad stays visible; touch.js brightens it */
     transition: opacity 0.1s;
+    pointer-events: none;
+}
+
+.joy-label {
+    position: absolute;
+    top: 6px;
+    left: 0;
+    width: 100%;
+    text-align: center;
+    font-size: 0.58rem;
+    letter-spacing: 0.14em;
+    color: #e0b95e;
+    opacity: 0.6;
     pointer-events: none;
 }
 

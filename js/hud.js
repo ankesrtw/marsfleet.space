@@ -20,7 +20,7 @@
 import { isTouchDevice } from './touch.js';
 import { SITES, M_PER_DEG, SOL_MS } from './sites.js';
 
-export function createHud(rootEl, { site, onSwitchUnit, onCollect, onToggleSfx, sfxEnabled = true, onCycleAssist, assist = 50 }) {
+export function createHud(rootEl, { site, onSwitchUnit, onCollect, onToggleSfx, sfxEnabled = true, onCycleAssist, assist = 50, onToggleLanding }) {
     rootEl.innerHTML = `
         <div class="mars-hud">
             <div class="mars-hud__top">
@@ -49,6 +49,13 @@ export function createHud(rootEl, { site, onSwitchUnit, onCollect, onToggleSfx, 
             <div class="mars-hud__prompt" id="mc-prompt" hidden>
                 <button class="mars-btn mars-btn--collect" id="mc-collect">COLLECT<span class="mars-btn__hint">[E]</span></button>
             </div>
+            <div class="mars-hud__dronectl" id="mc-dronectl" data-visible="false">
+                <div class="mars-dronectl__stat">
+                    <b id="mc-drone-state">LANDED</b>
+                    <span id="mc-drone-alt">ALT 0.0 m</span>
+                </div>
+                <button class="mars-btn mars-btn--land" id="mc-land">TAKE OFF<span class="mars-btn__hint">[L]</span></button>
+            </div>
             <div class="mars-hud__inventory" id="mc-inventory">
                 <div class="mars-hud__inventory-title">SAMPLES <span id="mc-inv-count">0</span></div>
                 <ul id="mc-inv-list"></ul>
@@ -76,12 +83,12 @@ export function createHud(rootEl, { site, onSwitchUnit, onCollect, onToggleSfx, 
                 <div class="mars-menu__section">
                     <h3>CONTROLS</h3>
                     <ul class="mars-menu__controls">
-                        <li>Drive / walk / fly — WASD or left joystick</li>
-                        <li>Turn (drone) — right joystick</li>
-                        <li>Switch unit — TAB or SWITCH UNIT</li>
-                        <li>Collect sample — E or COLLECT</li>
-                        <li>Menu — M or MENU</li>
-                        <li>Sol cycle — solar recharge stops at night</li>
+                        <li>Rover / humanoid — WASD or left stick</li>
+                        <li>Drone keys — W/S pitch · A/D yaw · Q/E strafe · R/F climb</li>
+                        <li>Drone touch (RC Mode 2) — left stick throttle+yaw, right stick pitch+roll</li>
+                        <li>Take off / land — L or the drone panel button</li>
+                        <li>Switch unit — TAB · Collect — E · Menu — M</li>
+                        <li>Sol cycle — drones recharge only when landed, nothing recharges at night</li>
                     </ul>
                 </div>
                 <button class="mars-btn mars-btn--resume" id="mc-resume">RESUME</button>
@@ -144,6 +151,23 @@ export function createHud(rootEl, { site, onSwitchUnit, onCollect, onToggleSfx, 
         const a = onCycleAssist ? onCycleAssist() : assist;
         assistBtn.textContent = `ROVER DRIVE ASSIST ×${a}`;
     });
+
+    // Drone control board: visible only while a drone is active.
+    const dronectlEl = rootEl.querySelector('#mc-dronectl');
+    const droneStateEl = rootEl.querySelector('#mc-drone-state');
+    const droneAltEl = rootEl.querySelector('#mc-drone-alt');
+    const landBtn = rootEl.querySelector('#mc-land');
+    landBtn.addEventListener('click', () => onToggleLanding?.());
+
+    function setDronePanel(visible) {
+        dronectlEl.dataset.visible = String(visible);
+    }
+
+    function setDroneState({ landed, landing, alt }) {
+        droneStateEl.textContent = landing ? 'LANDING…' : landed ? 'LANDED' : 'AIRBORNE';
+        droneAltEl.textContent = `ALT ${alt.toFixed(1)} m`;
+        landBtn.firstChild.textContent = landed ? 'TAKE OFF' : 'LAND';
+    }
 
     // Telemetry collapse (a mobile-facing control — the button is only
     // shown by the coarse-pointer CSS). Persisted like the SFX toggle.
@@ -254,5 +278,6 @@ export function createHud(rootEl, { site, onSwitchUnit, onCollect, onToggleSfx, 
     return {
         minimapEl, setActiveUnit, setPrompt, setInventory,
         setTelemetry, setMenuOpen, isMenuOpen,
+        setDronePanel, setDroneState,
     };
 }
