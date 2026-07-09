@@ -114,7 +114,7 @@ export async function loadTerrain(site, quality) {
                 vec3 n = normalize(vNormal);
                 float diff = max(dot(n, uSunDir), 0.0);
                 float dayAmt = smoothstep(-0.10, 0.20, uSunDir.y);
-                vec3 lit = albedo * ((0.07 + 0.31 * dayAmt) + 0.85 * diff);
+                vec3 lit = albedo * ((0.12 + 0.26 * dayAmt) + 0.85 * diff);
 
                 // Dust haze, same params as scene.fog on standard materials.
                 float fogAmt = 1.0 - exp(-uFogDensity * uFogDensity * vViewDist * vViewDist);

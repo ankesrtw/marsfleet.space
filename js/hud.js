@@ -20,7 +20,7 @@
 import { isTouchDevice } from './touch.js';
 import { SITES, M_PER_DEG, SOL_MS } from './sites.js';
 
-export function createHud(rootEl, { site, onSwitchUnit, onCollect, onToggleSfx, sfxEnabled = true, onCycleAssist, assist = 50, onToggleLanding }) {
+export function createHud(rootEl, { site, onSwitchUnit, onCollect, onToggleSfx, sfxEnabled = true, onCycleGear, gear = 'G2', onToggleSol, solOn = true, onToggleLanding }) {
     rootEl.innerHTML = `
         <div class="mars-hud">
             <div class="mars-hud__top">
@@ -49,6 +49,7 @@ export function createHud(rootEl, { site, onSwitchUnit, onCollect, onToggleSfx, 
             <div class="mars-hud__prompt" id="mc-prompt" hidden>
                 <button class="mars-btn mars-btn--collect" id="mc-collect">COLLECT<span class="mars-btn__hint">[E]</span></button>
             </div>
+            <button class="mars-btn mars-hud__gear" id="mc-gear" data-visible="true">GEAR ${gear}<span class="mars-btn__hint">[G]</span></button>
             <div class="mars-hud__dronectl" id="mc-dronectl" data-visible="false">
                 <div class="mars-dronectl__stat">
                     <b id="mc-drone-state">LANDED</b>
@@ -70,9 +71,11 @@ export function createHud(rootEl, { site, onSwitchUnit, onCollect, onToggleSfx, 
                 </div>
                 <div class="mars-menu__section">
                     <h3>SIM</h3>
-                    <button class="mars-btn" id="mc-assist">ROVER DRIVE ASSIST ×${assist}</button>
-                    <p class="mars-menu__note">Real Perseverance tops out at 4.2 cm/s — assist time-compresses
-                    the rover for playability (×1 = true speed). Drone 10 m/s and 1.4 m/s walk are real-scale.</p>
+                    <button class="mars-btn" id="mc-sol">SOL CYCLE ${solOn ? 'ON' : 'LOCKED (DAY)'}</button>
+                    <p class="mars-menu__note">GEAR (HUD button or G) time-compresses speed per unit:
+                    rover REAL = the true 4.2 cm/s, G1 ×50, G2 ×150, G3 ×400; drones G1 = real scale
+                    (10 / 6 m/s), G2 ×2, G3 ×4. SOL CYCLE runs a 40-min day/night — lock it for
+                    permanent daylight (solar recharge needs the sun either way).</p>
                 </div>
                 <div class="mars-menu__section">
                     <h3>LAB — COLLECTED SAMPLES</h3>
@@ -146,11 +149,22 @@ export function createHud(rootEl, { site, onSwitchUnit, onCollect, onToggleSfx, 
         const on = onToggleSfx ? onToggleSfx() : false;
         sfxBtn.textContent = `SFX ${on ? 'ON' : 'OFF'}`;
     });
-    const assistBtn = rootEl.querySelector('#mc-assist');
-    assistBtn.addEventListener('click', () => {
-        const a = onCycleAssist ? onCycleAssist() : assist;
-        assistBtn.textContent = `ROVER DRIVE ASSIST ×${a}`;
+    const gearBtn = rootEl.querySelector('#mc-gear');
+    gearBtn.addEventListener('click', () => {
+        const g = onCycleGear ? onCycleGear() : null;
+        if (g) gearBtn.firstChild.textContent = `GEAR ${g}`;
     });
+    const solBtn = rootEl.querySelector('#mc-sol');
+    solBtn.addEventListener('click', () => {
+        const on = onToggleSol ? onToggleSol() : true;
+        solBtn.textContent = `SOL CYCLE ${on ? 'ON' : 'LOCKED (DAY)'}`;
+    });
+
+    /** Gear readout follows the active unit; null hides (humanoid). */
+    function setGear(label) {
+        gearBtn.dataset.visible = String(label != null);
+        if (label != null) gearBtn.firstChild.textContent = `GEAR ${label}`;
+    }
 
     // Drone control board: visible only while a drone is active.
     const dronectlEl = rootEl.querySelector('#mc-dronectl');
@@ -278,6 +292,6 @@ export function createHud(rootEl, { site, onSwitchUnit, onCollect, onToggleSfx, 
     return {
         minimapEl, setActiveUnit, setPrompt, setInventory,
         setTelemetry, setMenuOpen, isMenuOpen,
-        setDronePanel, setDroneState,
+        setDronePanel, setDroneState, setGear,
     };
 }

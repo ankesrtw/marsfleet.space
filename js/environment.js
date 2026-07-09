@@ -31,11 +31,16 @@ export const FOG = {
     density: 0.00016,
 };
 
-const CYCLE_S = 1200;         // one full sol: 20 min (day ≈ 13 min)
+// 40-min sol, day-biased (~27 min of light) — the original 20-min cycle
+// hit dusk 7-10 min into a session and read as "the screen is getting
+// darker" rather than as a sunset. DAYLIGHT LOCK (menu) freezes the sun
+// at the boot-time morning for players who don't want night at all.
+const CYCLE_S = 2400;
 const ELEV_AMP = 0.62;        // sun elevation swing
-const ELEV_BIAS = 0.16;       // >0 biases toward longer days
+const ELEV_BIAS = 0.20;       // >0 biases toward longer days
+const SOL_KEY = 'mc-sol';
 const FOG_DAY = new THREE.Color(0xc9977a);
-const FOG_NIGHT = new THREE.Color(0x1c110b);
+const FOG_NIGHT = new THREE.Color(0x241610);
 const _fogTmp = new THREE.Color();
 
 export function createEnvironment(scene) {
@@ -72,7 +77,7 @@ export function createEnvironment(scene) {
                 vec3 sky = mix(horizon, zenith, pow(max(h, 0.0), 0.55));
 
                 // Day/night from sun elevation; a floor keeps night navigable.
-                float dayF = 0.08 + 0.92 * smoothstep(-0.14, 0.18, uSunDir.y);
+                float dayF = 0.16 + 0.84 * smoothstep(-0.14, 0.18, uSunDir.y);
                 sky *= dayF;
 
                 // Sun disc + dusty halo (bluish-white, as seen from Mars).
@@ -101,16 +106,26 @@ export function createEnvironment(scene) {
 
     // Cycle phase chosen so the boot-time sun elevation continues the
     // original hand-placed morning vector (no visible pop at start).
-    let phase = Math.asin((SUN_DIR.y - ELEV_BIAS) / ELEV_AMP);
+    const phase0 = Math.asin((SUN_DIR.y - ELEV_BIAS) / ELEV_AMP);
+    let phase = phase0;
     const az0 = Math.atan2(SUN_DIR.z, SUN_DIR.x) - phase;
+    let cycling = localStorage.getItem(SOL_KEY) !== 'lock';
 
     function daylight() {
         return smoothstep(-0.05, 0.20, SUN_DIR.y);
     }
 
+    /** Menu toggle: ON = live sol cycle, LOCK = permanent boot-time morning. */
+    function toggleSol() {
+        cycling = !cycling;
+        if (!cycling) phase = phase0;
+        try { localStorage.setItem(SOL_KEY, cycling ? 'on' : 'lock'); } catch { /* private mode */ }
+        return cycling;
+    }
+
     /** Per frame: advance the sol cycle, keep the dome camera-centered. */
     function update(camera, dt = 0) {
-        phase += (dt / CYCLE_S) * Math.PI * 2;
+        if (cycling) phase += (dt / CYCLE_S) * Math.PI * 2;
         const elev = ELEV_BIAS + ELEV_AMP * Math.sin(phase);
         const az = az0 + phase;
         const cosE = Math.sqrt(Math.max(0, 1 - elev * elev));
@@ -118,7 +133,7 @@ export function createEnvironment(scene) {
 
         const day = daylight();
         sun.intensity = 1.4 * day;
-        hemi.intensity = 0.75 * (0.22 + 0.78 * day);
+        hemi.intensity = 0.75 * (0.35 + 0.65 * day);
 
         // FOG.color is shared by reference with the terrain shader and
         // scene.background; scene.fog copied it, so sync that one by hand.
@@ -131,7 +146,7 @@ export function createEnvironment(scene) {
         sun.target.updateMatrixWorld();
     }
 
-    return { update, daylight, sunDir: SUN_DIR };
+    return { update, daylight, toggleSol, get cycling() { return cycling; }, sunDir: SUN_DIR };
 }
 
 function smoothstep(a, b, x) {

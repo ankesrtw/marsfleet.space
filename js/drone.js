@@ -29,15 +29,34 @@ const TAU = 0.8;         // s, velocity time constant (accel feel)
 const TILT_MAX = 0.32;   // rad, max nose/bank angle
 const TURN_RATE = 2.0;   // rad/s
 
+// GEAR steps multiply the real base speed (G1 = real scale). Shared by
+// both drones via one localStorage key so the fleet shifts together.
+const GEARS = [
+    { label: 'G1', mult: 1, climb: 1, drain: 1 },
+    { label: 'G2', mult: 2, climb: 1.5, drain: 1.5 },
+    { label: 'G3', mult: 4, climb: 2, drain: 2.5 },
+];
+const GEAR_KEY = 'mc-gear-drone';
+
 export function createDrone(site, terrain, opts = {}) {
     const {
         modelName = 'drone',
-        maxSpeed = 10,      // Ingenuity's fastest recorded: 10 m/s
-        climbRate = 3,      // m/s vertical
+        maxSpeed = 10,      // Ingenuity's fastest recorded: 10 m/s (G1)
+        climbRate = 3,      // m/s vertical (G1)
         cruiseAlt = 18,     // toggleLanding() take-off target
         spawnDx = 0,
         spawnDz = 0,
     } = opts;
+
+    let gearIdx = Math.max(0, GEARS.findIndex((g) => g.label === localStorage.getItem(GEAR_KEY)));
+    if (localStorage.getItem(GEAR_KEY) == null) gearIdx = 1; // default G2
+    const speedCap = () => maxSpeed * GEARS[gearIdx].mult;
+
+    function cycleGear() {
+        gearIdx = (gearIdx + 1) % GEARS.length;
+        try { localStorage.setItem(GEAR_KEY, GEARS[gearIdx].label); } catch { /* private mode */ }
+        return GEARS[gearIdx].label;
+    }
 
     const mesh = buildDroneMesh();
     mesh.rotation.order = 'YXZ'; // yaw, then motion tilts
@@ -106,8 +125,8 @@ export function createDrone(site, terrain, opts = {}) {
         const fx = -Math.sin(heading), fz = -Math.cos(heading);
         const rx = Math.cos(heading), rz = -Math.sin(heading);
         targetVel.set(
-            (fx * forward + rx * strafe) * maxSpeed,
-            (fz * forward + rz * strafe) * maxSpeed
+            (fx * forward + rx * strafe) * speedCap(),
+            (fz * forward + rz * strafe) * speedCap()
         );
 
         // velocity chases target; the ERROR is the commanded acceleration
@@ -118,16 +137,20 @@ export function createDrone(site, terrain, opts = {}) {
         vel.x += errX * k;
         vel.y += errZ * k;
 
-        const errFwd = (errX * fx + errZ * fz) / maxSpeed;   // -1..1
-        const errRight = (errX * rx + errZ * rz) / maxSpeed;
+        const errFwd = (errX * fx + errZ * fz) / speedCap();   // -1..1
+        const errRight = (errX * rx + errZ * rz) / speedCap();
         const tk = Math.min(1, 10 * dt); // fast rotor response
-        pitchTilt += (THREE.MathUtils.clamp(errFwd, -1, 1) * TILT_MAX - pitchTilt) * tk;
+        // NOSE (-Z local) must DIP into forward acceleration: rotation.x
+        // positive drops the TAIL (+Z), so pitch takes the negated error —
+        // the +sign here had the drone cruising nose-up, which reads as
+        // "flying in reverse" from the chase cam.
+        pitchTilt += (THREE.MathUtils.clamp(-errFwd, -1, 1) * TILT_MAX - pitchTilt) * tk;
         rollTilt += (THREE.MathUtils.clamp(-errRight, -1, 1) * TILT_MAX - rollTilt) * tk;
 
         mesh.position.x += vel.x * dt;
         mesh.position.z += vel.y * dt;
 
-        alt = THREE.MathUtils.clamp(alt + climb * climbRate * dt, 0, MAX_ALT);
+        alt = THREE.MathUtils.clamp(alt + climb * climbRate * GEARS[gearIdx].climb * dt, 0, MAX_ALT);
         const groundY = terrain.sampleHeight(mesh.position.x, mesh.position.z);
         if (alt <= 0.05 && climb < 0) {
             // touchdown
@@ -144,13 +167,15 @@ export function createDrone(site, terrain, opts = {}) {
     }
 
     return {
-        mesh, update, toggleLanding, setPower,
+        mesh, update, toggleLanding, setPower, cycleGear,
         get position() { return mesh.position; },
         get heading() { return heading; },
         get landed() { return landed; },
         get landing() { return autoLand; },
         get alt() { return alt; },
-        get maxSpeed() { return maxSpeed; },
+        get maxSpeed() { return speedCap(); },
+        get gearLabel() { return GEARS[gearIdx].label; },
+        get drainScale() { return GEARS[gearIdx].drain; },
     };
 }
 

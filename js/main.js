@@ -103,8 +103,10 @@ async function startGame(site) {
         onCollect: () => tryCollect(),
         onToggleSfx: () => sound.toggle(),
         sfxEnabled: sound.enabled,
-        onCycleAssist: () => rover.cycleAssist(),
-        assist: rover.assist,
+        onCycleGear: () => units[activeIndex].unit.cycleGear?.() ?? null,
+        gear: rover.gearLabel,
+        onToggleSol: () => env.toggleSol(),
+        solOn: env.cycling,
         onToggleLanding: () => toggleLanding(),
     });
     const fog = createFog(site, hud.minimapEl);
@@ -133,6 +135,7 @@ async function startGame(site) {
         const active = units[activeIndex];
         hud.setActiveUnit(active.name);
         hud.setDronePanel(active.kind === 'fly');
+        hud.setGear(active.unit.gearLabel ?? null);
         touchZones.setMode(active.kind);
     }
 
@@ -201,7 +204,7 @@ async function startGame(site) {
             const activeLoad = u === active && !active.dead && inputMag > 0.02 ? inputMag : 0;
             const load = airborne ? Math.max(0.4, activeLoad) : activeLoad;
             u.charge = load > 0
-                ? Math.max(0, u.charge - u.drainRate * load * dt)
+                ? Math.max(0, u.charge - u.drainRate * load * (u.unit.drainScale ?? 1) * dt)
                 : Math.min(100, u.charge + solarNow * dt);
         }
 
@@ -306,6 +309,7 @@ function setupKeyboard() {
         if (e.code === 'Tab') document.dispatchEvent(new CustomEvent('mc-switch-unit'));
         if (e.code === 'KeyE') document.dispatchEvent(new CustomEvent('mc-collect'));
         if (e.code === 'KeyL') document.dispatchEvent(new CustomEvent('mc-toggle-land'));
+        if (e.code === 'KeyG') document.dispatchEvent(new CustomEvent('mc-cycle-gear'));
         if (e.code === 'KeyM' || e.code === 'Escape') document.dispatchEvent(new CustomEvent('mc-menu'));
     });
     return keys;
@@ -372,6 +376,7 @@ function readDroneInput(keys, joyLeft, joyRight) {
 document.addEventListener('mc-switch-unit', () => document.getElementById('mc-switch')?.click());
 document.addEventListener('mc-collect', () => document.getElementById('mc-collect')?.click());
 document.addEventListener('mc-toggle-land', () => document.getElementById('mc-land')?.click());
+document.addEventListener('mc-cycle-gear', () => document.getElementById('mc-gear')?.click());
 document.addEventListener('mc-menu', () => {
     const menu = document.getElementById('mc-menu');
     if (menu) menu.dataset.open = menu.dataset.open === 'true' ? 'false' : 'true';

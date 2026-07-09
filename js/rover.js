@@ -15,12 +15,18 @@ import { attachUnitModel } from './models.js';
 
 // Perseverance/Curiosity top out at ~4.2 cm/s on flat hard ground (~152
 // m/h). True realism makes the 6-9km sites unplayable (Rochette would be
-// a six-hour drive), so a DRIVE ASSIST time-compression multiplies it —
-// cycle x50/x10/x1 in the menu, persisted. Turn rate scales with assist
-// (real turn-in-place is a few deg/s) but is capped for control feel.
+// a six-hour drive), so GEARS time-compress it — REAL keeps the true
+// speed for purists, G1-G3 are drive gears (HUD button / G key).
+// Turn rate scales with the gear but is capped for control feel.
 const REAL_SPEED = 0.042;    // m/s — real rover top speed
 const REAL_TURN = 0.06;      // rad/s
-const ASSIST_STEPS = [50, 10, 1];
+const GEARS = [
+    { label: 'REAL', mult: 1, drain: 1 },
+    { label: 'G1', mult: 50, drain: 1 },
+    { label: 'G2', mult: 150, drain: 1.6 },
+    { label: 'G3', mult: 400, drain: 2.5 },
+];
+const GEAR_KEY = 'mc-gear-rover';
 const CLEARANCE = 0.6;       // meters, wheel-to-chassis (procedural mesh)
 const SLOPE_K = 3.0;         // speed falloff strength
 const MIN_SPEED_FACTOR = 0.15;
@@ -40,27 +46,27 @@ export function createRover(site, terrain, rocks) {
     let clearance = CLEARANCE;
     attachUnitModel(mesh, 'rover', () => { clearance = 0.12; });
 
-    let assist = Number(localStorage.getItem('mc-assist'));
-    if (!ASSIST_STEPS.includes(assist)) assist = ASSIST_STEPS[0];
+    let gearIdx = GEARS.findIndex((g) => g.label === localStorage.getItem(GEAR_KEY));
+    if (gearIdx < 0) gearIdx = 2; // default G2 (6.3 m/s)
 
     let heading = site.spawn.heading;
     let speed = 0;
 
-    function cycleAssist() {
-        assist = ASSIST_STEPS[(ASSIST_STEPS.indexOf(assist) + 1) % ASSIST_STEPS.length];
-        try { localStorage.setItem('mc-assist', String(assist)); } catch { /* private mode */ }
-        return assist;
+    function cycleGear() {
+        gearIdx = (gearIdx + 1) % GEARS.length;
+        try { localStorage.setItem(GEAR_KEY, GEARS[gearIdx].label); } catch { /* private mode */ }
+        return GEARS[gearIdx].label;
     }
 
     function update(dt, input) {
         // input: { throttle: -1..1, steer: -1..1 }
-        heading += input.steer * Math.min(1.2, REAL_TURN * assist) * dt;
+        heading += input.steer * Math.min(1.2, REAL_TURN * GEARS[gearIdx].mult) * dt;
 
         const normal = terrain.sampleNormal(mesh.position.x, mesh.position.z);
         const slopeMag = 1 - normal.y; // 0 = flat, up to ~1 = vertical
         const speedFactor = Math.max(MIN_SPEED_FACTOR, 1 - slopeMag * SLOPE_K);
 
-        speed = input.throttle * REAL_SPEED * assist * speedFactor;
+        speed = input.throttle * REAL_SPEED * GEARS[gearIdx].mult * speedFactor;
 
         const nx = mesh.position.x + Math.sin(heading) * speed * dt;
         const nz = mesh.position.z + Math.cos(heading) * speed * dt;
@@ -86,11 +92,12 @@ export function createRover(site, terrain, rocks) {
     }
 
     return {
-        mesh, update, cycleAssist,
+        mesh, update, cycleGear,
         get position() { return mesh.position; },
         get heading() { return heading; },
-        get assist() { return assist; },
-        get maxSpeed() { return REAL_SPEED * assist; },
+        get maxSpeed() { return REAL_SPEED * GEARS[gearIdx].mult; },
+        get gearLabel() { return GEARS[gearIdx].label; },
+        get drainScale() { return GEARS[gearIdx].drain; },
     };
 }
 

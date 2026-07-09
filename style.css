@@ -373,6 +373,27 @@ html, body {
     transform: translateX(-50%);
 }
 
+/* ---- GEAR button (rover + drones; hidden for the humanoid) ---- */
+
+.mars-hud__gear {
+    position: absolute;
+    right: 12px;
+    bottom: 215px;
+    z-index: 15;
+}
+
+.mars-hud__gear[data-visible="false"] {
+    display: none;
+}
+
+@media (max-width: 899px), (pointer: coarse) {
+    /* dock under the minimap, clear of telemetry (top-left) and sticks */
+    .mars-hud__gear {
+        bottom: auto;
+        top: max(222px, calc(env(safe-area-inset-top) + 212px));
+    }
+}
+
 /* ---- drone control board (visible only while a drone is active) ---- */
 
 .mars-hud__dronectl {
