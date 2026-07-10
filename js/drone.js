@@ -27,7 +27,7 @@ import * as THREE from 'three';
 import { attachUnitModel } from './models.js';
 import { createRotorRig, hubsFromSize } from './rotors.js';
 
-const MAX_ALT = 60;      // m AGL ceiling
+const MAX_ALT = 150;     // m AGL ceiling (HUD altitude slider spans 0..this)
 const TAU = 0.8;         // s, velocity time constant (accel feel)
 const TILT_MAX = 0.32;   // rad, max nose/bank angle
 const TURN_RATE = 2.0;   // rad/s
@@ -99,8 +99,12 @@ export function createDrone(site, terrain, opts = {}) {
     mesh.position.y = terrain.sampleHeight(mesh.position.x, mesh.position.z);
     mesh.rotation.y = heading;
 
+    // HUD altitude-slider autopilot target (m AGL); null = manual.
+    let altTarget = null;
+
     function toggleLanding() {
         if (!powered) return;
+        altTarget = null;
         if (landed) {
             landed = false;
             autoLand = false;
@@ -109,6 +113,23 @@ export function createDrone(site, terrain, opts = {}) {
             autoLand = true;
             autoTakeoffTo = null;
         }
+    }
+
+    /** HUD slider: fly to `t` m AGL (0..MAX_ALT). Dragging to the floor
+        lands; dragging up from LANDED takes off — one control covers the
+        whole vertical envelope. Manual climb input cancels it. */
+    function commandAlt(t) {
+        if (!powered) return;
+        t = THREE.MathUtils.clamp(t, 0, MAX_ALT);
+        autoTakeoffTo = null;
+        if (t <= 0.5) {
+            altTarget = null;
+            if (!landed) autoLand = true;
+            return;
+        }
+        autoLand = false;
+        altTarget = t;
+        if (landed) landed = false;
     }
 
     /** Battery hook: dead drones ignore sticks and auto-land. */
@@ -121,12 +142,23 @@ export function createDrone(site, terrain, opts = {}) {
         // input: { forward: -1..1, strafe: -1..1, turn: -1..1, climb: -1..1 }
         let { forward = 0, strafe = 0, turn = 0, climb = 0 } = powered ? input : {};
 
-        // autopilot overrides for take-off / landing sequences
+        // manual climb input takes the stick back from the slider target
+        if (Math.abs(climb) > 0.05) altTarget = null;
+
+        // autopilot overrides for take-off / landing / slider-alt sequences
         if (autoTakeoffTo != null) {
             climb = 1;
             if (alt >= autoTakeoffTo) autoTakeoffTo = null;
         } else if (autoLand) {
             climb = -1;
+        } else if (altTarget != null) {
+            // proportional approach, full rate until ~2m out then eased
+            const err = altTarget - alt;
+            if (Math.abs(err) < 0.15) {
+                altTarget = null;
+            } else {
+                climb = THREE.MathUtils.clamp(err / 2, -1, 1);
+            }
         }
 
         if (landed) {
@@ -204,12 +236,14 @@ export function createDrone(site, terrain, opts = {}) {
     }
 
     return {
-        mesh, update, toggleLanding, setPower, cycleGear, setSlung, canSling,
+        mesh, update, toggleLanding, setPower, cycleGear, setSlung, canSling, commandAlt,
         get position() { return mesh.position; },
         get heading() { return heading; },
         get landed() { return landed; },
         get landing() { return autoLand; },
         get alt() { return alt; },
+        get altTarget() { return altTarget; },
+        get ceiling() { return MAX_ALT; },
         get slung() { return slung; },
         get maxSpeed() { return speedCap(); },
         get gearLabel() { return GEARS[gearIdx].label; },

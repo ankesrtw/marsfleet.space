@@ -402,8 +402,11 @@ html, body {
     left: 50%;
     transform: translateX(-50%);
     display: none;
-    align-items: stretch;
+    /* center, NOT stretch — stretch ballooned the stat panel and LAND
+       button to the alt slider column's full height (mobile bug) */
+    align-items: center;
     gap: 10px;
+    max-width: calc(100vw - 16px);
     pointer-events: none;
     z-index: 15; /* above the touch zones so the LAND button stays tappable */
 }
@@ -434,6 +437,7 @@ html, body {
 
 .mars-dronectl__stat span {
     opacity: 0.75;
+    white-space: nowrap; /* "ALT 12.3 m" must not wrap in the compact mobile chip */
 }
 
 .mars-btn--land {
@@ -441,11 +445,99 @@ html, body {
     justify-content: center;
 }
 
-/* phones: lift the board clear of the joystick zones (must come after
-   the base rule above — same specificity, cascade order decides) */
+/* board fold toggle: mobile-only affordance (desktop has room) */
+.mars-dronectl__toggle {
+    display: none;
+}
+
+/* vertical altitude slider: bottom = land, top = ceiling */
+.mars-dronectl__alt {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 4px;
+    background: rgba(20, 12, 8, 0.75);
+    border: 1px solid #7a4f30;
+    border-radius: 6px;
+    padding: 8px 6px;
+    pointer-events: auto;
+    font-family: 'SF Mono', ui-monospace, Menlo, Consolas, monospace;
+    font-size: 0.58rem;
+    color: #f2ece3;
+    opacity: 0.9;
+}
+
+#mc-alt-slider {
+    writing-mode: vertical-lr;
+    direction: rtl;
+    width: 22px;
+    height: 92px;
+    accent-color: #e0b95e;
+    cursor: ns-resize;
+    touch-action: none;
+}
+
+/* phones: dock the board on the RIGHT rail below the GEAR button
+   (minimap -> GEAR -> drone controls) as a right-aligned column —
+   bottom-center put it exactly over the chase-cam-framed drone, and
+   compact everything — full-size it covered half a small portrait
+   screen and buried the sticks. (Must come after the base rule above —
+   same specificity, cascade order decides.) */
 @media (max-width: 899px), (pointer: coarse) {
     .mars-hud__dronectl {
-        bottom: calc(min(45vw, 260px) + 14px);
+        left: auto;
+        right: 12px;
+        bottom: auto;
+        top: max(270px, calc(env(safe-area-inset-top) + 260px));
+        transform: none;
+        flex-direction: column;
+        align-items: flex-end;
+        gap: 6px;
+    }
+
+    .mars-dronectl__alt {
+        padding: 5px 4px;
+        gap: 2px;
+        font-size: 0.5rem;
+    }
+
+    #mc-alt-slider {
+        height: 62px;
+        width: 18px;
+    }
+
+    .mars-dronectl__stat {
+        font-size: 0.6rem;
+        padding: 4px 8px;
+    }
+
+    .mars-btn--land {
+        min-width: 84px;
+    }
+
+    /* folded by default on phones (hud.js sets data-collapsed): the full
+       board sits exactly where the chase cam frames the drone. The chip
+       shows the live altitude and expands on tap. */
+    .mars-dronectl__toggle {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        pointer-events: auto;
+        background: rgba(20, 12, 8, 0.75);
+        border: 1px solid #7a4f30;
+        border-radius: 6px;
+        color: #e0b95e;
+        font-family: 'SF Mono', ui-monospace, Menlo, Consolas, monospace;
+        font-size: 0.66rem;
+        letter-spacing: 0.08em;
+        padding: 7px 10px;
+        min-height: 32px;
+    }
+
+    .mars-hud__dronectl[data-collapsed="true"] .mars-dronectl__alt,
+    .mars-hud__dronectl[data-collapsed="true"] .mars-dronectl__stat,
+    .mars-hud__dronectl[data-collapsed="true"] .mars-btn--land {
+        display: none;
     }
 }
 
@@ -475,6 +567,29 @@ html, body {
     margin: 0;
     padding: 0;
     font-size: 0.8rem;
+}
+
+/* phones: inventory shrinks to a counts-only chip lifted above the left
+   stick zone — at the bottom corner it sat right on the resting pad.
+   (Must come AFTER the base rules above — same specificity, cascade
+   order decides; the dronectl media block is too early in the file.) */
+@media (max-width: 899px), (pointer: coarse) {
+    .mars-hud__inventory {
+        left: 8px;
+        bottom: calc(min(45vw, 260px) + 10px);
+        padding: 5px 6px;
+        max-width: 84px;
+        opacity: 0.85;
+    }
+
+    .mars-hud__inventory ul {
+        display: none;
+    }
+
+    .mars-hud__inventory-title {
+        font-size: 0.62rem;
+        margin-bottom: 2px;
+    }
 }
 
 /* ---- Touch controls ---- */

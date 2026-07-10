@@ -18,7 +18,9 @@
    (left stick throttle/yaw, right stick pitch/roll).
    ============================================================ */
 
-const IDLE_OPACITY = '0.3';
+// resting pads at 0.3 were near-invisible over dark terrain on phones
+// ("where are the controls?") — 0.5 keeps them findable without shouting
+const IDLE_OPACITY = '0.5';
 
 export function createJoystick(zoneEl) {
     const nub = document.createElement('div');

@@ -20,7 +20,7 @@
 import { isTouchDevice } from './touch.js';
 import { SITES, M_PER_DEG, SOL_MS } from './sites.js';
 
-export function createHud(rootEl, { site, onSwitchUnit, onCollect, onToggleSfx, sfxEnabled = true, onCycleGear, gear = 'G2', onToggleSol, solOn = true, onToggleLanding }) {
+export function createHud(rootEl, { site, onSwitchUnit, onCollect, onToggleSfx, sfxEnabled = true, onCycleGear, gear = 'G2', onToggleSol, solOn = true, onToggleLanding, onCommandAlt }) {
     rootEl.innerHTML = `
         <div class="mars-hud">
             <div class="mars-hud__top">
@@ -50,7 +50,13 @@ export function createHud(rootEl, { site, onSwitchUnit, onCollect, onToggleSfx, 
                 <button class="mars-btn mars-btn--collect" id="mc-collect">COLLECT<span class="mars-btn__hint">[E]</span></button>
             </div>
             <button class="mars-btn mars-hud__gear" id="mc-gear" data-visible="true">GEAR ${gear}<span class="mars-btn__hint">[G]</span></button>
-            <div class="mars-hud__dronectl" id="mc-dronectl" data-visible="false">
+            <div class="mars-hud__dronectl" id="mc-dronectl" data-visible="false" data-collapsed="false">
+                <button class="mars-dronectl__toggle" id="mc-drone-collapse" aria-label="Toggle drone controls">▾</button>
+                <div class="mars-dronectl__alt">
+                    <span id="mc-alt-ceiling">150m</span>
+                    <input type="range" id="mc-alt-slider" min="0" max="150" step="1" value="0" aria-label="Commanded altitude (m AGL)">
+                    <span>0</span>
+                </div>
                 <div class="mars-dronectl__stat">
                     <b id="mc-drone-state">LANDED</b>
                     <span id="mc-drone-alt">ALT 0.0 m</span>
@@ -89,6 +95,7 @@ export function createHud(rootEl, { site, onSwitchUnit, onCollect, onToggleSfx, 
                     <ul class="mars-menu__controls">
                         <li>Rover / humanoid — WASD or left stick</li>
                         <li>Drone keys — W/S pitch · A/D yaw · Q/E strafe · R/F climb</li>
+                        <li>Drone altitude slider — drag to fly to a set height (top = 150m ceiling, bottom = land)</li>
                         <li>Drone touch (RC Mode 2) — left stick throttle+yaw, right stick pitch+roll</li>
                         <li>Take off / land — L or the drone panel button</li>
                         <li>Switch unit — TAB · Collect — E · Menu — M</li>
@@ -175,14 +182,48 @@ export function createHud(rootEl, { site, onSwitchUnit, onCollect, onToggleSfx, 
     const landBtn = rootEl.querySelector('#mc-land');
     landBtn.addEventListener('click', () => onToggleLanding?.());
 
+    // Altitude slider: dragging commands the drone's autopilot to that
+    // AGL (bottom = land, top = ceiling). While the pointer is down the
+    // telemetry loop must not fight the drag; when idle the knob tracks
+    // the live altitude instead.
+    const altSlider = rootEl.querySelector('#mc-alt-slider');
+    const altCeilingEl = rootEl.querySelector('#mc-alt-ceiling');
+    let altDragging = false;
+    altSlider.addEventListener('pointerdown', () => { altDragging = true; });
+    altSlider.addEventListener('pointerup', () => { altDragging = false; });
+    altSlider.addEventListener('pointercancel', () => { altDragging = false; });
+    altSlider.addEventListener('input', () => onCommandAlt?.(+altSlider.value));
+    // don't leave the slider focused — arrow keys would re-command it
+    altSlider.addEventListener('change', () => altSlider.blur());
+
+    // Mobile: the board sits bottom-center — exactly where the chase cam
+    // frames the drone — so it starts folded into a live-altitude chip and
+    // expands on tap. CSS only applies the fold inside the coarse/narrow
+    // media block, so desktop always renders the full board regardless of
+    // this attribute. Persisted like the telemetry collapse.
+    const droneToggle = rootEl.querySelector('#mc-drone-collapse');
+    let droneCollapsed = isTouchDevice() && localStorage.getItem('mc-dronectl') !== 'open';
+    dronectlEl.dataset.collapsed = String(droneCollapsed);
+    droneToggle.addEventListener('click', () => {
+        droneCollapsed = !droneCollapsed;
+        dronectlEl.dataset.collapsed = String(droneCollapsed);
+        try { localStorage.setItem('mc-dronectl', droneCollapsed ? 'closed' : 'open'); } catch { /* private mode */ }
+    });
+
     function setDronePanel(visible) {
         dronectlEl.dataset.visible = String(visible);
     }
 
-    function setDroneState({ landed, landing, alt }) {
+    function setDroneState({ landed, landing, alt, ceiling, altTarget }) {
         droneStateEl.textContent = landing ? 'LANDING…' : landed ? 'LANDED' : 'AIRBORNE';
         droneAltEl.textContent = `ALT ${alt.toFixed(1)} m`;
         landBtn.firstChild.textContent = landed ? 'TAKE OFF' : 'LAND';
+        droneToggle.textContent = droneCollapsed ? `▴ ${alt.toFixed(0)} m` : '▾';
+        if (ceiling && +altSlider.max !== ceiling) {
+            altSlider.max = ceiling;
+            altCeilingEl.textContent = `${ceiling}m`;
+        }
+        if (!altDragging) altSlider.value = altTarget ?? alt;
     }
 
     // Telemetry collapse (a mobile-facing control — the button is only

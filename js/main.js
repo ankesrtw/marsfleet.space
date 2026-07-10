@@ -38,6 +38,46 @@ function qualityFor(site) {
     };
 }
 
+/** Tiny gradient sphere (horizon dust -> zenith), same tones as the real
+    sky shader in environment.js, baked once through PMREMGenerator into a
+    reflection cubemap for scene.environment. Not the literal sky (no sun
+    disc / day-night) — just enough so metal panels pick up plausible
+    warm/dark reflections instead of reading flat-dark with no envMap. */
+function createMarsEnvMap(renderer) {
+    const pmrem = new THREE.PMREMGenerator(renderer);
+    pmrem.compileEquirectangularShader();
+
+    const geo = new THREE.SphereGeometry(1, 24, 16);
+    const mat = new THREE.ShaderMaterial({
+        side: THREE.BackSide,
+        fog: false,
+        vertexShader: /* glsl */ `
+            varying vec3 vDir;
+            void main() {
+                vDir = position;
+                gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+            }
+        `,
+        fragmentShader: /* glsl */ `
+            varying vec3 vDir;
+            void main() {
+                vec3 horizon = vec3(0.85, 0.62, 0.44);
+                vec3 zenith  = vec3(0.23, 0.15, 0.12);
+                float h = clamp(normalize(vDir).y, 0.0, 1.0);
+                gl_FragColor = vec4(mix(horizon, zenith, pow(h, 0.55)), 1.0);
+            }
+        `,
+    });
+    const tmpScene = new THREE.Scene();
+    tmpScene.add(new THREE.Mesh(geo, mat));
+
+    const rt = pmrem.fromScene(tmpScene, 0.04);
+    geo.dispose();
+    mat.dispose();
+    pmrem.dispose();
+    return rt.texture;
+}
+
 async function boot() {
     // Straight into the sim — no landing screen. Priority: ?site= deep
     // link, then last-played site, then Jezero. Switching sites lives in
@@ -56,6 +96,10 @@ async function startGame(site) {
     const renderer = new THREE.WebGLRenderer({ canvas, antialias: QUALITY.terrainSegments > 128 });
     renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
     renderer.setSize(window.innerWidth, window.innerHeight);
+    // ACES + tightened exposure so the units' new metalness reads as
+    // punchy specular highlights instead of a flat, blown-out sheen.
+    renderer.toneMapping = THREE.ACESFilmicToneMapping;
+    renderer.toneMappingExposure = 1.05;
 
     const scene = new THREE.Scene();
     scene.background = FOG.color; // only visible beyond the sky dome
@@ -65,6 +109,14 @@ async function startGame(site) {
 
     // Sky dome + sun disc + dust haze + unit lighting (see environment.js).
     const env = createEnvironment(scene);
+
+    // Cheap procedural reflection environment: MeshStandardMaterial's
+    // metalness (units.js brand finish) reads mostly from scene.environment,
+    // not direct light — with none set, metal panels just look flat-dark.
+    // A tiny Mars-toned gradient sphere fed through PMREMGenerator gives
+    // free ambient occlusion-ish grounding + warm/dusty reflections that
+    // match the sky, without a real HDRI asset or extra draw calls.
+    scene.environment = createMarsEnvMap(renderer);
 
     const terrain = await loadTerrain(site, QUALITY);
     scene.add(terrain.mesh);
@@ -131,6 +183,10 @@ async function startGame(site) {
         onToggleSol: () => env.toggleSol(),
         solOn: env.cycling,
         onToggleLanding: () => toggleLanding(),
+        onCommandAlt: (v) => {
+            const active = units[activeIndex];
+            if (active.kind === 'fly' && !active.dead) active.unit.commandAlt(v);
+        },
     });
     const fog = createFog(site, hud.minimapEl);
 
@@ -376,6 +432,8 @@ async function startGame(site) {
                     landed: active.unit.landed,
                     landing: active.unit.landing,
                     alt: active.unit.alt,
+                    ceiling: active.unit.ceiling,
+                    altTarget: active.unit.altTarget,
                 });
             }
             prevPos.copy(pos);
