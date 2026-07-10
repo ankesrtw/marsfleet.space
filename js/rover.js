@@ -12,6 +12,7 @@
 
 import * as THREE from 'three';
 import { attachUnitModel } from './models.js';
+import { createWheelRig, WHEELS_GLB, WHEELS_FALLBACK } from './wheels.js';
 
 // Perseverance/Curiosity top out at ~4.2 cm/s on flat hard ground (~152
 // m/h). True realism makes the 6-9km sites unplayable (Rochette would be
@@ -41,10 +42,22 @@ export function createRover(site, terrain, rocks) {
     mesh.position.set(site.spawn.x, 0, site.spawn.z);
     mesh.rotation.y = site.spawn.heading;
 
+    // Spinning-wheel overlay (wheels.js): the GLB's wheels are baked into
+    // one fused mesh, so visible spin/steer comes from overlay wheels laid
+    // over the measured baked-wheel hubs — attachUnitModel clears the
+    // group, so the rig re-adds itself after the swap (rotors.js idiom).
+    const wheelRig = createWheelRig();
+    wheelRig.layout(WHEELS_FALLBACK);
+    mesh.add(wheelRig.group);
+
     // GLB is normalized base-at-y=0, so it needs (almost) no clearance;
     // the procedural box chassis keeps the original 0.6.
     let clearance = CLEARANCE;
-    attachUnitModel(mesh, 'rover', () => { clearance = 0.12; });
+    attachUnitModel(mesh, 'rover', () => {
+        clearance = 0.12;
+        wheelRig.layout(WHEELS_GLB);
+        mesh.add(wheelRig.group);
+    });
 
     let gearIdx = GEARS.findIndex((g) => g.label === localStorage.getItem(GEAR_KEY));
     if (gearIdx < 0) gearIdx = 2; // default G2 (6.3 m/s)
@@ -62,7 +75,9 @@ export function createRover(site, terrain, rocks) {
         // input: { throttle: -1..1, steer: -1..1 }
         heading += input.steer * Math.min(1.2, REAL_TURN * GEARS[gearIdx].mult) * dt;
 
-        const normal = terrain.sampleNormal(mesh.position.x, mesh.position.z);
+        // Ground-contact samplers: real DEM + sub-DEM micro-relief, so the
+        // ride picks up regolith-scale bumps the orbital data can't hold.
+        const normal = terrain.sampleGroundNormal(mesh.position.x, mesh.position.z);
         const slopeMag = 1 - normal.y; // 0 = flat, up to ~1 = vertical
         const speedFactor = Math.max(MIN_SPEED_FACTOR, 1 - slopeMag * SLOPE_K);
 
@@ -79,7 +94,7 @@ export function createRover(site, terrain, rocks) {
             mesh.position.x = nx;
             mesh.position.z = nz;
         }
-        mesh.position.y = terrain.sampleHeight(mesh.position.x, mesh.position.z) + clearance;
+        mesh.position.y = terrain.sampleGroundHeight(mesh.position.x, mesh.position.z) + clearance;
 
         // Stay in quaternion space end-to-end: assigning mesh.rotation.y
         // here re-derived euler angles from the tilted quaternion, and that
@@ -89,6 +104,10 @@ export function createRover(site, terrain, rocks) {
         _yawQuat.setFromAxisAngle(_up, heading);
         _tiltQuat.multiply(_yawQuat);
         mesh.quaternion.slerp(_tiltQuat, 1 - Math.exp(-12 * dt));
+
+        // wheels roll from actual ground speed (signed — reverse spins
+        // backward) and steer with the input
+        wheelRig.update(dt, speed, input.steer);
     }
 
     return {
@@ -112,17 +131,8 @@ function buildRoverMesh() {
     chassis.position.y = 0.35;
     group.add(chassis);
 
-    const mastPositions = [
-        [-0.8, 1.1], [0.8, 1.1], [-0.8, -1.1], [0.8, -1.1],
-    ];
-    const wheelGeo = new THREE.CylinderGeometry(0.35, 0.35, 0.3, 12);
-    wheelGeo.rotateZ(Math.PI / 2);
-    const wheelMat = new THREE.MeshStandardMaterial({ color: 0x2a2a2a, roughness: 0.9 });
-    for (const [x, z] of mastPositions) {
-        const wheel = new THREE.Mesh(wheelGeo, wheelMat);
-        wheel.position.set(x, 0.1, z);
-        group.add(wheel);
-    }
+    // (no static wheels here — the spinning wheel rig from wheels.js is
+    // laid out on the same corners by createRover)
 
     const mast = new THREE.Mesh(
         new THREE.CylinderGeometry(0.05, 0.05, 1.2, 6),

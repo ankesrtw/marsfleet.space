@@ -60,7 +60,9 @@ export function createHumanoid(site, terrain, rocks) {
         // input: { throttle: -1..1, steer: -1..1 }
         heading += input.steer * TURN_RATE * dt;
 
-        const normal = terrain.sampleNormal(mesh.position.x, mesh.position.z);
+        // Ground-contact samplers (see terrain.js micro-relief): boots feel
+        // the sub-DEM regolith bumps, drone AGL and markers stay smooth-DEM.
+        const normal = terrain.sampleGroundNormal(mesh.position.x, mesh.position.z);
         const slopeMag = 1 - normal.y;
         const speedFactor = Math.max(MIN_SPEED_FACTOR, 1 - slopeMag * SLOPE_K);
         const speed = input.throttle * WALK_SPEED * speedFactor;
@@ -73,7 +75,7 @@ export function createHumanoid(site, terrain, rocks) {
             mesh.position.x = nx;
             mesh.position.z = nz;
         }
-        mesh.position.y = terrain.sampleHeight(mesh.position.x, mesh.position.z);
+        mesh.position.y = terrain.sampleGroundHeight(mesh.position.x, mesh.position.z);
 
         const moving = Math.abs(input.throttle) > 0.05;
         if (moving) stride += dt * 6;

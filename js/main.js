@@ -338,12 +338,18 @@ async function startGame(site) {
 
         // Telemetry at ~10Hz: speed from position delta (uniform across all
         // unit types), slope from the shared terrain normal, real lat/lon
-        // derived in hud.js from the world offset.
+        // derived in hud.js from the world offset. Ground units report the
+        // ground-contact slope (DEM + micro-relief — what the wheels/boots
+        // actually feel, IMU-style); flying units the smooth DEM slope of
+        // the terrain below. ELEV stays smooth-DEM in both cases so the
+        // areoid-relative readout never carries invented bumps.
         teleAccum += dt;
         if (teleAccum >= 0.1) {
             const pos = active.unit.position;
             const speed = pos.distanceTo(prevPos) / teleAccum;
-            const normal = terrain.sampleNormal(pos.x, pos.z);
+            const normal = active.kind === 'fly'
+                ? terrain.sampleNormal(pos.x, pos.z)
+                : terrain.sampleGroundNormal(pos.x, pos.z);
             const slopeDeg = Math.acos(Math.min(1, Math.max(0, normal.y))) * 180 / Math.PI;
             // steer angle to TGT relative to forward travel (-[sin h, cos h])
             let tgtRelDeg = null;

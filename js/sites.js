@@ -38,9 +38,12 @@ export const SITES = {
         // 6km x 6km crop centered at (77.415E, 18.455N): landing site ->
         // Séítah -> western delta front -> Neretva Vallis.
         worldSize: 6000,
-        // Mesh density per device class. Jezero's 20m CTX DEM is fully
-        // expressed at 256 (23m quads) — more would invent nothing.
-        segments: { desktop: 256, mobile: 128 },
+        // Mesh density per device class. Jezero's 20m CTX DEM has real
+        // detail down to ~6m/px (heightmap is 1024px over 6km) that 256
+        // segments (23m quads) was smoothing away; 384 (15.6m quads) pulls
+        // more of that real roughness into the rendered + sampled mesh
+        // without inventing anything past the DEM's native resolution.
+        segments: { desktop: 384, mobile: 128 },
         center: { lon: 77.415, lat: 18.455 },
         // Perseverance touchdown (UTC) — drives the live mission sol counter.
         landingUtc: '2021-02-18T20:55:00Z',
@@ -73,8 +76,13 @@ export const SITES = {
         // traverse: Bradbury Landing -> Yellowknife Bay -> Vera Rubin Ridge.
         worldSize: 9000,
         // 1m-source DEM (2048px heightmap = 4.4m/px): 512 segments
-        // (17.6m quads) actually uses it. 256 was Jezero-sized waste.
-        segments: { desktop: 512, mobile: 192 },
+        // (17.6m quads) left real roughness on the table (slope stats
+        // barely soften between native-res and 512-seg sampling). 640
+        // (14.1m quads) pulls more of that relief into the rendered +
+        // physics-sampled mesh. Measured on the weakest target GPU
+        // (Intel HSW GT1): 512→25.6ms, 640→28.4ms, 768→35.3ms per
+        // frame — 640 is the knee; 768 costs ~10ms for little gain.
+        segments: { desktop: 640, mobile: 192 },
         center: { lon: 137.40264, lat: -4.65629 },
         // Curiosity touchdown (UTC) — drives the live mission sol counter.
         landingUtc: '2012-08-06T05:17:00Z',

@@ -193,7 +193,77 @@ export async function loadTerrain(site, quality) {
         return n.normalize();
     }
 
-    return { mesh, sampleHeight, sampleNormal, worldSize: site.worldSize };
+    // ---- micro-relief: sub-DEM regolith texture, PHYSICS-ONLY ----
+    //
+    // Orbital DEMs bottom out at 1-20 m/px; real regolith has decimeter-
+    // scale ripples and clast bumps below that which no orbital source can
+    // ever contain. This deterministic bump field feeds ONLY the ground
+    // units' wheel/boot contact (rover/humanoid ride + tilt + HUD slope) —
+    // it is never rendered and never touches sampleHeight/sampleNormal,
+    // so drone AGL, camera ground-clamp, rock/marker placement, and the
+    // areoid-accurate ELEV readout all stay on the real DEM surface.
+    //
+    // Strictly additive (0..amp, never negative): units ride ON or ABOVE
+    // the rendered triangles, which keeps the no-sinking invariant the
+    // vertex-grid mirror above exists for.
+    //
+    // `micro` is exposed (and mutable) for live tuning via window.__mc.
+    const micro = {
+        amp: 0.18,   // m, max bump height
+        wl1: 2.6,    // m, ripple wavelength (primary octave, 70%)
+        wl2: 0.9,    // m, clast-scale detail (secondary octave, 30%)
+    };
+    const microSalt = [...site.id].reduce(
+        (s, ch) => (Math.imul(s, 31) + ch.charCodeAt(0)) | 0, 0x9e37);
+
+    function microRelief(worldX, worldZ) {
+        const n1 = valueNoise(worldX / micro.wl1, worldZ / micro.wl1, microSalt);
+        const n2 = valueNoise(worldX / micro.wl2, worldZ / micro.wl2, microSalt ^ 0x5bd1e995);
+        return (n1 * 0.7 + n2 * 0.3) * micro.amp;
+    }
+
+    function sampleGroundHeight(worldX, worldZ) {
+        return sampleHeight(worldX, worldZ) + microRelief(worldX, worldZ);
+    }
+
+    // Tighter default eps than sampleNormal: the whole point is catching
+    // meter-scale bumps a 2m probe would step over.
+    function sampleGroundNormal(worldX, worldZ, eps = 0.6) {
+        const hL = sampleGroundHeight(worldX - eps, worldZ);
+        const hR = sampleGroundHeight(worldX + eps, worldZ);
+        const hD = sampleGroundHeight(worldX, worldZ - eps);
+        const hU = sampleGroundHeight(worldX, worldZ + eps);
+        const n = new THREE.Vector3(hL - hR, 2 * eps, hD - hU);
+        return n.normalize();
+    }
+
+    return {
+        mesh, sampleHeight, sampleNormal,
+        sampleGroundHeight, sampleGroundNormal, micro,
+        worldSize: site.worldSize,
+    };
+}
+
+/** Deterministic 0..1 hash of an integer lattice point (rocks.js-style
+    imul mix) — same coords + salt always give the same value. */
+function hash2i(ix, iz, salt) {
+    let s = (Math.imul(ix, 0x27d4eb2f) ^ Math.imul(iz, 0x165667b1) ^ salt) | 0;
+    s = Math.imul(s ^ (s >>> 15), 1 | s);
+    s = (s + Math.imul(s ^ (s >>> 7), 61 | s)) ^ s;
+    return ((s ^ (s >>> 14)) >>> 0) / 4294967296;
+}
+
+/** Smoothstep-faded bilinear value noise, 0..1. The fade keeps the
+    derivative continuous at cell edges — a plain bilerp would make the
+    ground-contact normal (and the rover tilt driven by it) pop. */
+function valueNoise(x, z, salt) {
+    const ix = Math.floor(x), iz = Math.floor(z);
+    let tx = x - ix, tz = z - iz;
+    tx = tx * tx * (3 - 2 * tx);
+    tz = tz * tz * (3 - 2 * tz);
+    const a = hash2i(ix, iz, salt), b = hash2i(ix + 1, iz, salt);
+    const c = hash2i(ix, iz + 1, salt), d = hash2i(ix + 1, iz + 1, salt);
+    return a + (b - a) * tx + (c - a) * tz + (a - b - c + d) * tx * tz;
 }
 
 /** GL-exact LinearFilter lookup of the RG-packed 16-bit height (0..1),
