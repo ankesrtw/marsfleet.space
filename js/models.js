@@ -44,8 +44,12 @@ const MODELS = {
 // satisfy) — scaled to a target footprint (largest horizontal extent)
 // instead of a single travel-axis size. yaw is still exposed per-entry
 // since Tripo's source-image orientation is unpredictable per generation.
+// doubleSide: the container GLB has window/door openings and single-sided
+// walls — without it the interior shows the terrain through the shell.
+// 15m footprint = hangar scale: the rover (3.9m rendered hulk), both
+// drones and the humanoid all visually fit inside the dock.
 const STATIC_MODELS = {
-    station: { url: 'assets/models/station.glb', yaw: 0, footprint: 6 },
+    station: { url: 'assets/models/station.glb', yaw: 0, footprint: 15, doubleSide: true },
 };
 
 // SIGNAL brand accent (cyan-teal — distinct from the amber logo mark) and
@@ -74,11 +78,24 @@ function applyBrandFinish(model) {
     });
 }
 
+// Hide the procedural fallback briefly while the GLB loads — kills the
+// one-second "gray blocks" flash on boot. The fallback still appears if
+// the load runs long or fails, keeping the play-offline guarantee.
+const FALLBACK_DELAY_MS = 2500;
+
+function deferFallback(group) {
+    group.visible = false;
+    const timer = setTimeout(() => { group.visible = true; }, FALLBACK_DELAY_MS);
+    return () => { clearTimeout(timer); group.visible = true; };
+}
+
 export function attachUnitModel(group, name, onReady) {
     const cfg = MODELS[name];
     if (!cfg) return;
 
+    const reveal = deferFallback(group);
     loader.load(cfg.url, (gltf) => {
+        reveal();
         const model = gltf.scene;
         applyBrandFinish(model);
         model.rotation.y = cfg.yaw;
@@ -102,7 +119,7 @@ export function attachUnitModel(group, name, onReady) {
         // (x/z centered, y from 0) — rotor overlays derive hubs from it.
         onReady?.(model, box.getSize(new THREE.Vector3()));
     }, undefined, () => {
-        /* keep the procedural fallback — never block the game on assets */
+        reveal(); /* keep the procedural fallback — never block the game on assets */
     });
 }
 
@@ -114,9 +131,18 @@ export function attachStaticModel(group, name, onReady) {
     const cfg = STATIC_MODELS[name];
     if (!cfg) return;
 
+    const reveal = deferFallback(group);
     loader.load(cfg.url, (gltf) => {
+        reveal();
         const model = gltf.scene;
         applyBrandFinish(model);
+        if (cfg.doubleSide) {
+            model.traverse((o) => {
+                if (!o.isMesh || !o.material) return;
+                const mats = Array.isArray(o.material) ? o.material : [o.material];
+                for (const mat of mats) mat.side = THREE.DoubleSide;
+            });
+        }
         model.rotation.y = cfg.yaw;
         model.updateMatrixWorld(true);
 
@@ -137,6 +163,6 @@ export function attachStaticModel(group, name, onReady) {
         group.add(model);
         onReady?.(model, box.getSize(new THREE.Vector3()));
     }, undefined, () => {
-        /* keep the procedural fallback — never block the game on assets */
+        reveal(); /* keep the procedural fallback — never block the game on assets */
     });
 }

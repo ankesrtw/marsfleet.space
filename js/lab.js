@@ -6,9 +6,10 @@
    collect a sample -> a sealed cache container is left at the site
    (MSR-style depot caching) -> the LIFT drone slings it out and
    lowers it onto the lab pad. createLab builds the structure
-   (landing pad, hab dome, mast, beacon) on the flattest spot near
-   spawn; createSling owns the one container being carried — cable
-   line + pendulum lag so the load visibly swings and settles.
+   (landing pad, station dock GLB, mast, beacon) on the flattest
+   spot near spawn; createSling owns the one container being
+   carried — cable line + pendulum lag so the load visibly swings
+   and settles.
 
    Same idioms as the rest of the unit layer: terrain.sampleHeight/
    sampleNormal for grounding, no physics engine, additive beacon
@@ -21,15 +22,22 @@ import { attachStaticModel } from './models.js';
 const PAD_RADIUS = 5.5;
 const DELIVER_RADIUS = 7.5;   // horizontal "over the pad" test
 const CABLE_LEN = 4.2;        // m, drone belly to container top
+// Station dock center, west of the pad. The GLB scales to a 15m footprint
+// (models.js STATIC_MODELS), so its half-length is ~7.5m — offset keeps a
+// ~1m gap to the pad skirt.
+const STATION_OFFSET = PAD_RADIUS + 9;
+const STATION_RADIUS = 7.6;   // collision circle over the 15 x 7.5m box
 
 export function createLab(scene, site, terrain, rocks) {
-    // Flattest of 8 candidate spots ~30m around spawn (not on a boulder).
+    // Flattest of 8 candidate spots ~30m around spawn — clear of boulders
+    // at both the pad AND the station dock footprint west of it.
     let best = null;
     for (let i = 0; i < 8; i++) {
         const a = (i / 8) * Math.PI * 2;
         const x = site.spawn.x + Math.sin(a) * 30;
         const z = site.spawn.z + Math.cos(a) * 30;
         if (rocks?.collides(x, z, PAD_RADIUS)) continue;
+        if (rocks?.collides(x - STATION_OFFSET, z, STATION_RADIUS)) continue;
         const slope = 1 - terrain.sampleNormal(x, z).y;
         if (!best || slope < best.slope) best = { x, z, slope };
     }
@@ -53,26 +61,26 @@ export function createLab(scene, site, terrain, rocks) {
     ring.position.y = 0.37;
     group.add(ring);
 
-    // Station habitat: procedural placeholder (fallback-first, same idiom
-    // as unit GLBs in models.js) swapped for the real cargo-container GLB
+    // Station dock: procedural placeholder (fallback-first, same idiom as
+    // unit GLBs in models.js) swapped for the real cargo-container GLB
     // once it loads; any load failure keeps this placeholder forever.
-    const domeMat = new THREE.MeshStandardMaterial({ color: 0xd9d4c8, roughness: 0.6, metalness: 0.15 });
+    // Placeholder is a container-scale box so the hardcoded collision
+    // footprint below stays honest either way.
+    const shellMat = new THREE.MeshStandardMaterial({ color: 0xd9d4c8, roughness: 0.6, metalness: 0.15 });
     const stationGroup = new THREE.Group();
-    stationGroup.position.set(-(PAD_RADIUS + 4.5), 0, 0);
-    const dome = new THREE.Mesh(new THREE.SphereGeometry(3.0, 18, 12, 0, Math.PI * 2, 0, Math.PI / 2), domeMat);
-    dome.position.y = 0.1;
-    stationGroup.add(dome);
-    const airlock = new THREE.Mesh(new THREE.BoxGeometry(2.2, 1.6, 1.4), domeMat);
-    airlock.position.set(2.9, 0.85, 0);
-    stationGroup.add(airlock);
+    stationGroup.position.set(-STATION_OFFSET, 0, 0);
+    const shell = new THREE.Mesh(new THREE.BoxGeometry(14, 6.5, 7), shellMat);
+    shell.position.y = 3.25;
+    stationGroup.add(shell);
     group.add(stationGroup);
     attachStaticModel(stationGroup, 'station');
 
+    // Comms mast beside the dock (clear of the container's z half-width).
     const mast = new THREE.Mesh(
         new THREE.CylinderGeometry(0.05, 0.08, 6, 6),
         new THREE.MeshStandardMaterial({ color: 0x777777 })
     );
-    mast.position.set(-(PAD_RADIUS + 4.5), 5.6, 0);
+    mast.position.set(-(PAD_RADIUS + 4.5), 5.6, 6.5);
     group.add(mast);
 
     // beacon column (additive, like waypoint.js) — lab is findable from afar
@@ -121,15 +129,20 @@ export function createLab(scene, site, terrain, rocks) {
     }
 
     // Solid-structure footprints for the collision registry (colliders.js):
-    // dome, airlock box, comms mast. World x/z + radius + height above
-    // ground. The pad (0.35m) stays drivable; the beacon is just light.
+    // station dock, comms mast. World x/z + radius + height above ground.
+    // The pad (0.35m) stays drivable; the beacon is just light. Station
+    // height matches the GLB's 15m-footprint scale (~8.2m tall).
     const obstacles = [
-        { x: padPos.x - (PAD_RADIUS + 4.5), z: padPos.z, r: 3.2, h: 3.1 },  // hab dome
-        { x: padPos.x - (PAD_RADIUS + 1.6), z: padPos.z, r: 1.5, h: 1.7 },  // airlock
-        { x: padPos.x - (PAD_RADIUS + 4.5), z: padPos.z, r: 0.4, h: 8.6 },  // mast (above dome)
+        { x: padPos.x - STATION_OFFSET, z: padPos.z, r: STATION_RADIUS, h: 8.5 },   // station dock
+        { x: padPos.x - (PAD_RADIUS + 4.5), z: padPos.z + 6.5, r: 0.4, h: 8.6 },    // comms mast
     ];
 
-    return { group, padPos, isOverPad, deliver, delivered, update, obstacles };
+    // stationPos/stationGroup: the dock's resting world position + node —
+    // the landing intro (intro.js) hides the real dock and cargo-drops a
+    // copy onto exactly this spot, then hands off seamlessly.
+    const stationPos = new THREE.Vector3(padPos.x - STATION_OFFSET, padPos.y, padPos.z);
+
+    return { group, padPos, isOverPad, deliver, delivered, update, obstacles, stationPos, stationGroup };
 }
 
 export function createSling(scene, terrain) {

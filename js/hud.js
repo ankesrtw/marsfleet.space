@@ -20,7 +20,7 @@
 import { isTouchDevice } from './touch.js';
 import { SITES, M_PER_DEG, SOL_MS } from './sites.js';
 
-export function createHud(rootEl, { site, onSwitchUnit, onCollect, onToggleSfx, sfxEnabled = true, onCycleGear, gear = 'G2', onToggleSol, solOn = true, onToggleLanding, onCommandAlt, onReset, onSkipIntro, onSkipTutorial }) {
+export function createHud(rootEl, { site, onSwitchUnit, onCollect, onToggleSfx, sfxEnabled = true, onCycleGear, gear = 'G2', onToggleSol, solOn = true, onToggleLanding, onCommandAlt, onReset, onSkipIntro, onSkipTutorial, onReplayIntro, onReplayTutorial }) {
     rootEl.innerHTML = `
         <div class="mars-hud">
             <div class="mars-hud__top">
@@ -76,6 +76,19 @@ export function createHud(rootEl, { site, onSwitchUnit, onCollect, onToggleSfx, 
                 <ul id="mc-inv-list"></ul>
             </div>
         </div>
+        <div class="mars-menu" id="mc-tutorial-overview" data-open="false">
+            <div class="mars-menu__panel">
+                <h2>FIRST MISSION — TUTORIAL</h2>
+                <div class="mars-menu__section">
+                    <h3>MISSION STEPS</h3>
+                    <ol class="mars-tutorial__steps" id="mc-tutorial-steps"></ol>
+                    <p class="mars-menu__note">One step shows at a time in the banner at the bottom of the
+                    screen — complete it and the next appears. Replay anytime from MENU → ▶ TUTORIAL.</p>
+                </div>
+                <button class="mars-btn mars-btn--resume" id="mc-tutorial-start">START MISSION</button>
+                <button class="mars-btn" id="mc-tutorial-skip-all">SKIP TUTORIAL</button>
+            </div>
+        </div>
         <div class="mars-menu" id="mc-menu" data-open="false">
             <div class="mars-menu__panel">
                 <h2>MARS COLONY</h2>
@@ -87,6 +100,8 @@ export function createHud(rootEl, { site, onSwitchUnit, onCollect, onToggleSfx, 
                     <h3>SIM</h3>
                     <button class="mars-btn" id="mc-sol">SOL CYCLE ${solOn ? 'ON' : 'LOCKED (DAY)'}</button>
                     <button class="mars-btn mars-btn--reset" id="mc-reset">RESET MISSION</button>
+                    <button class="mars-btn" id="mc-replay-intro">▶ LANDING INTRO</button>
+                    <button class="mars-btn" id="mc-replay-tutorial">▶ TUTORIAL</button>
                     <p class="mars-menu__note">GEAR (HUD button or G) time-compresses speed per unit:
                     rover REAL = the true 4.2 cm/s, G1 ×50, G2 ×150, G3 ×400; drones G1 = real scale
                     (10 / 6 m/s), G2 ×2, G3 ×4. SOL CYCLE runs a 40-min day/night — lock it for
@@ -239,6 +254,36 @@ export function createHud(rootEl, { site, onSwitchUnit, onCollect, onToggleSfx, 
     function setIntroActive(active) {
         skipIntroBtn.dataset.visible = String(!!active);
     }
+
+    // Tutorial overview card — all steps up front; START dismisses it and
+    // the per-step banner takes over. SKIP TUTORIAL ends the whole chain.
+    const tutorialOverviewEl = rootEl.querySelector('#mc-tutorial-overview');
+    const tutorialStepsEl = rootEl.querySelector('#mc-tutorial-steps');
+    rootEl.querySelector('#mc-tutorial-start').addEventListener('click', () => setTutorialOverview(null));
+    rootEl.querySelector('#mc-tutorial-skip-all').addEventListener('click', () => {
+        setTutorialOverview(null);
+        onSkipTutorial?.();
+    });
+    function setTutorialOverview(steps) {
+        tutorialOverviewEl.dataset.open = String(!!steps);
+        if (!steps) return;
+        tutorialStepsEl.replaceChildren(...steps.map((text) => {
+            const li = document.createElement('li');
+            li.textContent = text;
+            return li;
+        }));
+    }
+
+    // Menu replays — watch the landing drop / rerun the tutorial anytime,
+    // no mission reset needed (first-visit flags stay untouched).
+    rootEl.querySelector('#mc-replay-intro').addEventListener('click', () => {
+        setMenuOpen(false);
+        onReplayIntro?.();
+    });
+    rootEl.querySelector('#mc-replay-tutorial').addEventListener('click', () => {
+        setMenuOpen(false);
+        onReplayTutorial?.();
+    });
 
     /** Gear readout follows the active unit; null hides (humanoid). */
     function setGear(label) {
@@ -448,7 +493,7 @@ export function createHud(rootEl, { site, onSwitchUnit, onCollect, onToggleSfx, 
 
     return {
         minimapEl, setActiveUnit, setPrompt, setInventory, setLab,
-        setNode, setArchive, setBoundary, setObjective, setIntroActive,
+        setNode, setArchive, setBoundary, setObjective, setIntroActive, setTutorialOverview,
         setTelemetry, setMenuOpen, isMenuOpen,
         setDronePanel, setDroneState, setGear,
     };

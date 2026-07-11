@@ -459,6 +459,27 @@ html, body {
     }
 }
 
+/* ---- tutorial overview card (all steps up front, START to begin) ---- */
+
+.mars-tutorial__steps {
+    margin: 0 0 10px;
+    padding-left: 1.4em;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    color: #a6f2e8;
+    font-size: 0.82rem;
+    letter-spacing: 0.06em;
+}
+
+.mars-tutorial__steps li::marker {
+    color: #59d8c9;
+}
+
+#mc-tutorial-overview .mars-btn {
+    margin-right: 8px;
+}
+
 /* ---- SKIP INTRO — visible only during the landing-drop cinematic ---- */
 
 .mars-hud__skip-intro {

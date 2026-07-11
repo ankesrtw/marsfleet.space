@@ -228,22 +228,28 @@ async function startGame(site) {
         onReset: () => window.location.reload(),
         onSkipIntro: () => intro?.skip(),
         onSkipTutorial: () => tutorial?.skip(),
+        onReplayIntro: () => startIntro(),
+        onReplayTutorial: () => startTutorial(),
     });
     const fog = createFog(site, hud.minimapEl, terrain);
 
     hud.setLab(0, site.samples.length);
     hud.setArchive(analysis.archive); // persisted results from past sessions
 
-    // Guided tutorial (first-mission onboarding, tutorial.js): only for
-    // players who haven't finished/skipped it before. Same persistence
-    // convention as the intro — NOT cleared by RESET MISSION.
+    // Guided tutorial (first-mission onboarding, tutorial.js): auto-starts
+    // for players who haven't finished/skipped it before, and re-runnable
+    // anytime from the menu (▶ TUTORIAL). Same persistence convention as
+    // the intro — NOT cleared by RESET MISSION.
     let tutorial = null;
+    let tutorialOverviewShown = false; // all-steps card, shown once per (re)start
+    function startTutorial() {
+        tutorial = createTutorial({
+            onComplete: () => { try { localStorage.setItem(LS_TUTORIAL_KEY, '1'); } catch { /* private mode */ } },
+        });
+        tutorialOverviewShown = false;
+    }
     try {
-        if (localStorage.getItem(LS_TUTORIAL_KEY) !== '1') {
-            tutorial = createTutorial({
-                onComplete: () => { try { localStorage.setItem(LS_TUTORIAL_KEY, '1'); } catch { /* private mode */ } },
-            });
-        }
+        if (localStorage.getItem(LS_TUTORIAL_KEY) !== '1') startTutorial();
     } catch { /* private mode — treat as already-seen rather than nag every load */ }
 
     const touchZones = setupTouchControls();
@@ -265,31 +271,36 @@ async function startGame(site) {
     // zoom, double-click to recenter); snapped to spawn.
     const camRig = createCameraRig(camera, canvas, terrain);
 
-    // First-visit landing-drop cinematic (intro.js): a scripted descent of
-    // a landing frame down to exactly the lift drone's resting spawn spot,
-    // camera chasing it via the SAME camRig (any target + snap bool, no
-    // second camera code path). Repeat visits and site switches keep the
-    // existing "straight into the sim" fast path untouched.
+    // Landing-drop cinematic (intro.js): the base-station container itself
+    // cargo-drops onto its real resting spot beside the pad (the real dock
+    // is hidden while it plays, so the drop IS the base arriving), camera
+    // chasing it via the SAME camRig (any target + snap bool, no second
+    // camera code path). Auto-plays first visit only; re-runnable anytime
+    // from the menu (▶ LANDING INTRO). Repeat visits and site switches
+    // keep the existing "straight into the sim" fast path untouched.
     let intro = null;
-    try {
-        if (localStorage.getItem(LS_INTRO_KEY) !== '1') {
-            intro = createLandingIntro(scene, terrain, site);
-            localStorage.setItem(LS_INTRO_KEY, '1'); // set on START, not finish
-        }
-    } catch { /* private mode — skip the intro rather than replay every load */ }
-    if (intro) canvas.addEventListener('pointerdown', () => intro?.skip(), { once: true });
-
-    if (intro) {
+    function startIntro() {
+        if (intro?.active) return;
+        intro?.dispose();
+        intro = createLandingIntro(scene, site, lab.stationPos);
+        try { localStorage.setItem(LS_INTRO_KEY, '1'); } catch { /* private mode */ }
+        // Escape hatch on ANY input — click/tap or any key (there was no
+        // keyboard way out, which read as a hang on slow machines).
+        canvas.addEventListener('pointerdown', () => intro?.skip(), { once: true });
+        window.addEventListener('keydown', () => intro?.skip(), { once: true });
+        camRig.setDistance(70); // wide cinematic framing for the 15m container
         const first = intro.update(0);
         camRig.update(first.pos, first.heading, 'fly', true);
-    } else {
-        camRig.update(rover.position, rover.heading, 'ground', true);
     }
+    try {
+        if (localStorage.getItem(LS_INTRO_KEY) !== '1') startIntro();
+    } catch { /* private mode — skip the intro rather than replay every load */ }
+    if (!intro) camRig.update(rover.position, rover.heading, 'ground', true);
 
     // Debug/E2E handle (also used by the sampleHeight ground-truth check;
     // renderer/scene/camera exposed so tests on software-GL boxes can pause
     // the loop and capture canvas pixels via a same-task render+toDataURL).
-    window.__mc = { site, terrain, rover, drone: recon, recon, lift, humanoid, samples, renderer, scene, camera, camRig, units, env, effects, waypoint, sound, rocks, lab, sling, analysis, fog, colliders, intro, tutorial };
+    window.__mc = { site, terrain, rover, drone: recon, recon, lift, humanoid, samples, renderer, scene, camera, camRig, units, env, effects, waypoint, sound, rocks, lab, sling, analysis, fog, colliders, get intro() { return intro; }, get tutorial() { return tutorial; } };
 
     function applyUnitMode() {
         const active = units[activeIndex];
@@ -381,18 +392,24 @@ async function startGame(site) {
         if (intro) {
             if (intro.active) {
                 hud.setIntroActive(true);
+                // Re-hidden every frame (not once) so the station GLB's own
+                // async fallback-reveal in models.js can't win the race and
+                // show the real dock mid-drop.
+                lab.stationGroup.visible = false;
                 const { pos, heading } = intro.update(dt);
                 camRig.update(pos, heading, 'fly');
                 env.update(camera, dt);
                 renderer.render(scene, camera);
-                if (!intro.active) { intro.dispose(); hud.setIntroActive(false); intro = null; }
+                if (!intro.active) { intro.dispose(); lab.stationGroup.visible = true; hud.setIntroActive(false); camRig.setDistance(12); intro = null; }
                 return;
             }
             // Finished/skipped on a prior frame via the HUD button/canvas
             // tap (not this loop's own update()) — clean up once so the
             // ghost mesh/banner don't linger.
             intro.dispose();
+            lab.stationGroup.visible = true;
             hud.setIntroActive(false);
+            camRig.setDistance(12);
             intro = null;
         }
 
@@ -497,8 +514,16 @@ async function startGame(site) {
         // Tutorial banner + its one non-action-callback gate (opening the
         // menu to read the SCIENCE ARCHIVE has no discrete main.js call
         // site to hook, unlike the other 6 steps — checked once per frame).
+        // All-steps overview card, once per tutorial (re)start — deferred to
+        // the first NON-intro frame so it never fights the landing drop.
+        if (tutorial?.active && !tutorialOverviewShown) {
+            tutorialOverviewShown = true;
+            hud.setTutorialOverview(tutorial.steps);
+        }
         if (tutorial?.current()?.id === 'archive' && hud.isMenuOpen()) tutorial.advance('archive');
-        hud.setObjective(tutorial?.active ? tutorial.current()?.text : null);
+        hud.setObjective(tutorial?.active
+            ? `${tutorial.step}/${tutorial.total} · ${tutorial.current().text}`
+            : null);
 
         if (active.kind === 'ground') {
             const nearest = samples.nearestUncollected(active.unit.position);

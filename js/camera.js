@@ -104,8 +104,15 @@ export function createCameraRig(camera, canvas, terrain) {
         camera.lookAt(target.x, target.y + 1.5, target.z);
     }
 
+    /** Programmatic zoom (clamped) — the landing intro pulls the camera
+        back to frame the 15m station container, then restores. */
+    function setDistance(d) {
+        dist = clamp(d, MIN_DIST, MAX_DIST);
+    }
+
     return {
         update,
+        setDistance,
         // for E2E assertions
         get state() { return { userYaw, pitch, dist }; },
     };

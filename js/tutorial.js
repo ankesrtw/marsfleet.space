@@ -51,5 +51,11 @@ export function createTutorial({ onComplete } = {}) {
         advance,
         skip,
         get active() { return active; },
+        // 1-based progress for the HUD banner ("3/7 · …") — makes the
+        // one-instruction-at-a-time display read as a chain, not a hint.
+        get step() { return stepIdx + 1; },
+        get total() { return STEPS.length; },
+        // All step texts, for the up-front overview card (hud.js).
+        get steps() { return STEPS.map((s) => s.text); },
     };
 }
