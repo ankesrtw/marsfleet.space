@@ -16,6 +16,7 @@
    ============================================================ */
 
 import * as THREE from 'three';
+import { attachStaticModel } from './models.js';
 
 const PAD_RADIUS = 5.5;
 const DELIVER_RADIUS = 7.5;   // horizontal "over the pad" test
@@ -52,14 +53,20 @@ export function createLab(scene, site, terrain, rocks) {
     ring.position.y = 0.37;
     group.add(ring);
 
-    // hab dome + airlock box, offset so the pad stays clear for the drone
+    // Station habitat: procedural placeholder (fallback-first, same idiom
+    // as unit GLBs in models.js) swapped for the real cargo-container GLB
+    // once it loads; any load failure keeps this placeholder forever.
     const domeMat = new THREE.MeshStandardMaterial({ color: 0xd9d4c8, roughness: 0.6, metalness: 0.15 });
+    const stationGroup = new THREE.Group();
+    stationGroup.position.set(-(PAD_RADIUS + 4.5), 0, 0);
     const dome = new THREE.Mesh(new THREE.SphereGeometry(3.0, 18, 12, 0, Math.PI * 2, 0, Math.PI / 2), domeMat);
-    dome.position.set(-(PAD_RADIUS + 4.5), 0.1, 0);
-    group.add(dome);
+    dome.position.y = 0.1;
+    stationGroup.add(dome);
     const airlock = new THREE.Mesh(new THREE.BoxGeometry(2.2, 1.6, 1.4), domeMat);
-    airlock.position.set(-(PAD_RADIUS + 1.6), 0.85, 0);
-    group.add(airlock);
+    airlock.position.set(2.9, 0.85, 0);
+    stationGroup.add(airlock);
+    group.add(stationGroup);
+    attachStaticModel(stationGroup, 'station');
 
     const mast = new THREE.Mesh(
         new THREE.CylinderGeometry(0.05, 0.08, 6, 6),

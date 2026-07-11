@@ -21,6 +21,8 @@ import { createSound } from './sound.js';
 import { createLab, createSling } from './lab.js';
 import { createAnalysis } from './analysis.js';
 import { createColliders } from './colliders.js';
+import { createLandingIntro } from './intro.js';
+import { createTutorial } from './tutorial.js';
 
 // Lift-drone logistics interaction envelope (see lab.js):
 const SLING_ALT = 8;      // m AGL — must hover this low to hook a container
@@ -28,6 +30,13 @@ const SLING_RADIUS = 7;   // m horizontal to the container
 const DELIVER_ALT = 16;   // m AGL over the pad — ABOVE cruiseAlt (12), so
                           // arriving at cruise height delivers, no hunt-the-
                           // altitude (the 4.2m cable sells the lowering)
+
+// First-visit-only cinematic gates (see intro.js / tutorial.js). Set the
+// moment each sequence STARTS, not when it finishes, so a refresh mid-
+// sequence or a skip doesn't re-trigger it. Deliberately NOT cleared by
+// RESET MISSION — same spirit as `mc-results` surviving resets.
+const LS_INTRO_KEY = 'mc-intro-seen';
+const LS_TUTORIAL_KEY = 'mc-tutorial-done';
 
 // Per-site mesh density (sites.js `segments`) by device class — Gale's 1m
 // DEM earns 512 desktop quads, Jezero's 20m DEM doesn't. Fallback for
@@ -167,6 +176,7 @@ async function startGame(site) {
             hud.setInventory(samples.inventory, deliveredIds, analysis.analyzedIds);
             hud.setArchive(analysis.archive);
             sound.analysisDone();
+            tutorial?.advance('analyze');
         },
     });
 
@@ -216,11 +226,25 @@ async function startGame(site) {
         // lab, fog) lives in-memory, so a reload restores the pristine site.
         // Persistent things survive on purpose: SCIENCE ARCHIVE, gear prefs.
         onReset: () => window.location.reload(),
+        onSkipIntro: () => intro?.skip(),
+        onSkipTutorial: () => tutorial?.skip(),
     });
     const fog = createFog(site, hud.minimapEl, terrain);
 
     hud.setLab(0, site.samples.length);
     hud.setArchive(analysis.archive); // persisted results from past sessions
+
+    // Guided tutorial (first-mission onboarding, tutorial.js): only for
+    // players who haven't finished/skipped it before. Same persistence
+    // convention as the intro — NOT cleared by RESET MISSION.
+    let tutorial = null;
+    try {
+        if (localStorage.getItem(LS_TUTORIAL_KEY) !== '1') {
+            tutorial = createTutorial({
+                onComplete: () => { try { localStorage.setItem(LS_TUTORIAL_KEY, '1'); } catch { /* private mode */ } },
+            });
+        }
+    } catch { /* private mode — treat as already-seen rather than nag every load */ }
 
     const touchZones = setupTouchControls();
     const keys = setupKeyboard();
@@ -240,12 +264,32 @@ async function startGame(site) {
     // Orbit chase-cam (mouse drag / touch drag to orbit, wheel / pinch to
     // zoom, double-click to recenter); snapped to spawn.
     const camRig = createCameraRig(camera, canvas, terrain);
-    camRig.update(rover.position, rover.heading, 'ground', true);
+
+    // First-visit landing-drop cinematic (intro.js): a scripted descent of
+    // a landing frame down to exactly the lift drone's resting spawn spot,
+    // camera chasing it via the SAME camRig (any target + snap bool, no
+    // second camera code path). Repeat visits and site switches keep the
+    // existing "straight into the sim" fast path untouched.
+    let intro = null;
+    try {
+        if (localStorage.getItem(LS_INTRO_KEY) !== '1') {
+            intro = createLandingIntro(scene, terrain, site);
+            localStorage.setItem(LS_INTRO_KEY, '1'); // set on START, not finish
+        }
+    } catch { /* private mode — skip the intro rather than replay every load */ }
+    if (intro) canvas.addEventListener('pointerdown', () => intro?.skip(), { once: true });
+
+    if (intro) {
+        const first = intro.update(0);
+        camRig.update(first.pos, first.heading, 'fly', true);
+    } else {
+        camRig.update(rover.position, rover.heading, 'ground', true);
+    }
 
     // Debug/E2E handle (also used by the sampleHeight ground-truth check;
     // renderer/scene/camera exposed so tests on software-GL boxes can pause
     // the loop and capture canvas pixels via a same-task render+toDataURL).
-    window.__mc = { site, terrain, rover, drone: recon, recon, lift, humanoid, samples, renderer, scene, camera, camRig, units, env, effects, waypoint, sound, rocks, lab, sling, analysis, fog, colliders };
+    window.__mc = { site, terrain, rover, drone: recon, recon, lift, humanoid, samples, renderer, scene, camera, camRig, units, env, effects, waypoint, sound, rocks, lab, sling, analysis, fog, colliders, intro, tutorial };
 
     function applyUnitMode() {
         const active = units[activeIndex];
@@ -259,6 +303,7 @@ async function startGame(site) {
         activeIndex = (activeIndex + 1) % units.length;
         applyUnitMode();
         sound.switchUnit();
+        if (units[activeIndex].unit === lift) tutorial?.advance('switch');
     }
 
     function toggleLanding() {
@@ -276,6 +321,7 @@ async function startGame(site) {
                 samples.collect(sample);
                 hud.setInventory(samples.inventory, deliveredIds, analysis.analyzedIds);
                 sound.collect();
+                tutorial?.advance('collect');
             }
             return;
         }
@@ -292,6 +338,7 @@ async function startGame(site) {
                 hud.setLab(lab.delivered.length, site.samples.length);
                 hud.setInventory(samples.inventory, deliveredIds, analysis.analyzedIds);
                 sound.deliver();
+                tutorial?.advance('deliver');
             } else {
                 // field release: set the container back down where it hangs
                 const c = sling.detach();
@@ -309,6 +356,7 @@ async function startGame(site) {
                 sling.attach(c);
                 unit.setSlung(true);
                 sound.sling();
+                tutorial?.advance('sling');
             }
         }
     }
@@ -325,6 +373,29 @@ async function startGame(site) {
     renderer.setAnimationLoop(() => {
         timer.update();
         const dt = Math.min(timer.getDelta(), 0.1);
+
+        // Landing-drop cinematic: while active, this is the ENTIRE frame —
+        // no unit sim, no input, just the descent + camera chase. Player
+        // input (click/tap) skips early via hud's SKIP INTRO affordance
+        // (onSkipIntro above) or the canvas listener below.
+        if (intro) {
+            if (intro.active) {
+                hud.setIntroActive(true);
+                const { pos, heading } = intro.update(dt);
+                camRig.update(pos, heading, 'fly');
+                env.update(camera, dt);
+                renderer.render(scene, camera);
+                if (!intro.active) { intro.dispose(); hud.setIntroActive(false); intro = null; }
+                return;
+            }
+            // Finished/skipped on a prior frame via the HUD button/canvas
+            // tap (not this loop's own update()) — clean up once so the
+            // ghost mesh/banner don't linger.
+            intro.dispose();
+            hud.setIntroActive(false);
+            intro = null;
+        }
+
         const active = units[activeIndex];
 
         // Per-kind input. Drones use RC Mode 2 on touch (left stick =
@@ -423,9 +494,19 @@ async function startGame(site) {
         // Edge-of-DEM warning while the active unit pushes the boundary.
         hud.setBoundary(!!active.unit.atBoundary);
 
+        // Tutorial banner + its one non-action-callback gate (opening the
+        // menu to read the SCIENCE ARCHIVE has no discrete main.js call
+        // site to hook, unlike the other 6 steps — checked once per frame).
+        if (tutorial?.current()?.id === 'archive' && hud.isMenuOpen()) tutorial.advance('archive');
+        hud.setObjective(tutorial?.active ? tutorial.current()?.text : null);
+
         if (active.kind === 'ground') {
             const nearest = samples.nearestUncollected(active.unit.position);
             hud.setPrompt(nearest ? `COLLECT: ${nearest.name}` : null);
+            // Piggyback on the same "close enough to collect" condition
+            // that drives the COLLECT prompt above — no new distance
+            // constant for the tutorial's first step.
+            if (nearest && tutorial?.current()?.id === 'drive') tutorial.advance('drive');
         } else if (active.unit.canSling && !active.dead) {
             if (sling.carrying) {
                 hud.setPrompt(lab.isOverPad(active.unit.position) && active.unit.alt <= DELIVER_ALT

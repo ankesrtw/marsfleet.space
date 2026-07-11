@@ -20,7 +20,7 @@
 import { isTouchDevice } from './touch.js';
 import { SITES, M_PER_DEG, SOL_MS } from './sites.js';
 
-export function createHud(rootEl, { site, onSwitchUnit, onCollect, onToggleSfx, sfxEnabled = true, onCycleGear, gear = 'G2', onToggleSol, solOn = true, onToggleLanding, onCommandAlt, onReset }) {
+export function createHud(rootEl, { site, onSwitchUnit, onCollect, onToggleSfx, sfxEnabled = true, onCycleGear, gear = 'G2', onToggleSol, solOn = true, onToggleLanding, onCommandAlt, onReset, onSkipIntro, onSkipTutorial }) {
     rootEl.innerHTML = `
         <div class="mars-hud">
             <div class="mars-hud__top">
@@ -50,6 +50,11 @@ export function createHud(rootEl, { site, onSwitchUnit, onCollect, onToggleSfx, 
                 <button class="mars-btn mars-btn--collect" id="mc-collect">COLLECT<span class="mars-btn__hint">[E]</span></button>
             </div>
             <div class="mars-hud__boundary" id="mc-boundary" data-visible="false">⚠ OUT OF MISSION DIRECTIVES — RETURN TO SURVEY ZONE</div>
+            <div class="mars-hud__objective" id="mc-objective" data-visible="false">
+                <span id="mc-objective-text"></span>
+                <button class="mars-btn mars-objective__skip" id="mc-skip-tutorial">SKIP</button>
+            </div>
+            <button class="mars-btn mars-hud__skip-intro" id="mc-skip-intro" data-visible="false">SKIP INTRO</button>
             <button class="mars-btn mars-hud__gear" id="mc-gear" data-visible="true">GEAR ${gear}<span class="mars-btn__hint">[G]</span></button>
             <div class="mars-hud__dronectl" id="mc-dronectl" data-visible="false" data-collapsed="false">
                 <button class="mars-dronectl__toggle" id="mc-drone-collapse" aria-label="Toggle drone controls">▾</button>
@@ -212,6 +217,27 @@ export function createHud(rootEl, { site, onSwitchUnit, onCollect, onToggleSfx, 
         if (visible === boundaryShown) return;
         boundaryShown = visible;
         boundaryEl.dataset.visible = String(visible);
+    }
+
+    // Tutorial objective banner — same cached-toggle idiom as setBoundary,
+    // distinct placement (bottom) so it never collides with the boundary
+    // warning (top).
+    const objectiveEl = rootEl.querySelector('#mc-objective');
+    const objectiveTextEl = rootEl.querySelector('#mc-objective-text');
+    rootEl.querySelector('#mc-skip-tutorial').addEventListener('click', () => onSkipTutorial?.());
+    let lastObjectiveText = null;
+    function setObjective(text) {
+        if (text === lastObjectiveText) return;
+        lastObjectiveText = text;
+        objectiveEl.dataset.visible = String(!!text);
+        if (text) objectiveTextEl.textContent = text;
+    }
+
+    // SKIP INTRO — shown only while the landing-drop cinematic is playing.
+    const skipIntroBtn = rootEl.querySelector('#mc-skip-intro');
+    skipIntroBtn.addEventListener('click', () => onSkipIntro?.());
+    function setIntroActive(active) {
+        skipIntroBtn.dataset.visible = String(!!active);
     }
 
     /** Gear readout follows the active unit; null hides (humanoid). */
@@ -422,7 +448,7 @@ export function createHud(rootEl, { site, onSwitchUnit, onCollect, onToggleSfx, 
 
     return {
         minimapEl, setActiveUnit, setPrompt, setInventory, setLab,
-        setNode, setArchive, setBoundary,
+        setNode, setArchive, setBoundary, setObjective, setIntroActive,
         setTelemetry, setMenuOpen, isMenuOpen,
         setDronePanel, setDroneState, setGear,
     };

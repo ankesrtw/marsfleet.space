@@ -40,6 +40,14 @@ const MODELS = {
     humanoid: { url: 'assets/models/humanoid.glb', yaw: Math.PI / 2, size: 2.6, axis: 'y' },
 };
 
+// Stationary structures (no heading, so no yaw-to-heading convention to
+// satisfy) — scaled to a target footprint (largest horizontal extent)
+// instead of a single travel-axis size. yaw is still exposed per-entry
+// since Tripo's source-image orientation is unpredictable per generation.
+const STATIC_MODELS = {
+    station: { url: 'assets/models/station.glb', yaw: 0, footprint: 6 },
+};
+
 // SIGNAL brand accent (cyan-teal — distinct from the amber logo mark) and
 // a shinier hardware finish, applied on top of Tripo's flat export
 // defaults (roughness 0.9/0.5, metalness 0, no tint, single basecolor —
@@ -92,6 +100,41 @@ export function attachUnitModel(group, name, onReady) {
         group.add(model);
         // size = the model's group-local extents after normalization
         // (x/z centered, y from 0) — rotor overlays derive hubs from it.
+        onReady?.(model, box.getSize(new THREE.Vector3()));
+    }, undefined, () => {
+        /* keep the procedural fallback — never block the game on assets */
+    });
+}
+
+/** Same fallback-first idiom as attachUnitModel, but for stationary
+    structures: no yaw-to-heading normalization, scaled to a target
+    footprint (horizontal bounding-box extent) instead of a single
+    travel-axis size, and grounded/centered the same way. */
+export function attachStaticModel(group, name, onReady) {
+    const cfg = STATIC_MODELS[name];
+    if (!cfg) return;
+
+    loader.load(cfg.url, (gltf) => {
+        const model = gltf.scene;
+        applyBrandFinish(model);
+        model.rotation.y = cfg.yaw;
+        model.updateMatrixWorld(true);
+
+        let box = new THREE.Box3().setFromObject(model);
+        let size = box.getSize(new THREE.Vector3());
+        const footprint = Math.max(size.x, size.z);
+        if (!(footprint > 0)) return; // malformed export — keep fallback
+        model.scale.setScalar(cfg.footprint / footprint);
+        model.updateMatrixWorld(true);
+
+        box = new THREE.Box3().setFromObject(model);
+        const center = box.getCenter(new THREE.Vector3());
+        model.position.x -= center.x;
+        model.position.z -= center.z;
+        model.position.y -= box.min.y;
+
+        group.clear();
+        group.add(model);
         onReady?.(model, box.getSize(new THREE.Vector3()));
     }, undefined, () => {
         /* keep the procedural fallback — never block the game on assets */
