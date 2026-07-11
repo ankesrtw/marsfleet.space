@@ -54,6 +54,10 @@ export const SITES = {
         spawn: { x: 2127, z: 615, heading: Math.PI / 4 },
         // `finding` = the real published science for that sample, revealed
         // in-game only after the FIELD LAB edge node finishes analysis.
+        // Coordinates: precise where derived from published lon/lat (the
+        // original five), approximate for other real features ("approx.
+        // location" in the note), invented for the "[SIM]" survey targets
+        // that spread the objective net across all quadrants of the crop.
         samples: [
             { id: 'rochette', name: 'Rochette', x: 1660, z: 1067, note: 'First cored sample, Sep 2021',
               finding: 'Olivine-bearing basalt with water-alteration rinds — the crater floor rock interacted with liquid water.' },
@@ -65,6 +69,20 @@ export const SITES = {
               finding: 'Delta-front sandstone with transported clasts — rock carried in from far outside the crater by the ancient river.' },
             { id: 'cheyava-falls', name: 'Cheyava Falls', x: -1778, z: -1185, note: 'Leopard-spot reduction-oxidation features',
               finding: 'Iron-phosphate “leopard spot” redox fronts around organic-bearing veins — a potential biosignature, under review.' },
+            { id: 'maaz', name: 'Máaz', x: 2300, z: 800, note: 'First rock target on the crater floor (approx. location)',
+              finding: 'Basaltic crater-floor rock, water-altered — the very first laser target of the Mars 2020 mission.' },
+            { id: 'kodiak', name: 'Kodiak Butte', x: -889, z: 2075, note: 'Delta remnant butte (approx. location)',
+              finding: 'Textbook Gilbert-delta stratigraphy — inclined foreset beds proving a standing lake once filled Jezero.' },
+            { id: 'three-forks', name: 'Three Forks Depot', x: -2015, z: 1600, note: 'Mars Sample Return depot (approx. location)',
+              finding: 'Ten sealed sample tubes cached on the crater floor — humanity’s first sample depot on another world.' },
+            { id: 'belva', name: 'Belva Crater', x: -2074, z: -296, note: 'Impact window into the delta (approx. location)',
+              finding: 'Tilted sandstone blocks exposed by the impact — a cross-section through the buried ancient river system.' },
+            { id: 'neretva-vallis', name: 'Neretva Vallis', x: -2450, z: -2600, note: 'Inlet channel floor — simulated survey target',
+              finding: '[SIM] Rounded pebble conglomerate on the channel floor — sustained river flow entered the crater here.' },
+            { id: 'relay-ridge', name: 'Relay Ridge', x: 2450, z: -2350, note: 'Comms relay candidate — simulated survey target',
+              finding: '[SIM] High-standing rim ridge with clear line of sight across the site — flagged for a future relay mast.' },
+            { id: 'dust-devil-flats', name: 'Dust Devil Flats', x: 1800, z: 2300, note: 'Aeolian survey — simulated survey target',
+              finding: '[SIM] Fresh dust-devil tracks crossing older ripples — active aeolian transport measured this season.' },
         ],
     },
     gale: {
@@ -108,6 +126,18 @@ export const SITES = {
               finding: 'Crystalline gray hematite — an oxidation front left by groundwater moving through the ridge after deposition.' },
             { id: 'vera-rubin-2', name: 'Vera Rubin Ridge — Site 2', x: -1579, z: 3954, note: 'Ridge stratigraphy sample',
               finding: 'Diagenetic overprint: groundwater repeatedly cemented and re-crystallized these lakebed sediments.' },
+            { id: 'windjana', name: 'Windjana', x: -162, z: -1351, note: 'Kimberley waypoint drill site (approx. location)',
+              finding: 'Sanidine-rich sandstone — potassium-loaded sediment eroded from alkaline volcanic rock upstream of the crater.' },
+            { id: 'buckskin', name: 'Buckskin', x: -1520, z: 753, note: 'Marias Pass drill site (approx. location)',
+              finding: 'Tridymite in a lakebed mudstone — unexpected evidence of evolved, silica-rich volcanism on Mars.' },
+            { id: 'bagnold-dunes', name: 'Bagnold Dunes', x: -700, z: 1500, note: 'Active dune field (approx. location)',
+              finding: 'First in-situ study of active extraterrestrial dunes — olivine-enriched sands migrating meters per year.' },
+            { id: 'murray-buttes', name: 'Murray Buttes', x: -1250, z: 2500, note: 'Sandstone-capped buttes (approx. location)',
+              finding: 'Wind-deposited Stimson sandstone unconformably capping lake mudstone — a desert that followed the lakes.' },
+            { id: 'peace-vallis', name: 'Peace Vallis Fan', x: 900, z: -4200, note: 'Alluvial fan toe — simulated survey target',
+              finding: '[SIM] Water-transported gravels at the fan toe — the channel system that fed Gale’s northern floor.' },
+            { id: 'south-ridge', name: 'South Ridge Station', x: 2600, z: 3300, note: 'Survey station — simulated survey target',
+              finding: '[SIM] Panoramic survey of the Mount Sharp foothills — layered sulfates visible in the upper strata.' },
         ],
     },
 };

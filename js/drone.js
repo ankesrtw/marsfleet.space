@@ -31,6 +31,7 @@ const MAX_ALT = 150;     // m AGL ceiling (HUD altitude slider spans 0..this)
 const TAU = 0.8;         // s, velocity time constant (accel feel)
 const TILT_MAX = 0.32;   // rad, max nose/bank angle
 const TURN_RATE = 2.0;   // rad/s
+const EDGE_MARGIN = 30;  // m inside the DEM edge — the mission boundary
 
 // GEAR steps multiply the real base speed (G1 = real scale). Shared by
 // both drones via one localStorage key so the fleet shifts together.
@@ -56,6 +57,8 @@ export function createDrone(site, terrain, opts = {}) {
         spawnDx = 0,
         spawnDz = 0,
         canSling = false,   // lift drone only — see lab.js
+        obstacles = null,   // colliders.js forUnit facade (alt-aware)
+        bodyRadius = 0.9,   // m, horizontal collision footprint
     } = opts;
 
     let gearIdx = Math.max(0, GEARS.findIndex((g) => g.label === localStorage.getItem(GEAR_KEY)));
@@ -91,6 +94,8 @@ export function createDrone(site, terrain, opts = {}) {
     let autoTakeoffTo = null;
     let powered = true;
     let bob = 0;
+    let atBoundary = false;
+    const bound = site.worldSize / 2 - EDGE_MARGIN;
     const vel = new THREE.Vector2();   // world-plane velocity (x, z)
     const targetVel = new THREE.Vector2();
     let pitchTilt = 0, rollTilt = 0;
@@ -162,6 +167,7 @@ export function createDrone(site, terrain, opts = {}) {
         }
 
         if (landed) {
+            atBoundary = false;
             // parked: level out, no translation; climb starts a take-off
             pitchTilt += (0 - pitchTilt) * Math.min(1, 6 * dt);
             rollTilt += (0 - rollTilt) * Math.min(1, 6 * dt);
@@ -203,8 +209,24 @@ export function createDrone(site, terrain, opts = {}) {
         pitchTilt += (THREE.MathUtils.clamp(-errFwd, -1, 1) * TILT_MAX - pitchTilt) * tk;
         rollTilt += (THREE.MathUtils.clamp(-errRight, -1, 1) * TILT_MAX - rollTilt) * tk;
 
-        mesh.position.x += vel.x * dt;
-        mesh.position.z += vel.y * dt;
+        // Blocked-entry horizontal collision (same escape rule as the
+        // ground units): structures/units gate by altitude band inside
+        // the colliders facade, so cruise height overflies everything.
+        let nx = mesh.position.x + vel.x * dt;
+        let nz = mesh.position.z + vel.y * dt;
+        // Mission boundary: clamp per axis, kill that axis' velocity so
+        // the frame can still slide along the edge; flag for the HUD.
+        atBoundary = Math.abs(nx) > bound || Math.abs(nz) > bound;
+        if (Math.abs(nx) > bound) { nx = THREE.MathUtils.clamp(nx, -bound, bound); vel.x = 0; }
+        if (Math.abs(nz) > bound) { nz = THREE.MathUtils.clamp(nz, -bound, bound); vel.y = 0; }
+        const blocked = obstacles?.collides(nx, nz, bodyRadius)
+            && !obstacles.collides(mesh.position.x, mesh.position.z, bodyRadius);
+        if (blocked) {
+            vel.set(0, 0);
+        } else {
+            mesh.position.x = nx;
+            mesh.position.z = nz;
+        }
 
         alt = THREE.MathUtils.clamp(
             alt + climb * climbRate * GEARS[gearIdx].climb * (slung ? SLING_CLIMB : 1) * dt,
@@ -239,6 +261,7 @@ export function createDrone(site, terrain, opts = {}) {
         mesh, update, toggleLanding, setPower, cycleGear, setSlung, canSling, commandAlt,
         get position() { return mesh.position; },
         get heading() { return heading; },
+        get atBoundary() { return atBoundary; },
         get landed() { return landed; },
         get landing() { return autoLand; },
         get alt() { return alt; },

@@ -20,6 +20,7 @@ import { createWaypoint } from './waypoint.js';
 import { createSound } from './sound.js';
 import { createLab, createSling } from './lab.js';
 import { createAnalysis } from './analysis.js';
+import { createColliders } from './colliders.js';
 
 // Lift-drone logistics interaction envelope (see lab.js):
 const SLING_ALT = 8;      // m AGL — must hover this low to hook a container
@@ -124,18 +125,30 @@ async function startGame(site) {
     const rocks = createRocks(site, terrain, QUALITY);
     scene.add(rocks.mesh);
 
-    const rover = createRover(site, terrain, rocks);
+    // One collision world for every mover: boulders + lab structures +
+    // unit-vs-unit (colliders.js). Each unit moves against its own facade
+    // (which excludes itself); registration happens right after creation.
+    const colliders = createColliders(rocks);
+    const rover = createRover(site, terrain, colliders.forUnit('rover'));
     // Two quads, both spawn LANDED beside the rover: a fast recon scout
     // and a slower heavy-lift frame (Ingenuity-class vs cargo-class).
     const recon = createDrone(site, terrain, {
         modelName: 'recon', maxSpeed: 10, climbRate: 3, cruiseAlt: 18, spawnDx: -6, spawnDz: 4,
+        obstacles: colliders.forUnit('recon'), bodyRadius: 0.7,
     });
     const lift = createDrone(site, terrain, {
         modelName: 'drone', maxSpeed: 6, climbRate: 2, cruiseAlt: 12, spawnDx: 8, spawnDz: 6,
         canSling: true,
+        obstacles: colliders.forUnit('lift'), bodyRadius: 1.2,
     });
-    const humanoid = createHumanoid(site, terrain, rocks);
+    const humanoid = createHumanoid(site, terrain, colliders.forUnit('humanoid'));
     scene.add(rover.mesh, recon.mesh, lift.mesh, humanoid.mesh);
+    // Obstacle footprints (radius mirrors each unit's own BODY_RADIUS /
+    // bodyRadius); alt() gates unit-vs-unit checks to overlapping bands.
+    colliders.register('rover', { position: rover.position, radius: 1.4, alt: () => 0 });
+    colliders.register('humanoid', { position: humanoid.position, radius: 0.35, alt: () => 0 });
+    colliders.register('recon', { position: recon.position, radius: 0.7, alt: () => recon.alt });
+    colliders.register('lift', { position: lift.position, radius: 1.2, alt: () => lift.alt });
 
     const samples = createSamples(site, terrain);
     scene.add(samples.group);
@@ -143,6 +156,7 @@ async function startGame(site) {
     // FIELD LAB base + the sling that feeds it (lab.js): collect leaves a
     // cache container in the field, the lift drone slings it to the pad.
     const lab = createLab(scene, site, terrain, rocks);
+    for (const o of lab.obstacles) colliders.addStatic(o.x, o.z, o.r, o.h);
     const sling = createSling(scene, terrain);
     const deliveredIds = new Set();
 
@@ -198,6 +212,10 @@ async function startGame(site) {
             const active = units[activeIndex];
             if (active.kind === 'fly' && !active.dead) active.unit.commandAlt(v);
         },
+        // Full mission reset: all sim state (positions, batteries, samples,
+        // lab, fog) lives in-memory, so a reload restores the pristine site.
+        // Persistent things survive on purpose: SCIENCE ARCHIVE, gear prefs.
+        onReset: () => window.location.reload(),
     });
     const fog = createFog(site, hud.minimapEl, terrain);
 
@@ -227,7 +245,7 @@ async function startGame(site) {
     // Debug/E2E handle (also used by the sampleHeight ground-truth check;
     // renderer/scene/camera exposed so tests on software-GL boxes can pause
     // the loop and capture canvas pixels via a same-task render+toDataURL).
-    window.__mc = { site, terrain, rover, drone: recon, recon, lift, humanoid, samples, renderer, scene, camera, camRig, units, env, effects, waypoint, sound, rocks, lab, sling, analysis, fog };
+    window.__mc = { site, terrain, rover, drone: recon, recon, lift, humanoid, samples, renderer, scene, camera, camRig, units, env, effects, waypoint, sound, rocks, lab, sling, analysis, fog, colliders };
 
     function applyUnitMode() {
         const active = units[activeIndex];
@@ -325,7 +343,12 @@ async function startGame(site) {
         // Battery: the active unit drains with input; AIRBORNE drones
         // drain constantly (hover isn't free) and cannot solar-recharge
         // until they land. Recharge is gated by daylight.
-        active.dead = active.dead ? active.charge < RESTART_CHARGE : active.charge <= 0;
+        // Dead-flag for EVERY unit, not just the active one — an idle
+        // airborne drone that drains to 0% must force-land immediately,
+        // not keep hovering until the player next switches to it.
+        for (const u of units) {
+            u.dead = u.dead ? u.charge < RESTART_CHARGE : u.charge <= 0;
+        }
         if (active.dead) input = active.kind === 'ground'
             ? { throttle: 0, steer: 0 }
             : { forward: 0, strafe: 0, turn: 0, climb: 0 };
@@ -396,6 +419,9 @@ async function startGame(site) {
             ? (active.unit.landed ? 0 : Math.max(0.35, speedNow / active.unit.maxSpeed))
             : speedNow / (active.name === 'Humanoid' ? 1.4 : Math.max(0.042, rover.maxSpeed));
         sound.update(active.name, Math.min(1, engineNorm));
+
+        // Edge-of-DEM warning while the active unit pushes the boundary.
+        hud.setBoundary(!!active.unit.atBoundary);
 
         if (active.kind === 'ground') {
             const nearest = samples.nearestUncollected(active.unit.position);

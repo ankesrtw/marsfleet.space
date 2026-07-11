@@ -20,7 +20,7 @@
 import { isTouchDevice } from './touch.js';
 import { SITES, M_PER_DEG, SOL_MS } from './sites.js';
 
-export function createHud(rootEl, { site, onSwitchUnit, onCollect, onToggleSfx, sfxEnabled = true, onCycleGear, gear = 'G2', onToggleSol, solOn = true, onToggleLanding, onCommandAlt }) {
+export function createHud(rootEl, { site, onSwitchUnit, onCollect, onToggleSfx, sfxEnabled = true, onCycleGear, gear = 'G2', onToggleSol, solOn = true, onToggleLanding, onCommandAlt, onReset }) {
     rootEl.innerHTML = `
         <div class="mars-hud">
             <div class="mars-hud__top">
@@ -49,6 +49,7 @@ export function createHud(rootEl, { site, onSwitchUnit, onCollect, onToggleSfx, 
             <div class="mars-hud__prompt" id="mc-prompt" hidden>
                 <button class="mars-btn mars-btn--collect" id="mc-collect">COLLECT<span class="mars-btn__hint">[E]</span></button>
             </div>
+            <div class="mars-hud__boundary" id="mc-boundary" data-visible="false">⚠ OUT OF MISSION DIRECTIVES — RETURN TO SURVEY ZONE</div>
             <button class="mars-btn mars-hud__gear" id="mc-gear" data-visible="true">GEAR ${gear}<span class="mars-btn__hint">[G]</span></button>
             <div class="mars-hud__dronectl" id="mc-dronectl" data-visible="false" data-collapsed="false">
                 <button class="mars-dronectl__toggle" id="mc-drone-collapse" aria-label="Toggle drone controls">▾</button>
@@ -80,10 +81,13 @@ export function createHud(rootEl, { site, onSwitchUnit, onCollect, onToggleSfx, 
                 <div class="mars-menu__section">
                     <h3>SIM</h3>
                     <button class="mars-btn" id="mc-sol">SOL CYCLE ${solOn ? 'ON' : 'LOCKED (DAY)'}</button>
+                    <button class="mars-btn mars-btn--reset" id="mc-reset">RESET MISSION</button>
                     <p class="mars-menu__note">GEAR (HUD button or G) time-compresses speed per unit:
                     rover REAL = the true 4.2 cm/s, G1 ×50, G2 ×150, G3 ×400; drones G1 = real scale
                     (10 / 6 m/s), G2 ×2, G3 ×4. SOL CYCLE runs a 40-min day/night — lock it for
-                    permanent daylight (solar recharge needs the sun either way).</p>
+                    permanent daylight (solar recharge needs the sun either way).
+                    RESET MISSION restarts the site — unit positions, batteries, samples, lab and
+                    map fog. The SCIENCE ARCHIVE below survives resets.</p>
                 </div>
                 <div class="mars-menu__section">
                     <h3>LAB — COLLECTED SAMPLES</h3>
@@ -180,6 +184,35 @@ export function createHud(rootEl, { site, onSwitchUnit, onCollect, onToggleSfx, 
         const on = onToggleSol ? onToggleSol() : true;
         solBtn.textContent = `SOL CYCLE ${on ? 'ON' : 'LOCKED (DAY)'}`;
     });
+
+    // RESET MISSION: two-step arm/confirm (no native confirm() dialog —
+    // it would freeze the render loop and look nothing like the HUD).
+    const resetBtn = rootEl.querySelector('#mc-reset');
+    let resetDisarmTimer = null;
+    resetBtn.addEventListener('click', () => {
+        if (resetBtn.dataset.armed === 'true') {
+            onReset?.();
+            return;
+        }
+        resetBtn.dataset.armed = 'true';
+        resetBtn.textContent = 'CONFIRM RESET?';
+        clearTimeout(resetDisarmTimer);
+        resetDisarmTimer = setTimeout(() => {
+            resetBtn.dataset.armed = 'false';
+            resetBtn.textContent = 'RESET MISSION';
+        }, 4000);
+    });
+
+    // Boundary warning — cached so per-frame calls don't churn the DOM.
+    const boundaryEl = rootEl.querySelector('#mc-boundary');
+    let boundaryShown = false;
+
+    /** Flash OUT OF MISSION DIRECTIVES while a unit pushes the site edge. */
+    function setBoundary(visible) {
+        if (visible === boundaryShown) return;
+        boundaryShown = visible;
+        boundaryEl.dataset.visible = String(visible);
+    }
 
     /** Gear readout follows the active unit; null hides (humanoid). */
     function setGear(label) {
@@ -389,7 +422,7 @@ export function createHud(rootEl, { site, onSwitchUnit, onCollect, onToggleSfx, 
 
     return {
         minimapEl, setActiveUnit, setPrompt, setInventory, setLab,
-        setNode, setArchive,
+        setNode, setArchive, setBoundary,
         setTelemetry, setMenuOpen, isMenuOpen,
         setDronePanel, setDroneState, setGear,
     };

@@ -33,7 +33,11 @@ const MODELS = {
     rover: { url: 'assets/models/rover.glb', yaw: -Math.PI / 2, size: 3.0, axis: 'z' },
     drone: { url: 'assets/models/drone.glb', yaw: Math.PI / 2, size: 2.5, axis: 'x' },
     recon: { url: 'assets/models/recon.glb', yaw: Math.PI / 2, size: 1.4, axis: 'x' },
-    humanoid: { url: 'assets/models/humanoid.glb', yaw: Math.PI / 2, size: 2.2, axis: 'y' },
+    // 2.2 was numerically taller than the rover GLB's 2.0m box, but the
+    // rover renders as a ~3.9m-square hulk (Tripo export is bulkier than
+    // the real 2.7m-wide Perseverance), so a 1.1m-wide figure still read
+    // toy-sized beside it. 2.6 makes the humanoid read person-scale.
+    humanoid: { url: 'assets/models/humanoid.glb', yaw: Math.PI / 2, size: 2.6, axis: 'y' },
 };
 
 // SIGNAL brand accent (cyan-teal — distinct from the amber logo mark) and

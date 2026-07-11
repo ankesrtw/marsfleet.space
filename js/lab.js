@@ -113,7 +113,16 @@ export function createLab(scene, site, terrain, rocks) {
         beaconMat.opacity = 0.16 + 0.08 * (0.5 + 0.5 * Math.sin(t * 1.6));
     }
 
-    return { group, padPos, isOverPad, deliver, delivered, update };
+    // Solid-structure footprints for the collision registry (colliders.js):
+    // dome, airlock box, comms mast. World x/z + radius + height above
+    // ground. The pad (0.35m) stays drivable; the beacon is just light.
+    const obstacles = [
+        { x: padPos.x - (PAD_RADIUS + 4.5), z: padPos.z, r: 3.2, h: 3.1 },  // hab dome
+        { x: padPos.x - (PAD_RADIUS + 1.6), z: padPos.z, r: 1.5, h: 1.7 },  // airlock
+        { x: padPos.x - (PAD_RADIUS + 4.5), z: padPos.z, r: 0.4, h: 8.6 },  // mast (above dome)
+    ];
+
+    return { group, padPos, isOverPad, deliver, delivered, update, obstacles };
 }
 
 export function createSling(scene, terrain) {

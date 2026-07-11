@@ -17,7 +17,8 @@ const WALK_SPEED = 1.4;  // m/s
 const TURN_RATE = 2.4;   // rad/s
 const SLOPE_K = 0.8;     // much gentler falloff than the rover
 const MIN_SPEED_FACTOR = 0.3;
-const BODY_RADIUS = 0.35; // m, collision footprint against boulders
+const BODY_RADIUS = 0.35; // m, collision footprint (also main.js registry)
+const EDGE_MARGIN = 30;   // m inside the DEM edge — the mission boundary
 
 // Procedural walk cycle on the GLB's rig (the Tripo export is rigged
 // but ships zero animation clips, so we drive the bones ourselves).
@@ -33,7 +34,9 @@ const WALK_BONES = [
     { name: 'R_Forearm', amp: 0.2, phase: Math.PI * 0.3 },
 ];
 
-export function createHumanoid(site, terrain, rocks) {
+// `obstacles` is a colliders.js facade (boulders + structures + other
+// units), shaped like the old rocks collider: collides(x, z, radius).
+export function createHumanoid(site, terrain, obstacles) {
     const mesh = buildHumanoidMesh();
     mesh.position.set(site.spawn.x + 5, 0, site.spawn.z);
     mesh.rotation.y = site.spawn.heading;
@@ -52,6 +55,8 @@ export function createHumanoid(site, terrain, rocks) {
     let heading = site.spawn.heading;
     let stride = 0;
     let walkAmt = 0; // 0..1, eases the cycle in/out so stops don't snap
+    let atBoundary = false;
+    const bound = site.worldSize / 2 - EDGE_MARGIN;
 
     const _swing = new THREE.Quaternion();
     const _axis = new THREE.Vector3(1, 0, 0); // bind-local X = leg/arm swing
@@ -67,10 +72,16 @@ export function createHumanoid(site, terrain, rocks) {
         const speedFactor = Math.max(MIN_SPEED_FACTOR, 1 - slopeMag * SLOPE_K);
         const speed = input.throttle * WALK_SPEED * speedFactor;
 
-        const nx = mesh.position.x + Math.sin(heading) * speed * dt;
-        const nz = mesh.position.z + Math.cos(heading) * speed * dt;
-        const blocked = rocks?.collides(nx, nz, BODY_RADIUS)
-            && !rocks.collides(mesh.position.x, mesh.position.z, BODY_RADIUS);
+        let nx = mesh.position.x + Math.sin(heading) * speed * dt;
+        let nz = mesh.position.z + Math.cos(heading) * speed * dt;
+        // Mission boundary: clamp + flag (HUD shows OUT OF MISSION DIRECTIVES)
+        atBoundary = Math.abs(nx) > bound || Math.abs(nz) > bound;
+        if (atBoundary) {
+            nx = THREE.MathUtils.clamp(nx, -bound, bound);
+            nz = THREE.MathUtils.clamp(nz, -bound, bound);
+        }
+        const blocked = obstacles?.collides(nx, nz, BODY_RADIUS)
+            && !obstacles.collides(mesh.position.x, mesh.position.z, BODY_RADIUS);
         if (!blocked) {
             mesh.position.x = nx;
             mesh.position.z = nz;
@@ -91,7 +102,12 @@ export function createHumanoid(site, terrain, rocks) {
         }
     }
 
-    return { mesh, update, get position() { return mesh.position; }, get heading() { return heading; } };
+    return {
+        mesh, update,
+        get position() { return mesh.position; },
+        get heading() { return heading; },
+        get atBoundary() { return atBoundary; },
+    };
 }
 
 function buildHumanoidMesh() {

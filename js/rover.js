@@ -31,13 +31,16 @@ const GEAR_KEY = 'mc-gear-rover';
 const CLEARANCE = 0.6;       // meters, wheel-to-chassis (procedural mesh)
 const SLOPE_K = 3.0;         // speed falloff strength
 const MIN_SPEED_FACTOR = 0.15;
-const BODY_RADIUS = 1.4;     // m, collision footprint against boulders
+const BODY_RADIUS = 1.4;     // m, collision footprint (also main.js registry)
+const EDGE_MARGIN = 30;      // m inside the DEM edge — the mission boundary
 
 const _up = new THREE.Vector3(0, 1, 0);
 const _tiltQuat = new THREE.Quaternion();
 const _yawQuat = new THREE.Quaternion();
 
-export function createRover(site, terrain, rocks) {
+// `obstacles` is a colliders.js facade (boulders + structures + other
+// units), shaped like the old rocks collider: collides(x, z, radius).
+export function createRover(site, terrain, obstacles) {
     const mesh = buildRoverMesh();
     mesh.position.set(site.spawn.x, 0, site.spawn.z);
     mesh.rotation.y = site.spawn.heading;
@@ -64,6 +67,8 @@ export function createRover(site, terrain, rocks) {
 
     let heading = site.spawn.heading;
     let speed = 0;
+    let atBoundary = false;
+    const bound = site.worldSize / 2 - EDGE_MARGIN;
 
     function cycleGear() {
         gearIdx = (gearIdx + 1) % GEARS.length;
@@ -83,13 +88,20 @@ export function createRover(site, terrain, rocks) {
 
         speed = input.throttle * REAL_SPEED * GEARS[gearIdx].mult * speedFactor;
 
-        const nx = mesh.position.x + Math.sin(heading) * speed * dt;
-        const nz = mesh.position.z + Math.cos(heading) * speed * dt;
-        // Boulders block entry; steering above still applies, so the player
+        let nx = mesh.position.x + Math.sin(heading) * speed * dt;
+        let nz = mesh.position.z + Math.cos(heading) * speed * dt;
+        // Mission boundary: the DEM (and the renderer's world) ends here —
+        // clamp and flag so the HUD can flash OUT OF MISSION DIRECTIVES.
+        atBoundary = Math.abs(nx) > bound || Math.abs(nz) > bound;
+        if (atBoundary) {
+            nx = THREE.MathUtils.clamp(nx, -bound, bound);
+            nz = THREE.MathUtils.clamp(nz, -bound, bound);
+        }
+        // Obstacles block entry; steering above still applies, so the player
         // can turn in place and drive around. Movement is never blocked
         // while already overlapping (spawn edge case) — always escapable.
-        const blocked = rocks?.collides(nx, nz, BODY_RADIUS)
-            && !rocks.collides(mesh.position.x, mesh.position.z, BODY_RADIUS);
+        const blocked = obstacles?.collides(nx, nz, BODY_RADIUS)
+            && !obstacles.collides(mesh.position.x, mesh.position.z, BODY_RADIUS);
         if (!blocked) {
             mesh.position.x = nx;
             mesh.position.z = nz;
@@ -114,6 +126,7 @@ export function createRover(site, terrain, rocks) {
         mesh, update, cycleGear,
         get position() { return mesh.position; },
         get heading() { return heading; },
+        get atBoundary() { return atBoundary; },
         get maxSpeed() { return REAL_SPEED * GEARS[gearIdx].mult; },
         get gearLabel() { return GEARS[gearIdx].label; },
         get drainScale() { return GEARS[gearIdx].drain; },
