@@ -19,6 +19,7 @@ import { createEffects } from './effects.js';
 import { createWaypoint } from './waypoint.js';
 import { createSound } from './sound.js';
 import { createLab, createSling } from './lab.js';
+import { createAnalysis } from './analysis.js';
 
 // Lift-drone logistics interaction envelope (see lab.js):
 const SLING_ALT = 8;      // m AGL — must hover this low to hook a container
@@ -145,6 +146,16 @@ async function startGame(site) {
     const sling = createSling(scene, terrain);
     const deliveredIds = new Set();
 
+    // Edge-node analysis queue + persistent science archive (analysis.js):
+    // delivered caches auto-process; completion reveals the real finding.
+    const analysis = createAnalysis(site, {
+        onDone: () => {
+            hud.setInventory(samples.inventory, deliveredIds, analysis.analyzedIds);
+            hud.setArchive(analysis.archive);
+            sound.analysisDone();
+        },
+    });
+
     // Blob shadows, drive dust, wheel tracks (effects.js); beacon column
     // on the current TGT sample (waypoint.js); synthesized audio (sound.js).
     const effects = createEffects(scene, terrain);
@@ -188,9 +199,10 @@ async function startGame(site) {
             if (active.kind === 'fly' && !active.dead) active.unit.commandAlt(v);
         },
     });
-    const fog = createFog(site, hud.minimapEl);
+    const fog = createFog(site, hud.minimapEl, terrain);
 
     hud.setLab(0, site.samples.length);
+    hud.setArchive(analysis.archive); // persisted results from past sessions
 
     const touchZones = setupTouchControls();
     const keys = setupKeyboard();
@@ -215,7 +227,7 @@ async function startGame(site) {
     // Debug/E2E handle (also used by the sampleHeight ground-truth check;
     // renderer/scene/camera exposed so tests on software-GL boxes can pause
     // the loop and capture canvas pixels via a same-task render+toDataURL).
-    window.__mc = { site, terrain, rover, drone: recon, recon, lift, humanoid, samples, renderer, scene, camera, camRig, units, env, effects, waypoint, sound, rocks, lab, sling };
+    window.__mc = { site, terrain, rover, drone: recon, recon, lift, humanoid, samples, renderer, scene, camera, camRig, units, env, effects, waypoint, sound, rocks, lab, sling, analysis, fog };
 
     function applyUnitMode() {
         const active = units[activeIndex];
@@ -244,7 +256,7 @@ async function startGame(site) {
             const sample = samples.nearestUncollected(active.unit.position);
             if (sample) {
                 samples.collect(sample);
-                hud.setInventory(samples.inventory, deliveredIds);
+                hud.setInventory(samples.inventory, deliveredIds, analysis.analyzedIds);
                 sound.collect();
             }
             return;
@@ -258,8 +270,9 @@ async function startGame(site) {
                 unit.setSlung(false);
                 lab.deliver(c);
                 deliveredIds.add(c.id);
+                analysis.enqueue(c); // edge node picks it up FIFO
                 hud.setLab(lab.delivered.length, site.samples.length);
-                hud.setInventory(samples.inventory, deliveredIds);
+                hud.setInventory(samples.inventory, deliveredIds, analysis.analyzedIds);
                 sound.deliver();
             } else {
                 // field release: set the container back down where it hangs
@@ -352,7 +365,6 @@ async function startGame(site) {
         fog.reveal(recon.position.x, recon.position.z);
         fog.reveal(lift.position.x, lift.position.z);
         if (active.kind === 'ground') fog.reveal(active.unit.position.x, active.unit.position.z);
-        fog.render(samples.markers);
 
         // TGT: ground units chase uncollected samples; the lift drone's
         // objective is logistics — nearest field cache, or the LAB when loaded.
@@ -365,9 +377,20 @@ async function startGame(site) {
                 if (c) targetInfo = pseudoTarget(`${c.id}-cache`, `${c.name} CACHE`, c.mesh.position.x, c.mesh.position.z, active.unit.position);
             }
         }
+
+        // minimap: unit dots (active gets a heading tick), lab square, TGT
+        // ring (a cache target rings its source sample's marker).
+        fog.render(samples.markers, units.map((u, i) => ({
+            x: u.unit.position.x, z: u.unit.position.z,
+            heading: u.unit.heading, active: i === activeIndex,
+        })), {
+            lab: { x: lab.padPos.x, z: lab.padPos.z },
+            targetId: targetInfo ? targetInfo.sample.id.replace('-cache', '') : null,
+        });
         waypoint.update(dt, targetInfo);
         sling.update(dt, lift.position);
         lab.update(dt);
+        analysis.update(dt);
         effects.update(dt, active, speedNow, env.daylight());
         const engineNorm = active.kind === 'fly'
             ? (active.unit.landed ? 0 : Math.max(0.35, speedNow / active.unit.maxSpeed))
@@ -427,6 +450,7 @@ async function startGame(site) {
                 target: targetInfo,
                 tgtRelDeg,
             });
+            hud.setNode(analysis.status());
             if (active.kind === 'fly') {
                 hud.setDroneState({
                     landed: active.unit.landed,

@@ -52,12 +52,19 @@ export const SITES = {
         // Octavia E. Butler Landing (77.45088E, 18.44463N); heading faces
         // northwest so W drives toward Séítah and the delta front.
         spawn: { x: 2127, z: 615, heading: Math.PI / 4 },
+        // `finding` = the real published science for that sample, revealed
+        // in-game only after the FIELD LAB edge node finishes analysis.
         samples: [
-            { id: 'rochette', name: 'Rochette', x: 1660, z: 1067, note: 'First cored sample, Sep 2021' },
-            { id: 'seitah', name: 'Séítah', x: 1008, z: 415, note: 'Ridge-forming igneous rock' },
-            { id: 'wildcat-ridge', name: 'Wildcat Ridge', x: -771, z: -207, note: 'Organic-molecule-bearing mudstone' },
-            { id: 'skinner-ridge', name: 'Skinner Ridge', x: -652, z: -166, note: 'Delta front outcrop' },
-            { id: 'cheyava-falls', name: 'Cheyava Falls', x: -1778, z: -1185, note: 'Leopard-spot reduction-oxidation features' },
+            { id: 'rochette', name: 'Rochette', x: 1660, z: 1067, note: 'First cored sample, Sep 2021',
+              finding: 'Olivine-bearing basalt with water-alteration rinds — the crater floor rock interacted with liquid water.' },
+            { id: 'seitah', name: 'Séítah', x: 1008, z: 415, note: 'Ridge-forming igneous rock',
+              finding: 'Coarse-grained olivine cumulate — a slowly cooled igneous body, later altered by water (carbonates present).' },
+            { id: 'wildcat-ridge', name: 'Wildcat Ridge', x: -771, z: -207, note: 'Organic-molecule-bearing mudstone',
+              finding: 'Sulfate-bearing mudstone carrying the mission’s strongest organic-molecule signal (SHERLOC detection).' },
+            { id: 'skinner-ridge', name: 'Skinner Ridge', x: -652, z: -166, note: 'Delta front outcrop',
+              finding: 'Delta-front sandstone with transported clasts — rock carried in from far outside the crater by the ancient river.' },
+            { id: 'cheyava-falls', name: 'Cheyava Falls', x: -1778, z: -1185, note: 'Leopard-spot reduction-oxidation features',
+              finding: 'Iron-phosphate “leopard spot” redox fronts around organic-bearing veins — a potential biosignature, under review.' },
         ],
     },
     gale: {
@@ -93,10 +100,14 @@ export const SITES = {
         // (spawn is only ~540m from the crop's north edge).
         spawn: { x: 2315, z: -3959, heading: Math.PI },
         samples: [
-            { id: 'john-klein', name: 'John Klein', x: 2386, z: -3550, note: 'Yellowknife Bay, first MSL drill site' },
-            { id: 'cumberland', name: 'Cumberland', x: 2363, z: -3579, note: 'Yellowknife Bay, second drill target' },
-            { id: 'vera-rubin-1', name: 'Vera Rubin Ridge — Site 1', x: -1342, z: 3777, note: 'Hematite-bearing ridge' },
-            { id: 'vera-rubin-2', name: 'Vera Rubin Ridge — Site 2', x: -1579, z: 3954, note: 'Ridge stratigraphy sample' },
+            { id: 'john-klein', name: 'John Klein', x: 2386, z: -3550, note: 'Yellowknife Bay, first MSL drill site',
+              finding: 'Smectite clay mudstone from a neutral-pH ancient lake — C, H, N, O, P and S all present: a habitable environment.' },
+            { id: 'cumberland', name: 'Cumberland', x: 2363, z: -3579, note: 'Yellowknife Bay, second drill target',
+              finding: 'Nitrate nitrogen detected, plus the first in-situ radiometric rock dating on another planet (~4.2 billion years).' },
+            { id: 'vera-rubin-1', name: 'Vera Rubin Ridge — Site 1', x: -1342, z: 3777, note: 'Hematite-bearing ridge',
+              finding: 'Crystalline gray hematite — an oxidation front left by groundwater moving through the ridge after deposition.' },
+            { id: 'vera-rubin-2', name: 'Vera Rubin Ridge — Site 2', x: -1579, z: 3954, note: 'Ridge stratigraphy sample',
+              finding: 'Diagenetic overprint: groundwater repeatedly cemented and re-crystallized these lakebed sediments.' },
         ],
     },
 };

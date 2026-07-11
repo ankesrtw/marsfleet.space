@@ -83,7 +83,7 @@ export function createSamples(site, terrain) {
         const cx = sample.x + 1.6, cz = sample.z + 1.2;
         mesh.position.set(cx, terrain.sampleHeight(cx, cz) + 0.28, cz);
         group.add(mesh);
-        containers.push({ id: sample.id, name: sample.name, note: sample.note, mesh, state: 'field' });
+        containers.push({ id: sample.id, name: sample.name, note: sample.note, finding: sample.finding, mesh, state: 'field' });
     }
 
     /** Nearest field (not slung/delivered) container within `radius`. */

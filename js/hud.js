@@ -66,6 +66,7 @@ export function createHud(rootEl, { site, onSwitchUnit, onCollect, onToggleSfx, 
             <div class="mars-hud__inventory" id="mc-inventory">
                 <div class="mars-hud__inventory-title">SAMPLES <span id="mc-inv-count">0</span></div>
                 <div class="mars-hud__inventory-title">LAB <span id="mc-lab-count">0/0</span></div>
+                <div class="mars-hud__node is-idle" id="mc-node">NODE IDLE</div>
                 <ul id="mc-inv-list"></ul>
             </div>
         </div>
@@ -91,6 +92,16 @@ export function createHud(rootEl, { site, onSwitchUnit, onCollect, onToggleSfx, 
                     </ul>
                 </div>
                 <div class="mars-menu__section">
+                    <h3>SCIENCE ARCHIVE</h3>
+                    <ul class="mars-menu__lab" id="mc-archive-list">
+                        <li class="mars-menu__lab-empty">No analyzed samples yet — deliver caches to the FIELD LAB.</li>
+                    </ul>
+                    <p class="mars-menu__note">Delivered caches are processed one at a time on the lab's
+                    onboard edge node (Jetson-class, simulated). Analysis reveals the sample's real published
+                    mission finding and files it here — the archive persists in your browser across visits
+                    and sites.</p>
+                </div>
+                <div class="mars-menu__section">
                     <h3>CONTROLS</h3>
                     <ul class="mars-menu__controls">
                         <li>Rover / humanoid — WASD or left stick</li>
@@ -100,6 +111,7 @@ export function createHud(rootEl, { site, onSwitchUnit, onCollect, onToggleSfx, 
                         <li>Take off / land — L or the drone panel button</li>
                         <li>Switch unit — TAB · Collect — E · Menu — M</li>
                         <li>Lift drone — hover low over a cache container, E to sling it, fly to the FIELD LAB pad, E to deliver</li>
+                        <li>Delivered caches auto-analyze on the lab edge node — findings land in the SCIENCE ARCHIVE</li>
                         <li>Sol cycle — drones recharge only when landed, nothing recharges at night</li>
                     </ul>
                 </div>
@@ -282,25 +294,59 @@ export function createHud(rootEl, { site, onSwitchUnit, onCollect, onToggleSfx, 
         labCount.textContent = `${delivered}/${total}`;
     }
 
-    function setInventory(items, deliveredIds) {
+    function setInventory(items, deliveredIds, analyzedIds) {
         invCount.textContent = items.length;
         invList.replaceChildren(...items.map((i) => {
             const li = document.createElement('li');
-            li.textContent = deliveredIds?.has(i.id) ? `${i.name} ✓` : i.name;
+            li.textContent = analyzedIds?.has(i.id) ? `${i.name} ✦`
+                : deliveredIds?.has(i.id) ? `${i.name} ✓` : i.name;
             return li;
         }));
-        // menu LAB panel: name + the sample's real mission note
+        // menu LAB panel: state + the location note, upgraded to the real
+        // mission finding once the edge node has analyzed the sample
         if (items.length) {
             labList.replaceChildren(...items.map((i) => {
                 const li = document.createElement('li');
+                const analyzed = analyzedIds?.has(i.id);
                 const name = document.createElement('b');
-                name.textContent = deliveredIds?.has(i.id) ? `${i.name} — DELIVERED` : i.name;
+                name.textContent = analyzed ? `${i.name} — ANALYZED ✦`
+                    : deliveredIds?.has(i.id) ? `${i.name} — DELIVERED · IN QUEUE` : i.name;
                 const note = document.createElement('span');
-                note.textContent = i.note ?? '';
+                note.textContent = (analyzed ? i.finding : i.note) ?? '';
                 li.append(name, note);
                 return li;
             }));
         }
+    }
+
+    // Edge-node status line in the inventory box, fed at telemetry rate.
+    const nodeEl = rootEl.querySelector('#mc-node');
+
+    /** status = { name, progress 0..1 } while processing, null when idle. */
+    function setNode(status) {
+        nodeEl.classList.toggle('is-idle', !status);
+        nodeEl.textContent = status
+            ? `NODE ▸ ${status.name.toUpperCase()} ${Math.round(status.progress * 100)}%`
+            : 'NODE IDLE';
+    }
+
+    const archiveList = rootEl.querySelector('#mc-archive-list');
+
+    /** Persistent science archive (analysis.js records), newest first. */
+    function setArchive(records) {
+        if (!records?.length) return; // keep the empty-state hint
+        archiveList.replaceChildren(...[...records].reverse().map((r) => {
+            const li = document.createElement('li');
+            const name = document.createElement('b');
+            name.textContent = r.name;
+            const finding = document.createElement('span');
+            finding.textContent = r.finding;
+            const meta = document.createElement('span');
+            meta.className = 'mars-menu__lab-meta';
+            meta.textContent = `${r.siteName ?? r.site} · ${new Date(r.analyzedAt).toLocaleDateString()}`;
+            li.append(name, finding, meta);
+            return li;
+        }));
     }
 
     // speed m/s, heading rad (unit convention: W travels along
@@ -343,6 +389,7 @@ export function createHud(rootEl, { site, onSwitchUnit, onCollect, onToggleSfx, 
 
     return {
         minimapEl, setActiveUnit, setPrompt, setInventory, setLab,
+        setNode, setArchive,
         setTelemetry, setMenuOpen, isMenuOpen,
         setDronePanel, setDroneState, setGear,
     };

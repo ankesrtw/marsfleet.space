@@ -348,6 +348,14 @@ html, body {
     opacity: 0.6;
 }
 
+/* archive entry meta line: site + analysis date, dimmer than the finding
+   (li span selector needed to outrank the generic .mars-menu__lab li span) */
+.mars-menu__lab li span.mars-menu__lab-meta {
+    font-size: 0.66rem;
+    opacity: 0.45;
+    letter-spacing: 0.06em;
+}
+
 .mars-menu__controls {
     list-style: none;
     margin: 0;
@@ -569,6 +577,20 @@ html, body {
     font-size: 0.8rem;
 }
 
+/* live edge-node readout ("NODE ▸ ROCHETTE 42%") under the LAB count */
+.mars-hud__node {
+    font-size: 0.68rem;
+    letter-spacing: 0.08em;
+    color: #e0b95e;
+    margin-bottom: 4px;
+    white-space: nowrap;
+}
+
+.mars-hud__node.is-idle {
+    opacity: 0.4;
+    color: inherit;
+}
+
 /* phones: inventory shrinks to a counts-only chip lifted above the left
    stick zone — at the bottom corner it sat right on the resting pad.
    (Must come AFTER the base rules above — same specificity, cascade
@@ -583,6 +605,11 @@ html, body {
     }
 
     .mars-hud__inventory ul {
+        display: none;
+    }
+
+    /* counts-only chip: no room for the live node line */
+    .mars-hud__node {
         display: none;
     }
 
