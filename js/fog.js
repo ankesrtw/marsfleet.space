@@ -313,6 +313,24 @@ export function createFog(site, minimapEl, terrain) {
             }
         }
 
+        // Dust devils (Wave 6): live weather, so above the fog. Rotating
+        // dashed ring reads as "swirl" at map scale without an icon.
+        if (extras?.devils) {
+            const spin = performance.now() * 0.003;
+            for (const d of extras.devils) {
+                const { px, py } = worldToPx(d.x, d.z);
+                const r = Math.max(6, (d.r / worldSize) * MAP_RES * 2);
+                displayCtx.strokeStyle = 'rgba(224, 178, 120, 0.9)';
+                displayCtx.lineWidth = 2.5;
+                displayCtx.setLineDash([5, 5]);
+                displayCtx.lineDashOffset = -spin * r;
+                displayCtx.beginPath();
+                displayCtx.arc(px, py, r, 0, Math.PI * 2);
+                displayCtx.stroke();
+                displayCtx.setLineDash([]);
+            }
+        }
+
         // PATH mode: the active unit's breadcrumb trail (main.js records
         // it on the telemetry tick), above the fog like the unit dots.
         if (currentMode === 'path' && extras?.path?.length > 1) {

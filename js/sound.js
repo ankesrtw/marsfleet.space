@@ -15,6 +15,7 @@ export function createSound() {
     let ctx = null;
     let master = null;
     let engine = null;      // { osc, sub, filter, gain }
+    let windBed = null;     // wind-loop gain node (Wave 6: rides real wind)
     let enabled = localStorage.getItem(LS_KEY) !== 'off';
 
     function unlock() {
@@ -60,6 +61,7 @@ export function createSound() {
         src.connect(filter).connect(gain).connect(master);
         src.start();
         lfo.start();
+        windBed = gain;
     }
 
     function buildEngine() {
@@ -91,7 +93,7 @@ export function createSound() {
     };
 
     /** Per frame: unitName + normalized speed 0..1 drive the hum. */
-    function update(unitName, speedNorm) {
+    function update(unitName, speedNorm, windNorm = 0) {
         if (!ctx || !engine) return;
         const voice = ENGINE_VOICE[unitName] ?? ENGINE_VOICE['Rover'];
         const t = ctx.currentTime;
@@ -99,6 +101,11 @@ export function createSound() {
         engine.gain.gain.setTargetAtTime(target, t, 0.12);
         engine.osc.frequency.setTargetAtTime(voice.freq * (1 + 0.5 * speedNorm), t, 0.15);
         engine.sub.frequency.setTargetAtTime(voice.freq * 2 * (1 + 0.5 * speedNorm), t, 0.15);
+        // Wave 6: the wind bed swells with real wind at the active unit
+        // (storm flow + any nearby dust devil); 0.05 is the calm floor.
+        if (windBed) {
+            windBed.gain.setTargetAtTime(0.05 + 0.3 * Math.min(1, windNorm), t, 0.4);
+        }
     }
 
     function blip(freqs, dur = 0.12, vol = 0.18, type = 'sine') {
@@ -137,5 +144,10 @@ export function createSound() {
         switchUnit: () => blip([440], 0.09, 0.14, 'triangle'),
         lowBattery: () => blip([220, 220], 0.16, 0.16, 'square'),
         dead: () => blip([160, 110], 0.3, 0.18, 'square'),
+        // Wave 6 consequences: falling alarm for a tip-over, low grind
+        // for digging in, rising all-clear once recovered
+        rollover: () => blip([392, 262, 175], 0.2, 0.22, 'square'),
+        bogged: () => blip([196, 165, 196, 165], 0.18, 0.16, 'sawtooth'),
+        recovered: () => blip([523, 659, 784], 0.12, 0.18),
     };
 }

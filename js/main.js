@@ -16,6 +16,7 @@ import { createCameraRig } from './camera.js';
 import { createEnvironment, FOG, FOG_BASE_DENSITY } from './environment.js';
 import { createHazardZones } from './hazardZones.js';
 import { createWeather } from './weather.js';
+import { createDustDevils } from './dustDevils.js';
 import { createRocks } from './rocks.js';
 import { createEffects } from './effects.js';
 import { createWaypoint } from './waypoint.js';
@@ -145,17 +146,28 @@ async function startGame(site) {
     // (both no-op on sites without a `hazards` field in sites.js).
     const hazardZones = createHazardZones(site);
     const weather = createWeather(site);
+    // Wave 6 wind: one facade sums the storm's regional flow (weather.js)
+    // and dust-devil vortices (dustDevils.js) — drones read this, ground
+    // units don't (1/100 Earth air density: real Mars wind can't push a
+    // rover). forUnit-facade idiom, not a module.
+    const dustDevils = createDustDevils(site, terrain, env, scene);
+    const wind = {
+        sample(x, z) {
+            const v = dustDevils.sampleWind(x, z);
+            return { vx: v.vx + weather.windX, vz: v.vz + weather.windZ };
+        },
+    };
     const rover = createRover(site, terrain, colliders.forUnit('rover'), { hazards: hazardZones, weather });
     // Two quads, both spawn LANDED beside the rover: a fast recon scout
     // and a slower heavy-lift frame (Ingenuity-class vs cargo-class).
     const recon = createDrone(site, terrain, {
         modelName: 'recon', maxSpeed: 10, climbRate: 3, cruiseAlt: 18, spawnDx: -6, spawnDz: 4,
-        obstacles: colliders.forUnit('recon'), bodyRadius: 0.7,
+        obstacles: colliders.forUnit('recon'), bodyRadius: 0.7, wind,
     });
     const lift = createDrone(site, terrain, {
         modelName: 'drone', maxSpeed: 6, climbRate: 2, cruiseAlt: 12, spawnDx: 8, spawnDz: 6,
         canSling: true,
-        obstacles: colliders.forUnit('lift'), bodyRadius: 1.2,
+        obstacles: colliders.forUnit('lift'), bodyRadius: 1.2, wind,
     });
     const humanoid = createHumanoid(site, terrain, colliders.forUnit('humanoid'));
     scene.add(rover.mesh, recon.mesh, lift.mesh, humanoid.mesh);
@@ -240,7 +252,9 @@ async function startGame(site) {
     const RESTART_CHARGE = 10;   // empty units stay dead until this
     const NIGHT_DRAIN_K = 0.5;   // cold-night heater tax: +50% drain at full dark
     const STORM_FOG_K = 8;       // FOG.density multiplier span at storm peak
+    const ROLLOVER_BATT_PENALTY = 8; // % charge lost when the rover tips (Wave 6)
     let activeIndex = 0;
+    let prevRoverCondition = 'ok';   // Wave 6 transition edge detector
 
     const hudRoot = document.getElementById('mc-hud');
     const hud = createHud(hudRoot, {
@@ -330,7 +344,7 @@ async function startGame(site) {
     // Debug/E2E handle (also used by the sampleHeight ground-truth check;
     // renderer/scene/camera exposed so tests on software-GL boxes can pause
     // the loop and capture canvas pixels via a same-task render+toDataURL).
-    window.__mc = { site, terrain, rover, drone: recon, recon, lift, humanoid, samples, renderer, scene, camera, camRig, units, env, effects, waypoint, sound, rocks, lab, sling, analysis, fog, colliders, missions, hazardZones, weather, get intro() { return intro; } };
+    window.__mc = { site, terrain, rover, drone: recon, recon, lift, humanoid, samples, renderer, scene, camera, camRig, units, env, effects, waypoint, sound, rocks, lab, sling, analysis, fog, colliders, missions, hazardZones, weather, dustDevils, wind, get intro() { return intro; } };
 
     function applyUnitMode() {
         const active = units[activeIndex];
@@ -540,25 +554,63 @@ async function startGame(site) {
                 .filter((c) => c.state === 'field')
                 .map((c) => ({ x: c.mesh.position.x, z: c.mesh.position.z })),
             path: pathTrail,
+            devils: dustDevils.devils.map((d) => ({ x: d.x, z: d.z, r: d.r })),
         });
         waypoint.update(dt, targetInfo);
         sling.update(dt, lift.position);
         lab.update(dt);
         analysis.update(dt);
+        dustDevils.update(dt);
         effects.update(dt, active, speedNow, env.daylight());
         const engineNorm = active.kind === 'fly'
             ? (active.unit.landed ? 0 : Math.max(0.35, speedNow / active.unit.maxSpeed))
             : speedNow / (active.name === 'Humanoid' ? 1.4 : Math.max(0.042, rover.maxSpeed));
-        sound.update(active.name, Math.min(1, engineNorm));
+        const windHere = wind.sample(active.unit.position.x, active.unit.position.z);
+        sound.update(active.name, Math.min(1, engineNorm),
+            Math.hypot(windHere.vx, windHere.vz) / 20); // /WIND_PEAK — 1.0 at storm max
 
         // Edge-of-DEM warning while the active unit pushes the boundary.
         hud.setBoundary(!!active.unit.atBoundary);
 
-        // Hazard banner: the soft-terrain zone the active unit is bogged
-        // in (rover-only getter), else the site-wide dust storm once it's
-        // thick enough to matter. One slot — they rarely coincide.
-        hud.setHazard(active.unit.inHazard
-            ?? (weather.intensity > 0.15 ? { type: 'dust-storm' } : null));
+        // Wave 6: proximity assist for a downed rover — any OTHER working
+        // unit inside assistRange auto-helps (no key: E is drone strafe,
+        // and this also just works on touch). Battery penalty lands once
+        // on the ok->rolled transition.
+        const roverEntry = units.find((u) => u.unit === rover);
+        if (rover.condition !== 'ok') {
+            const near = units.some((u) => u.unit !== rover && !u.dead
+                && Math.hypot(u.unit.position.x - rover.position.x,
+                    u.unit.position.z - rover.position.z) <= rover.assistRange);
+            rover.setAssist(near);
+        }
+        if (rover.condition === 'rolled' && prevRoverCondition === 'ok') {
+            roverEntry.charge = Math.max(0, roverEntry.charge - ROLLOVER_BATT_PENALTY);
+            sound.rollover();
+        } else if (rover.condition === 'bogged' && prevRoverCondition === 'ok') {
+            sound.bogged();
+        } else if (rover.condition === 'ok' && prevRoverCondition !== 'ok') {
+            sound.recovered();
+        }
+        prevRoverCondition = rover.condition;
+
+        // Hazard banner: a downed rover outranks everything (with live
+        // recovery %); a nearby downed rover prompts other units to hold
+        // position and assist; then the soft-terrain zone the active unit
+        // is in (rover-only getter), else the site-wide dust storm once
+        // it's thick enough to matter. One slot.
+        const recPct = Math.round(rover.recoveryMeter * 100);
+        if (active.unit === rover && rover.condition === 'rolled') {
+            hud.setHazard({ type: 'rollover', pct: recPct });
+        } else if (active.unit === rover && rover.condition === 'bogged') {
+            hud.setHazard({ type: 'bogged', pct: recPct });
+        } else if (active.unit !== rover && rover.condition !== 'ok') {
+            hud.setHazard({ type: 'rover-down', pct: recPct });
+        } else if (active.unit === rover && rover.bogMeter > 0.3) {
+            hud.setHazard({ type: 'sinking' });
+        } else {
+            hud.setHazard(active.unit.inHazard
+                ?? (weather.intensity > 0.15 ? { type: 'dust-storm' } : null));
+        }
 
         // Dust storm haze: FOG.color is synced by env.update, but density
         // is copied by VALUE into both scene.fog (environment.js re-syncs
@@ -639,6 +691,7 @@ async function startGame(site) {
                 target: targetInfo,
                 tgtRelDeg,
                 rolloverRisk: active.unit.rolloverRisk ?? null, // rover-only gauge
+                wind: wind.sample(pos.x, pos.z), // real m/s at the unit (Wave 6)
             });
             hud.setNode(analysis.status());
             if (active.kind === 'fly') {

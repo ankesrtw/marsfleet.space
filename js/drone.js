@@ -48,6 +48,16 @@ const SLING_SPEED = 0.6;
 const SLING_CLIMB = 0.7;
 const SLING_DRAIN = 1.35;   // laden endurance ~25-30% lower, not halved
 
+// Wave 6 wind: the ONE deliberately unreal constant in the wind chain.
+// Mars air is ~1/100 Earth density — a real 20 m/s storm pushes like a
+// 2 m/s Earth breeze, and a faithful sim would be imperceptible. The
+// wind facade reports REAL m/s (MEDA-grounded, HUD shows them); this
+// factor scales how much of it becomes drift, so a storm-peak gust
+// drifts a hovering drone ~7 m/s — felt, counter-steerable (Ingenuity's
+// real control law: tilt INTO the wind), never uncontrollable. Same
+// readability-over-realism choice as the ~20% unit-scale bump.
+const WIND_PUSH = 0.35;
+
 export function createDrone(site, terrain, opts = {}) {
     const {
         modelName = 'drone',
@@ -59,6 +69,7 @@ export function createDrone(site, terrain, opts = {}) {
         canSling = false,   // lift drone only — see lab.js
         obstacles = null,   // colliders.js forUnit facade (alt-aware)
         bodyRadius = 0.9,   // m, horizontal collision footprint
+        wind = null,        // main.js wind facade: sample(x, z) -> {vx, vz} m/s
     } = opts;
 
     let gearIdx = Math.max(0, GEARS.findIndex((g) => g.label === localStorage.getItem(GEAR_KEY)));
@@ -90,6 +101,7 @@ export function createDrone(site, terrain, opts = {}) {
     let heading = site.spawn.heading;
     let landed = true;                 // starts parked on the surface
     let alt = 0;                       // m above ground
+    let windDrift = 0;                 // m/s felt drift, for HUD/E2E
     let autoLand = false;
     let autoTakeoffTo = null;
     let powered = true;
@@ -168,6 +180,7 @@ export function createDrone(site, terrain, opts = {}) {
 
         if (landed) {
             atBoundary = false;
+            windDrift = 0; // parked frames sit out the wind (real: tie-down mass)
             // parked: level out, no translation; climb starts a take-off
             pitchTilt += (0 - pitchTilt) * Math.min(1, 6 * dt);
             rollTilt += (0 - rollTilt) * Math.min(1, 6 * dt);
@@ -209,11 +222,24 @@ export function createDrone(site, terrain, opts = {}) {
         pitchTilt += (THREE.MathUtils.clamp(-errFwd, -1, 1) * TILT_MAX - pitchTilt) * tk;
         rollTilt += (THREE.MathUtils.clamp(-errRight, -1, 1) * TILT_MAX - rollTilt) * tk;
 
+        // Wind drift (Wave 6): the facade reports real m/s; WIND_PUSH
+        // converts to felt drift. Drift is positional, not a vel change —
+        // the tilt rig only ever shows COMMANDED acceleration, so a gust
+        // slides a level drone sideways until the player banks against
+        // it, exactly the Ingenuity picture.
+        let wx = 0, wz = 0;
+        if (wind) {
+            const w = wind.sample(mesh.position.x, mesh.position.z);
+            wx = w.vx * WIND_PUSH;
+            wz = w.vz * WIND_PUSH;
+        }
+        windDrift = Math.hypot(wx, wz);
+
         // Blocked-entry horizontal collision (same escape rule as the
         // ground units): structures/units gate by altitude band inside
         // the colliders facade, so cruise height overflies everything.
-        let nx = mesh.position.x + vel.x * dt;
-        let nz = mesh.position.z + vel.y * dt;
+        let nx = mesh.position.x + (vel.x + wx) * dt;
+        let nz = mesh.position.z + (vel.y + wz) * dt;
         // Mission boundary: clamp per axis, kill that axis' velocity so
         // the frame can still slide along the edge; flag for the HUD.
         atBoundary = Math.abs(nx) > bound || Math.abs(nz) > bound;
@@ -268,6 +294,7 @@ export function createDrone(site, terrain, opts = {}) {
         get altTarget() { return altTarget; },
         get ceiling() { return MAX_ALT; },
         get slung() { return slung; },
+        get windDrift() { return windDrift; }, // m/s felt drift (0 landed/calm)
         get maxSpeed() { return speedCap(); },
         get gearLabel() { return GEARS[gearIdx].label; },
         get drainScale() { return GEARS[gearIdx].drain * (slung ? SLING_DRAIN : 1); },

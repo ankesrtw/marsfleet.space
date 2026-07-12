@@ -23,6 +23,17 @@ const RAMP_S = 25;           // clear -> peak
 const PEAK_S = 55;           // held at peak
 const DECAY_S = 40;          // peak -> clear
 
+// Wave 6 storm wind: real MEDA numbers. The Jan 2022 Jezero storm
+// measured winds to 20 m/s (and physically damaged the wind sensor);
+// typical calm-day winds are a few m/s — below anything the drones
+// feel, so wind is zero outside storms by design. Direction is a
+// coherent regional flow that wanders slowly; gusts are a slow
+// sinusoid pair (period ~7s/13s) rather than per-frame noise so the
+// drift reads as weather, not jitter.
+const WIND_PEAK = 20;        // m/s at intensity 1 (MEDA Jezero storm max)
+const DIR_WANDER = 0.02;     // rad/s, storm-front direction drift
+const GUST_DEPTH = 0.3;      // gust factor swings 1 +/- this
+
 export function createWeather(site) {
     const cfg = site.hazards?.dustStorm ?? null;
     const peak = cfg?.peakIntensity ?? 0.7;
@@ -31,6 +42,9 @@ export function createWeather(site) {
     let t = 0;            // seconds into the current phase
     let wait = cfg ? nextInterval() : Infinity;
     let intensity = 0;
+    let windDir = Math.random() * Math.PI * 2;  // world-plane bearing
+    let gustT = 0;
+    let windSpeed = 0;    // m/s, gusted
 
     function nextInterval() {
         return MIN_INTERVAL_S + Math.random() * (MAX_INTERVAL_S - MIN_INTERVAL_S);
@@ -56,6 +70,13 @@ export function createWeather(site) {
                 intensity = 0;
             }
         }
+
+        // wind rides the same intensity scalar the fog/solar/drag all use
+        gustT += dt;
+        windDir += (Math.sin(gustT * 0.11) * 0.7 + 0.3) * DIR_WANDER * dt;
+        const gust = 1 + GUST_DEPTH
+            * (0.6 * Math.sin(gustT * (2 * Math.PI / 7)) + 0.4 * Math.sin(gustT * (2 * Math.PI / 13)));
+        windSpeed = intensity * WIND_PEAK * gust;
     }
 
     /** Debug/E2E: start (or re-peak) a storm right now. */
@@ -69,5 +90,10 @@ export function createWeather(site) {
         update, forceStorm,
         get intensity() { return intensity; },
         get active() { return phase !== 'idle'; },
+        // storm wind, world plane (m/s) — zero in calm air by design
+        get windSpeed() { return windSpeed; },
+        get windDir() { return windDir; },
+        get windX() { return Math.sin(windDir) * windSpeed; },
+        get windZ() { return Math.cos(windDir) * windSpeed; },
     };
 }

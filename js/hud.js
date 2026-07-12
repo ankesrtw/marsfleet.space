@@ -33,6 +33,7 @@ export function createHud(rootEl, { site, onSwitchUnit, onCollect, onToggleSfx, 
             <div class="mars-hud__compass" id="mc-compass" aria-hidden="true">
                 <span class="mars-compass__cardinal">N</span>
                 <span class="mars-compass__needle" id="mc-compass-needle">▲</span>
+                <span class="mars-compass__wind" id="mc-compass-wind" hidden>▲</span>
             </div>
             <div class="mars-hud__telemetry" id="mc-telemetry">
                 <button class="mars-tele__toggle" id="mc-tele-toggle" aria-label="Collapse telemetry">▾</button>
@@ -48,6 +49,7 @@ export function createHud(rootEl, { site, onSwitchUnit, onCollect, onToggleSfx, 
                     <span>ODO</span><b id="mc-t-odo">0 m</b>
                     <span>BATT</span><b id="mc-t-batt">100%</b>
                     <span>ROLL</span><b id="mc-t-roll">—</b>
+                    <span>WIND</span><b id="mc-t-wind">CALM</b>
                     <span>TGT</span><b id="mc-t-tgt"><span class="mars-tele__arrow" id="mc-t-tgt-arrow" hidden>▲</span><span id="mc-t-tgt-txt">—</span></b>
                 </div>
             </div>
@@ -204,6 +206,7 @@ export function createHud(rootEl, { site, onSwitchUnit, onCollect, onToggleSfx, 
         odo: rootEl.querySelector('#mc-t-odo'),
         batt: rootEl.querySelector('#mc-t-batt'),
         roll: rootEl.querySelector('#mc-t-roll'),
+        wind: rootEl.querySelector('#mc-t-wind'),
         tgt: rootEl.querySelector('#mc-t-tgt-txt'),
         tgtArrow: rootEl.querySelector('#mc-t-tgt-arrow'),
     };
@@ -212,6 +215,10 @@ export function createHud(rootEl, { site, onSwitchUnit, onCollect, onToggleSfx, 
     // at telemetry rate with no CSS transition — a tween would spin the
     // long way round on every 359->0 wrap.
     const compassNeedle = rootEl.querySelector('#mc-compass-needle');
+    // Wind needle on the same dial (Wave 6): points where the wind blows
+    // TOWARD, teal to read apart from the amber nose needle; hidden in
+    // calm air. Same no-transition rule (359->0 wrap).
+    const windNeedle = rootEl.querySelector('#mc-compass-wind');
     const CARDINALS = ['N', 'NE', 'E', 'SE', 'S', 'SW', 'W', 'NW'];
     const missionStart = Date.parse(site.landingUtc);
     const metStart = Date.now();
@@ -268,13 +275,20 @@ export function createHud(rootEl, { site, onSwitchUnit, onCollect, onToggleSfx, 
     const HAZARD_LABELS = {
         'soft-sand': '⚠ SOFT TERRAIN — TRACTION LOSS',
         'dust-storm': '⚠ DUST STORM — VISIBILITY / SOLAR DEGRADED',
+        // Wave 6 consequences — recovery instructions live in the banner
+        // (pct appended below when provided)
+        'sinking': '⚠ SINKING — EASE OFF / LOWER GEAR',
+        'rollover': '⚠ ROLLOVER — ROCK W/S TO RIGHT, OR BRING A UNIT CLOSE',
+        'bogged': '⚠ BOGGED DOWN — ROCK W/S, DON\'T DIG · UNIT NEARBY SPEEDS TOW',
+        'rover-down': '⚠ ROVER DOWN — HOLD NEAR IT TO ASSIST',
     };
     const hazardEl = rootEl.querySelector('#mc-hazard');
     let hazardLabelShown = null;
 
-    /** hazard = { type } | null — label looked up per type. */
+    /** hazard = { type, pct? } | null — label per type, live % appended. */
     function setHazard(hazard) {
-        const label = hazard ? (HAZARD_LABELS[hazard.type] ?? `⚠ ${hazard.type.toUpperCase()}`) : null;
+        let label = hazard ? (HAZARD_LABELS[hazard.type] ?? `⚠ ${hazard.type.toUpperCase()}`) : null;
+        if (label && hazard.pct != null) label += ` (${hazard.pct}%)`;
         if (label === hazardLabelShown) return;
         hazardLabelShown = label;
         hazardEl.dataset.visible = String(!!label);
@@ -546,7 +560,7 @@ export function createHud(rootEl, { site, onSwitchUnit, onCollect, onToggleSfx, 
     // -[sin h, cos h], so bearing-from-north = -h), elev m, slope deg.
     // tgtRelDeg: steer angle to the target relative to forward travel
     // (0 = dead ahead, +90 = hard right) — rotates the TGT arrow.
-    function setTelemetry({ speed, heading, elevation, slopeDeg, x, z, odo, charge, dead, target, tgtRelDeg, rolloverRisk }) {
+    function setTelemetry({ speed, heading, elevation, slopeDeg, x, z, odo, charge, dead, target, tgtRelDeg, rolloverRisk, wind }) {
         const bearing = ((-heading * 180 / Math.PI) % 360 + 360) % 360;
         const card = CARDINALS[Math.round(bearing / 45) % 8];
         const lat = site.center.lat - z / M_PER_DEG;
@@ -581,6 +595,24 @@ export function createHud(rootEl, { site, onSwitchUnit, onCollect, onToggleSfx, 
             const pct = Math.round(rolloverRisk * 100);
             tele.roll.textContent = pct >= 100 ? '100% ⚠' : `${pct}%`;
             tele.roll.className = rolloverRisk >= 0.75 ? 'is-crit' : rolloverRisk >= 0.4 ? 'is-low' : '';
+        }
+
+        // WIND readout + dial needle (Wave 6): real m/s from the wind
+        // facade at the active unit's position (storm flow + any nearby
+        // dust-devil vortex). CALM below 0.5 m/s — typical Jezero days.
+        const windSpd = wind ? Math.hypot(wind.vx, wind.vz) : 0;
+        if (windSpd < 0.5) {
+            tele.wind.textContent = 'CALM';
+            tele.wind.className = '';
+            windNeedle.hidden = true;
+        } else {
+            tele.wind.textContent = `${windSpd.toFixed(1)} m/s`;
+            tele.wind.className = windSpd >= 14 ? 'is-crit' : windSpd >= 7 ? 'is-low' : '';
+            const windBearing = ((Math.atan2(wind.vx, -wind.vz) * 180 / Math.PI) % 360 + 360) % 360;
+            windNeedle.hidden = false;
+            // rotate-then-offset rides the arrow around the dial rim on the
+            // wind's bearing side (nose needle keeps the center)
+            windNeedle.style.transform = `translate(-50%, -50%) rotate(${Math.round(windBearing)}deg) translateY(-13px)`;
         }
 
         tele.tgt.textContent = target
