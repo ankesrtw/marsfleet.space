@@ -50,6 +50,11 @@ const MODELS = {
 // drones and the humanoid all visually fit inside the dock.
 const STATIC_MODELS = {
     station: { url: 'assets/models/station.glb', yaw: 0, footprint: 15, doubleSide: true },
+    // Wave 7 base-building: small per-sample checkpost (analysis unlock)
+    // and the bigger HQ capstone (all-missions unlock). Same fallback-first
+    // pipeline — a procedural placeholder covers both until the GLBs exist.
+    checkpost: { url: 'assets/models/checkpost.glb', yaw: 0, footprint: 6, doubleSide: true },
+    hq: { url: 'assets/models/hq.glb', yaw: 0, footprint: 22, doubleSide: true },
 };
 
 // SIGNAL brand accent (cyan-teal — distinct from the amber logo mark) and

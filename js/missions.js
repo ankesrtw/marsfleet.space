@@ -130,6 +130,12 @@ export function createMissions(site, { onComplete } = {}) {
         return completed.has(missionId);
     }
 
+    /** True once every mission this site offers is done (Wave 7 HQ gate).
+        A site with no missions never reports true — nothing to complete. */
+    function allComplete() {
+        return available.length > 0 && available.every((id) => completed.has(id));
+    }
+
     /** Menu MISSIONS section feed: every mission this site offers. */
     function menuEntries() {
         return available.map((id) => ({
@@ -141,7 +147,7 @@ export function createMissions(site, { onComplete } = {}) {
     }
 
     return {
-        start, advance, skip, current, currentAny, isComplete, menuEntries,
+        start, advance, skip, current, currentAny, isComplete, allComplete, menuEntries,
         get activeMissions() { return [...active.keys()]; },
         // Autostart chains not yet completed — main.js starts these at boot
         // (the tutorial's old first-visit gate, generalized).

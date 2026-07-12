@@ -141,6 +141,9 @@ export function createSound() {
         sling: () => blip([520, 780], 0.12, 0.18),
         deliver: () => blip([660, 990, 1320], 0.13, 0.2),
         analysisDone: () => blip([880, 1175, 1568, 1175], 0.15, 0.18),
+        // Wave 7: structure raised — ascending major arpeggio, longer than
+        // recovered so "built" reads bigger than "back to normal"
+        built: () => blip([392, 523, 659, 784], 0.16, 0.2),
         switchUnit: () => blip([440], 0.09, 0.14, 'triangle'),
         lowBattery: () => blip([220, 220], 0.16, 0.16, 'square'),
         dead: () => blip([160, 110], 0.3, 0.18, 'square'),

@@ -55,6 +55,11 @@ export const SITES = {
         // Objective chains offered here (missions.js keys). Sites without
         // the field simply have none — Wave 4 pattern, Jezero-first.
         missions: ['tutorial'],
+        // Wave 7 base-building: once ALL missions above are complete, a
+        // Marsapiens Headquarters structure builds near the FIELD LAB
+        // (outposts.js resolves the actual world position at runtime —
+        // it needs the lab's placed padPos, not known at config time).
+        hq: { name: 'Marsapiens Headquarters' },
         // Wave 4 hazards (hazardZones.js / weather.js) — additive, sites
         // without the field have none. softSand circles sit on real
         // aeolian ground: the Séítah dune margins (the rippled sand that
@@ -76,21 +81,27 @@ export const SITES = {
         // that spread the objective net across all quadrants of the crop.
         samples: [
             { id: 'rochette', name: 'Rochette', x: 1660, z: 1067, note: 'First cored sample, Sep 2021',
-              finding: 'Olivine-bearing basalt with water-alteration rinds — the crater floor rock interacted with liquid water.' },
+              finding: 'Olivine-bearing basalt with water-alteration rinds — the crater floor rock interacted with liquid water.',
+              outpost: { name: 'Rochette Checkpost' } },
             { id: 'seitah', name: 'Séítah', x: 1008, z: 415, note: 'Ridge-forming igneous rock',
-              finding: 'Coarse-grained olivine cumulate — a slowly cooled igneous body, later altered by water (carbonates present).' },
+              finding: 'Coarse-grained olivine cumulate — a slowly cooled igneous body, later altered by water (carbonates present).',
+              outpost: { name: 'Séítah Checkpost' } },
             { id: 'wildcat-ridge', name: 'Wildcat Ridge', x: -771, z: -207, note: 'Organic-molecule-bearing mudstone',
-              finding: 'Sulfate-bearing mudstone carrying the mission’s strongest organic-molecule signal (SHERLOC detection).' },
+              finding: 'Sulfate-bearing mudstone carrying the mission’s strongest organic-molecule signal (SHERLOC detection).',
+              outpost: { name: 'Wildcat Ridge Checkpost' } },
             { id: 'skinner-ridge', name: 'Skinner Ridge', x: -652, z: -166, note: 'Delta front outcrop',
-              finding: 'Delta-front sandstone with transported clasts — rock carried in from far outside the crater by the ancient river.' },
+              finding: 'Delta-front sandstone with transported clasts — rock carried in from far outside the crater by the ancient river.',
+              outpost: { name: 'Skinner Ridge Checkpost' } },
             { id: 'cheyava-falls', name: 'Cheyava Falls', x: -1778, z: -1185, note: 'Leopard-spot reduction-oxidation features',
-              finding: 'Iron-phosphate “leopard spot” redox fronts around organic-bearing veins — a potential biosignature, under review.' },
+              finding: 'Iron-phosphate “leopard spot” redox fronts around organic-bearing veins — a potential biosignature, under review.',
+              outpost: { name: 'Cheyava Falls Checkpost' } },
             { id: 'maaz', name: 'Máaz', x: 2300, z: 800, note: 'First rock target on the crater floor (approx. location)',
               finding: 'Basaltic crater-floor rock, water-altered — the very first laser target of the Mars 2020 mission.' },
             { id: 'kodiak', name: 'Kodiak Butte', x: -889, z: 2075, note: 'Delta remnant butte (approx. location)',
               finding: 'Textbook Gilbert-delta stratigraphy — inclined foreset beds proving a standing lake once filled Jezero.' },
             { id: 'three-forks', name: 'Three Forks Depot', x: -2015, z: 1600, note: 'Mars Sample Return depot (approx. location)',
-              finding: 'Ten sealed sample tubes cached on the crater floor — humanity’s first sample depot on another world.' },
+              finding: 'Ten sealed sample tubes cached on the crater floor — humanity’s first sample depot on another world.',
+              outpost: { name: 'Three Forks Depot Checkpost' } },
             { id: 'belva', name: 'Belva Crater', x: -2074, z: -296, note: 'Impact window into the delta (approx. location)',
               finding: 'Tilted sandstone blocks exposed by the impact — a cross-section through the buried ancient river system.' },
             { id: 'neretva-vallis', name: 'Neretva Vallis', x: -2450, z: -2600, note: 'Inlet channel floor — simulated survey target',

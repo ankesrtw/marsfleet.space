@@ -243,6 +243,7 @@ export function createFog(site, minimapEl, terrain) {
 
     /** extras: { lab: {x,z} | null, targetId: string | null,
         caches: [{x,z}, ...] | null (field containers awaiting pickup),
+        outposts: [{x,z,hq}, ...] | null (Wave 7 built structures),
         path: [{x,z}, ...] | null (drawn only in PATH mode) } */
     function render(markerPositions, unitPositions, extras) {
         displayCtx.clearRect(0, 0, MAP_RES, MAP_RES);
@@ -310,6 +311,27 @@ export function createFog(site, minimapEl, terrain) {
                 displayCtx.fillRect(-4.5, -4.5, 9, 9);
                 displayCtx.strokeRect(-4.5, -4.5, 9, 9);
                 displayCtx.restore();
+            }
+        }
+
+        // Built structures (Wave 7): known bases, above the fog like the
+        // lab. Checkposts = hollow teal squares (smaller than the solid
+        // lab square); the HQ = a bigger solid square, the site capital.
+        if (extras?.outposts) {
+            for (const o of extras.outposts) {
+                const { px, py } = worldToPx(o.x, o.z);
+                displayCtx.strokeStyle = 'rgba(0,0,0,0.7)';
+                displayCtx.lineWidth = 2;
+                if (o.hq) {
+                    displayCtx.fillStyle = '#59d8c9';
+                    displayCtx.fillRect(px - 7, py - 7, 14, 14);
+                    displayCtx.strokeRect(px - 7, py - 7, 14, 14);
+                } else {
+                    displayCtx.strokeRect(px - 4, py - 4, 8, 8);
+                    displayCtx.strokeStyle = '#59d8c9';
+                    displayCtx.lineWidth = 1.5;
+                    displayCtx.strokeRect(px - 4, py - 4, 8, 8);
+                }
             }
         }
 

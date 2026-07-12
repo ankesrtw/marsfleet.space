@@ -507,8 +507,37 @@ html, body {
     50% { opacity: 0.55; }
 }
 
+/* Build toast (Wave 7): third slot in the top banner stack, teal =
+   good news (objective idiom). One-shot — hud.js self-hides it, so no
+   pulse; a single ease-in reads as an announcement, not an alarm. */
+.mars-hud__toast {
+    position: absolute;
+    top: max(144px, calc(env(safe-area-inset-top) + 136px));
+    left: 50%;
+    transform: translateX(-50%);
+    padding: 8px 16px;
+    border: 1px solid #59d8c9;
+    background: rgba(8, 38, 36, 0.88);
+    color: #a6f2e8;
+    font-size: 0.78rem;
+    letter-spacing: 0.12em;
+    white-space: nowrap;
+    pointer-events: none;
+    z-index: 20;
+    animation: mars-toast-in 0.35s ease-out;
+}
+
+.mars-hud__toast[data-visible="false"] {
+    display: none;
+}
+
+@keyframes mars-toast-in {
+    from { opacity: 0; transform: translateX(-50%) translateY(-8px); }
+    to { opacity: 1; transform: translateX(-50%); }
+}
+
 @media (max-width: 899px), (pointer: coarse) {
-    .mars-hud__boundary, .mars-hud__hazard {
+    .mars-hud__boundary, .mars-hud__hazard, .mars-hud__toast {
         font-size: 0.64rem;
         max-width: 92vw;
         white-space: normal;

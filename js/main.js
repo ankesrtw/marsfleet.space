@@ -26,6 +26,7 @@ import { createAnalysis } from './analysis.js';
 import { createColliders } from './colliders.js';
 import { createLandingIntro } from './intro.js';
 import { createMissions } from './missions.js';
+import { createOutposts } from './outposts.js';
 
 // Lift-drone logistics interaction envelope (see lab.js):
 const SLING_ALT = 8;      // m AGL — hover this low (or sit landed: alt 0
@@ -188,14 +189,26 @@ async function startGame(site) {
     const sling = createSling(scene, terrain);
     const deliveredIds = new Set();
 
+    // Wave 7 base-building (outposts.js): checkposts rise at flagged
+    // sample sites once analyzed; the HQ rises by the lab once every
+    // mission is complete. No-ops on sites without outpost/hq fields.
+    const outposts = createOutposts(scene, site, terrain, rocks, colliders, lab.padPos);
+
     // Edge-node analysis queue + persistent science archive (analysis.js):
     // delivered caches auto-process; completion reveals the real finding.
     const analysis = createAnalysis(site, {
-        onDone: () => {
+        onDone: (rec) => {
             hud.setInventory(samples.inventory, deliveredIds, analysis.analyzedIds);
             hud.setArchive(analysis.archive);
             sound.analysisDone();
             missions.advance('analyze');
+            // Wave 7: a flagged sample's first analysis raises its checkpost.
+            const post = outposts.buildFor(rec.id);
+            if (post) {
+                hud.toast(`⬢ ${post.name.toUpperCase()} ESTABLISHED`);
+                sound.built();
+                hud.setOutposts(outposts.list());
+            }
         },
     });
 
@@ -216,7 +229,18 @@ async function startGame(site) {
     // happened via missions.advance(id) — broadcast, no-op when nothing
     // is listening. Completion survives RESET MISSION (archive spirit).
     const missions = createMissions(site, {
-        onComplete: () => hud.setMissions(missions.menuEntries()),
+        onComplete: () => {
+            hud.setMissions(missions.menuEntries());
+            // Wave 7 capstone: the site's last mission raises the HQ.
+            if (missions.allComplete()) {
+                const hq = outposts.buildHq();
+                if (hq) {
+                    hud.toast(`⬢ ${hq.name.toUpperCase()} ESTABLISHED`);
+                    sound.built();
+                    hud.setOutposts(outposts.list());
+                }
+            }
+        },
     });
     let overviewMissionId = null; // all-steps card, shown once per (re)start
     function startMission(id) {
@@ -228,6 +252,11 @@ async function startGame(site) {
         missions.start(id);
         overviewMissionId = id;
     }
+
+    // Structures earned in past sessions re-derive at boot from the
+    // persistent archive + mission flags (no separate save state), which
+    // is also what carries them across RESET MISSION's reload.
+    outposts.bootstrap(analysis.archive, missions.allComplete());
 
     // Per-unit sim state: battery (drains with movement, solar-recharges
     // when idle; an empty battery immobilises the unit until it recovers
@@ -295,6 +324,7 @@ async function startGame(site) {
 
     hud.setLab(0, site.samples.length);
     hud.setArchive(analysis.archive); // persisted results from past sessions
+    hud.setOutposts(outposts.list()); // built + still-locked structures
 
     const touchZones = setupTouchControls();
     const keys = setupKeyboard();
@@ -344,7 +374,7 @@ async function startGame(site) {
     // Debug/E2E handle (also used by the sampleHeight ground-truth check;
     // renderer/scene/camera exposed so tests on software-GL boxes can pause
     // the loop and capture canvas pixels via a same-task render+toDataURL).
-    window.__mc = { site, terrain, rover, drone: recon, recon, lift, humanoid, samples, renderer, scene, camera, camRig, units, env, effects, waypoint, sound, rocks, lab, sling, analysis, fog, colliders, missions, hazardZones, weather, dustDevils, wind, get intro() { return intro; } };
+    window.__mc = { site, terrain, rover, drone: recon, recon, lift, humanoid, samples, renderer, scene, camera, camRig, units, env, effects, waypoint, sound, rocks, lab, sling, analysis, outposts, fog, colliders, missions, hazardZones, weather, dustDevils, wind, get intro() { return intro; } };
 
     function applyUnitMode() {
         const active = units[activeIndex];
@@ -553,12 +583,14 @@ async function startGame(site) {
             caches: samples.containers
                 .filter((c) => c.state === 'field')
                 .map((c) => ({ x: c.mesh.position.x, z: c.mesh.position.z })),
+            outposts: outposts.builtPositions(),
             path: pathTrail,
             devils: dustDevils.devils.map((d) => ({ x: d.x, z: d.z, r: d.r })),
         });
         waypoint.update(dt, targetInfo);
         sling.update(dt, lift.position);
         lab.update(dt);
+        outposts.update(dt);
         analysis.update(dt);
         dustDevils.update(dt);
         effects.update(dt, active, speedNow, env.daylight());

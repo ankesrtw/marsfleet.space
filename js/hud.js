@@ -58,6 +58,7 @@ export function createHud(rootEl, { site, onSwitchUnit, onCollect, onToggleSfx, 
             </div>
             <div class="mars-hud__boundary" id="mc-boundary" data-visible="false">⚠ OUT OF MISSION DIRECTIVES — RETURN TO SURVEY ZONE</div>
             <div class="mars-hud__hazard" id="mc-hazard" data-visible="false"></div>
+            <div class="mars-hud__toast" id="mc-toast" data-visible="false"></div>
             <div class="mars-hud__objective" id="mc-objective" data-visible="false">
                 <span id="mc-objective-text"></span>
                 <button class="mars-btn mars-objective__skip" id="mc-skip-tutorial">SKIP</button>
@@ -121,6 +122,15 @@ export function createHud(rootEl, { site, onSwitchUnit, onCollect, onToggleSfx, 
                     <div class="mars-menu__missions" id="mc-missions-list"></div>
                     <p class="mars-menu__note">Objective chains for this site. ✓ missions stay completed
                     across visits and RESET MISSION — replay anytime.</p>
+                </div>
+                <div class="mars-menu__section">
+                    <h3>BASE STRUCTURES</h3>
+                    <ul class="mars-menu__lab" id="mc-outposts-list">
+                        <li class="mars-menu__lab-empty">No base-building charted for this site yet.</li>
+                    </ul>
+                    <p class="mars-menu__note">Analyzing a flagged sample establishes a checkpost at its
+                    site. Complete every mission to raise the Marsapiens Headquarters beside the FIELD LAB.
+                    Structures are earned from the archive and mission record, so they survive RESET MISSION.</p>
                 </div>
                 <div class="mars-menu__section">
                     <h3>LAB — COLLECTED SAMPLES</h3>
@@ -293,6 +303,18 @@ export function createHud(rootEl, { site, onSwitchUnit, onCollect, onToggleSfx, 
         hazardLabelShown = label;
         hazardEl.dataset.visible = String(!!label);
         if (label) hazardEl.textContent = label;
+    }
+
+    // One-shot build toast (Wave 7) — third slot in the top banner stack.
+    // Unlike the boundary/hazard banners it self-hides: announcements,
+    // not persistent state.
+    const toastEl = rootEl.querySelector('#mc-toast');
+    let toastTimer = null;
+    function toast(text) {
+        toastEl.textContent = text;
+        toastEl.dataset.visible = 'true';
+        clearTimeout(toastTimer);
+        toastTimer = setTimeout(() => { toastEl.dataset.visible = 'false'; }, 6000);
     }
 
     // Mission objective banner — same cached-toggle idiom as setBoundary,
@@ -556,6 +578,25 @@ export function createHud(rootEl, { site, onSwitchUnit, onCollect, onToggleSfx, 
         }));
     }
 
+    // BASE STRUCTURES menu section (Wave 7): every structure the site
+    // offers, built or still locked with its unlock hint. Empty entries
+    // keep the "not charted" hint — Gale has no base-building by design.
+    const outpostsList = rootEl.querySelector('#mc-outposts-list');
+    function setOutposts(entries) {
+        if (!entries?.length) return;
+        outpostsList.replaceChildren(...entries.map((e) => {
+            const li = document.createElement('li');
+            const name = document.createElement('b');
+            name.textContent = `${e.built ? '⬢' : '◇'} ${e.name}`;
+            const state = document.createElement('span');
+            state.textContent = e.built
+                ? (e.kind === 'hq' ? 'Established — every mission complete.' : 'Established — sample analyzed.')
+                : (e.kind === 'hq' ? 'Locked — complete all missions.' : 'Locked — analyze this sample at the FIELD LAB.');
+            li.append(name, state);
+            return li;
+        }));
+    }
+
     // speed m/s, heading rad (unit convention: W travels along
     // -[sin h, cos h], so bearing-from-north = -h), elev m, slope deg.
     // tgtRelDeg: steer angle to the target relative to forward travel
@@ -627,7 +668,7 @@ export function createHud(rootEl, { site, onSwitchUnit, onCollect, onToggleSfx, 
     return {
         minimapEl, setActiveUnit, setPrompt, setInventory, setLab,
         setNode, setArchive, setBoundary, setHazard, setObjective, setIntroActive, setTutorialOverview,
-        setMissions, setOverlayMode, setTelemetry, setMenuOpen, isMenuOpen,
+        setMissions, setOverlayMode, setTelemetry, setMenuOpen, isMenuOpen, toast, setOutposts,
         setDronePanel, setDroneState, setGear,
     };
 }

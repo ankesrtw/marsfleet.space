@@ -1,0 +1,201 @@
+/* ============================================================
+   outposts.js — Wave 7 base-building: structures earned by play.
+
+   Two tiers, both driven by state other modules already persist —
+   there is deliberately NO new save format here:
+   - Checkposts: a sample marked `outpost` in sites.js earns a small
+     structure at its site once its analysis record exists in the
+     science archive (analysis.js 'mc-results'). Archive survives
+     RESET MISSION, so checkposts do too — bootstrap() re-derives
+     them at boot instead of persisting a second copy of the truth.
+   - Headquarters: sites.js `hq` builds near the FIELD LAB once every
+     mission the site offers is complete (missions.js's own
+     mc-mission-*-done flags — same derivation idea).
+
+   Same idioms as lab.js: flattest-of-8-candidates placement clear
+   of boulders, procedural fallback shell swapped for the real GLB
+   via models.js attachStaticModel (checkpost.glb / hq.glb), additive
+   beacon column for over-the-ridge findability, colliders.addStatic
+   footprint. Sites without `outpost`/`hq` fields (Gale) no-op —
+   Wave 4's copy-ready pattern.
+   ============================================================ */
+
+import * as THREE from 'three';
+import { attachStaticModel } from './models.js';
+
+// Collision circles sized to the models.js footprints (checkpost 6m,
+// hq 22m), height ratio matching the station GLB's 15m -> 8.5m tall.
+const CHECKPOST_R = 3.4;
+const CHECKPOST_H = 4.5;
+const HQ_R = 11.5;
+const HQ_H = 13;
+// Checkposts sit a short walk from their sample marker — present at the
+// site without blocking the collect spot or the cache-drop area.
+const CHECKPOST_RING = 14;
+// HQ ring around the lab pad: far enough that the 11.5m footprint clears
+// the pad skirt and the delivery approach, close enough to read as one base.
+const HQ_RING = 25;
+const BUILD_SECS = 3.2;
+
+export function createOutposts(scene, site, terrain, rocks, colliders, labPos) {
+    const defs = (site.samples ?? []).filter((s) => s.outpost);
+    const built = new Map();  // id -> { id, name, kind, x, z, group }
+    const rising = [];        // { group, t } build-in animations in flight
+    const beacons = [];       // pulsing beacon materials
+
+    /** Flattest of 8 candidates on a ring around an anchor, clear of
+        boulders (lab.js's placement idiom). `blocked` optionally adds a
+        statics-aware test (HQ must dodge the station dock + mast). */
+    function findSpot(cx, cz, ring, clearR, blocked) {
+        let best = null;
+        for (let i = 0; i < 8; i++) {
+            const a = (i / 8) * Math.PI * 2;
+            const x = cx + Math.sin(a) * ring;
+            const z = cz + Math.cos(a) * ring;
+            if (rocks?.collides(x, z, clearR)) continue;
+            if (blocked?.(x, z, clearR)) continue;
+            const slope = 1 - terrain.sampleNormal(x, z).y;
+            if (!best || slope < best.slope) best = { x, z, slope };
+        }
+        return best ?? { x: cx + ring, z: cz };
+    }
+
+    /** Procedural shell shown until the GLB loads (or forever offline) —
+        lab.js's fallback-first idiom at each structure's scale. */
+    function makeFallback(kind) {
+        const g = new THREE.Group();
+        const shellMat = new THREE.MeshStandardMaterial({ color: 0xd9d4c8, roughness: 0.6, metalness: 0.15 });
+        const accentMat = new THREE.MeshStandardMaterial({ color: 0x2ec4d6, roughness: 0.45, metalness: 0.4 });
+        if (kind === 'hq') {
+            const core = new THREE.Mesh(new THREE.BoxGeometry(12, 7, 9), shellMat);
+            core.position.y = 3.5;
+            const wingL = new THREE.Mesh(new THREE.BoxGeometry(5, 4, 6), shellMat);
+            wingL.position.set(-8.5, 2, 0);
+            const wingR = wingL.clone();
+            wingR.position.x = 8.5;
+            const band = new THREE.Mesh(new THREE.BoxGeometry(12.1, 0.8, 9.1), accentMat);
+            band.position.y = 5.6;
+            g.add(core, wingL, wingR, band);
+        } else {
+            const cabin = new THREE.Mesh(new THREE.BoxGeometry(4, 2.6, 3), shellMat);
+            cabin.position.y = 1.3;
+            const roof = new THREE.Mesh(new THREE.BoxGeometry(4.3, 0.3, 3.3), accentMat);
+            roof.position.y = 2.75;
+            const mast = new THREE.Mesh(
+                new THREE.CylinderGeometry(0.04, 0.06, 3, 6),
+                new THREE.MeshStandardMaterial({ color: 0x777777 })
+            );
+            mast.position.set(1.6, 4.2, 1.1);
+            g.add(cabin, roof, mast);
+        }
+        return g;
+    }
+
+    function construct({ id, name, kind, x, z, animate }) {
+        const group = new THREE.Group();
+        group.name = `outpost-${id}`;
+        group.position.set(x, terrain.sampleHeight(x, z), z);
+
+        // Inner group holds fallback-then-GLB (attachStaticModel clears
+        // its children on swap); the beacon lives on the outer group so
+        // the swap never takes it down.
+        const inner = new THREE.Group();
+        inner.add(makeFallback(kind));
+        group.add(inner);
+        attachStaticModel(inner, kind);
+
+        // Beacon column (waypoint/lab idiom). Checkposts glow faint brand
+        // cyan; the HQ gets a taller amber-gold column — the capstone
+        // landmark reads apart from every teal utility beacon on site.
+        const hq = kind === 'hq';
+        const beaconMat = new THREE.MeshBasicMaterial({
+            color: hq ? 0xe0a83f : 0x2ec4d6,
+            transparent: true,
+            opacity: hq ? 0.2 : 0.13,
+            blending: THREE.AdditiveBlending,
+            depthWrite: false,
+            side: THREE.DoubleSide,
+        });
+        const beacon = new THREE.Mesh(
+            new THREE.CylinderGeometry(hq ? 1.1 : 0.5, hq ? 0.45 : 0.2, hq ? 80 : 24, 10, 1, true),
+            beaconMat
+        );
+        beacon.position.y = hq ? 40 : 12;
+        group.add(beacon);
+        beacons.push({ mat: beaconMat, base: beaconMat.opacity, phase: beacons.length * 1.3 });
+
+        scene.add(group);
+        colliders.addStatic(x, z, hq ? HQ_R : CHECKPOST_R, hq ? HQ_H : CHECKPOST_H);
+
+        if (animate) {
+            group.scale.y = 0.01; // grounded at y=0, so y-growth reads as extrusion rising
+            rising.push({ group, t: 0 });
+        }
+        const rec = { id, name, kind, x, z, group };
+        built.set(id, rec);
+        return rec;
+    }
+
+    /** Checkpost for one analyzed sample. Null when the sample has no
+        outpost entry or it's already up — callers toast only on truthy. */
+    function buildFor(sampleId, { animate = true } = {}) {
+        const def = defs.find((s) => s.id === sampleId);
+        if (!def || built.has(sampleId)) return null;
+        const spot = findSpot(def.x, def.z, CHECKPOST_RING, CHECKPOST_R + 1);
+        return construct({ id: sampleId, name: def.outpost.name, kind: 'checkpost', x: spot.x, z: spot.z, animate });
+    }
+
+    /** HQ capstone near the FIELD LAB — statics-aware spot pick so it
+        dodges the station dock and mast (colliders facade, lab.js gap). */
+    function buildHq({ animate = true } = {}) {
+        if (!site.hq || built.has('hq') || !labPos) return null;
+        const facade = colliders.forUnit('__outpost-build');
+        const spot = findSpot(labPos.x, labPos.z, HQ_RING, HQ_R + 1.5,
+            (x, z, r) => facade.collides(x, z, r));
+        return construct({ id: 'hq', name: site.hq.name, kind: 'hq', x: spot.x, z: spot.z, animate });
+    }
+
+    /** Rebuild everything already earned — called once at boot with the
+        persistent archive + mission flags. No animation: these existed. */
+    function bootstrap(archiveRecords, missionsAllDone) {
+        for (const rec of archiveRecords ?? []) {
+            if (rec.site !== site.id) continue;
+            buildFor(rec.id, { animate: false });
+        }
+        if (missionsAllDone) buildHq({ animate: false });
+    }
+
+    /** Menu BASE STRUCTURES feed: every structure this site offers. */
+    function list() {
+        const entries = defs.map((s) => ({
+            id: s.id, name: s.outpost.name, kind: 'checkpost', built: built.has(s.id),
+        }));
+        if (site.hq) entries.push({ id: 'hq', name: site.hq.name, kind: 'hq', built: built.has('hq') });
+        return entries;
+    }
+
+    /** Minimap layer (fog.js extras.outposts) — built structures only. */
+    function builtPositions() {
+        return [...built.values()].map((b) => ({ x: b.x, z: b.z, hq: b.kind === 'hq' }));
+    }
+
+    let t = 0;
+    function update(dt) {
+        t += dt;
+        for (const b of beacons) {
+            b.mat.opacity = b.base * (0.7 + 0.3 * Math.sin(t * 1.6 + b.phase));
+        }
+        for (let i = rising.length - 1; i >= 0; i--) {
+            const r = rising[i];
+            r.t += dt;
+            const k = Math.min(1, r.t / BUILD_SECS);
+            r.group.scale.y = 1 - (1 - k) ** 3; // ease-out rise
+            if (k >= 1) rising.splice(i, 1);
+        }
+    }
+
+    return {
+        buildFor, buildHq, bootstrap, list, builtPositions, update,
+        get builtCount() { return built.size; },
+    };
+}
