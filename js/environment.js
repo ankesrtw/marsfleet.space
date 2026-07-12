@@ -26,9 +26,13 @@ import * as THREE from 'three';
 // Mutated by the cycle; starts as the original low morning sun so the
 // first frame matches the pre-cycle look.
 export const SUN_DIR = new THREE.Vector3(-0.55, 0.38, -0.42).normalize();
+// FOG.density is mutable at runtime (main.js drives it from the dust-storm
+// intensity, weather.js); FOG_BASE_DENSITY is the clear-air constant it
+// scales from. Storm logic deliberately does NOT live here.
+export const FOG_BASE_DENSITY = 0.00016;
 export const FOG = {
     color: new THREE.Color(0xc9977a),
-    density: 0.00016,
+    density: FOG_BASE_DENSITY,
 };
 
 // 40-min sol, day-biased (~27 min of light) — the original 20-min cycle
@@ -137,8 +141,11 @@ export function createEnvironment(scene) {
 
         // FOG.color is shared by reference with the terrain shader and
         // scene.background; scene.fog copied it, so sync that one by hand.
+        // Density too — scene.fog copied it by VALUE at construction, and
+        // main.js mutates FOG.density during dust storms (weather.js).
         FOG.color.copy(_fogTmp.copy(FOG_NIGHT).lerp(FOG_DAY, day));
         scene.fog.color.copy(FOG.color);
+        scene.fog.density = FOG.density;
 
         sky.position.copy(camera.position);
         sun.position.copy(camera.position).addScaledVector(SUN_DIR, 1000);

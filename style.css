@@ -106,6 +106,42 @@ html, body {
     margin-left: auto;
 }
 
+/* ---- Compass (nose bearing) — docked under the minimap ---- */
+
+.mars-hud__compass {
+    position: absolute;
+    top: max(218px, calc(env(safe-area-inset-top) + 208px));
+    right: 12px;
+    width: 44px;
+    height: 44px;
+    border: 1px solid #7a4f30;
+    border-radius: 50%;
+    background: rgba(20, 12, 8, 0.75);
+    pointer-events: none;
+}
+
+.mars-compass__cardinal {
+    position: absolute;
+    top: 1px;
+    left: 50%;
+    transform: translateX(-50%);
+    font-size: 0.5rem;
+    letter-spacing: 0.08em;
+    color: #e0b95e;
+    opacity: 0.75;
+}
+
+.mars-compass__needle {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    font-size: 1.05rem;
+    line-height: 1;
+    color: #e0b95e;
+    text-shadow: 0 0 4px rgba(0, 0, 0, 0.8);
+}
+
 /* ---- Telemetry readout ---- */
 
 .mars-hud__telemetry {
@@ -313,6 +349,32 @@ html, body {
     opacity: 0.7;
 }
 
+.mars-menu__missions {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.mars-menu__overlays {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+}
+
+.mars-menu__overlays .mars-btn.is-active {
+    border-color: #e0b95e;
+    color: #e0b95e;
+}
+
+.mars-menu__mission {
+    text-align: left;
+}
+
+.mars-menu__mission.is-done {
+    border-color: #59d8c9;
+    color: #59d8c9;
+}
+
 .mars-menu__note {
     margin: 8px 0 0;
     font-size: 0.7rem;
@@ -404,13 +466,37 @@ html, body {
     display: none;
 }
 
+/* Environmental hazard banner (Wave 4): boundary's idiom, one slot
+   below it so both warnings can stack without colliding. Steadier
+   pulse — it's ambient state, not an edge violation. */
+.mars-hud__hazard {
+    position: absolute;
+    top: max(104px, calc(env(safe-area-inset-top) + 96px));
+    left: 50%;
+    transform: translateX(-50%);
+    padding: 8px 16px;
+    border: 1px solid #d8a13f;
+    background: rgba(44, 30, 8, 0.85);
+    color: #ffd27a;
+    font-size: 0.78rem;
+    letter-spacing: 0.12em;
+    white-space: nowrap;
+    pointer-events: none;
+    z-index: 20;
+    animation: mars-boundary-pulse 2.2s ease-in-out infinite;
+}
+
+.mars-hud__hazard[data-visible="false"] {
+    display: none;
+}
+
 @keyframes mars-boundary-pulse {
     0%, 100% { opacity: 1; }
     50% { opacity: 0.55; }
 }
 
 @media (max-width: 899px), (pointer: coarse) {
-    .mars-hud__boundary {
+    .mars-hud__boundary, .mars-hud__hazard {
         font-size: 0.64rem;
         max-width: 92vw;
         white-space: normal;

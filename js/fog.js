@@ -18,6 +18,37 @@ const FOG_RES = 256;   // explored-alpha buffer
 const MAP_RES = 512;   // display canvas (2x for crisp text/furniture)
 const REVEAL_RADIUS_PX = 14;
 
+// Science overlays (Wave 4): which base layer render() draws. PATH keeps
+// the photo base and adds the breadcrumb trail. Persisted like the other
+// small UI prefs (mc-tele / mc-dronectl).
+const OVERLAY_MODES = ['photo', 'elevation', 'slope', 'path'];
+const LS_OVERLAY = 'mc-overlay-mode';
+
+// Hypsometric ramp (elevation) and a slope ramp aligned with the rover's
+// ROLL gauge thresholds (green safe -> amber -> red past ~35 deg), so map
+// and telemetry speak the same color language.
+const ELEV_STOPS = [
+    [0.00, 0x20, 0x31, 0x3f],
+    [0.35, 0x5b, 0x4a, 0x33],
+    [0.70, 0xa9, 0x71, 0x3f],
+    [1.00, 0xe8, 0xc8, 0x8f],
+];
+const SLOPE_STOPS = [ // t in slopeMag (1 - normal.y) space
+    [0.00, 0x2f, 0x7d, 0x4f],
+    [0.05, 0x88, 0xb3, 0x4a], // ROLL_START — risk begins
+    [0.11, 0xd8, 0xa1, 0x3f],
+    [0.18, 0xc0, 0x39, 0x2b], // ROLL_MAX — flagged imminent
+];
+
+function rampColor(stops, t) {
+    let a = stops[0], b = stops[stops.length - 1];
+    for (let i = 0; i < stops.length - 1; i++) {
+        if (t >= stops[i][0] && t <= stops[i + 1][0]) { a = stops[i]; b = stops[i + 1]; break; }
+    }
+    const f = b[0] === a[0] ? 0 : Math.min(1, Math.max(0, (t - a[0]) / (b[0] - a[0])));
+    return [a[1] + (b[1] - a[1]) * f, a[2] + (b[2] - a[2]) * f, a[3] + (b[3] - a[3]) * f];
+}
+
 // Cartographic hillshade: light from the NW sky, mild vertical
 // exaggeration so 100m-scale relief reads at ~30m/px sampling.
 const HILL_EXAG = 2.5;
@@ -51,6 +82,95 @@ export function createFog(site, minimapEl, terrain) {
     baseImg.src = site.textureUrl;
     baseImg.onload = () => { baseCanvas = buildBase(); };
 
+    // Shared FOG_RES height grid off the same terrain the physics uses —
+    // computed once, reused by the hillshade AND the elevation/slope
+    // science layers (they're lazy, built on first mode switch).
+    let heightField = null;
+    function getHeightField() {
+        if (heightField) return heightField;
+        const H = new Float32Array(FOG_RES * FOG_RES);
+        for (let j = 0; j < FOG_RES; j++) {
+            const z = ((j + 0.5) / FOG_RES - 0.5) * worldSize;
+            for (let i = 0; i < FOG_RES; i++) {
+                const x = ((i + 0.5) / FOG_RES - 0.5) * worldSize;
+                H[j * FOG_RES + i] = terrain.sampleHeight(x, z);
+            }
+        }
+        heightField = { H, cell: worldSize / FOG_RES };
+        return heightField;
+    }
+
+    /** Central-difference gradient of the cached height grid at cell (i,j). */
+    function gradAt(H, cell, i, j) {
+        const iw = Math.max(0, i - 1), ie = Math.min(FOG_RES - 1, i + 1);
+        const jn = Math.max(0, j - 1), js = Math.min(FOG_RES - 1, j + 1);
+        return [
+            (H[j * FOG_RES + ie] - H[j * FOG_RES + iw]) / ((ie - iw) * cell),
+            (H[js * FOG_RES + i] - H[jn * FOG_RES + i]) / ((js - jn) * cell),
+        ];
+    }
+
+    /** Raster science layer over the height grid; paint(k, i, j) -> [r,g,b]. */
+    function buildFieldLayer(paint) {
+        const c = document.createElement('canvas');
+        c.width = FOG_RES;
+        c.height = FOG_RES;
+        const ctx = c.getContext('2d');
+        const img = ctx.createImageData(FOG_RES, FOG_RES);
+        for (let j = 0; j < FOG_RES; j++) {
+            for (let i = 0; i < FOG_RES; i++) {
+                const k = j * FOG_RES + i;
+                const [r, g, b] = paint(k, i, j);
+                const p = k * 4;
+                img.data[p] = r;
+                img.data[p + 1] = g;
+                img.data[p + 2] = b;
+                img.data[p + 3] = 255;
+            }
+        }
+        ctx.putImageData(img, 0, 0);
+        return c;
+    }
+
+    function buildElevationLayer() {
+        const { H, cell } = getHeightField();
+        let min = Infinity, max = -Infinity;
+        for (const h of H) { if (h < min) min = h; if (h > max) max = h; }
+        const range = Math.max(1e-6, max - min);
+        return buildFieldLayer((k, i, j) => {
+            // hypsometric tint x the same NW hillshade as the photo base,
+            // so relief still reads inside the color bands
+            const [gx, gz] = gradAt(H, cell, i, j);
+            const n = normalize3(-gx * HILL_EXAG, 1, -gz * HILL_EXAG);
+            const shade = 0.6 + 0.4 * Math.max(0, n[0] * LIGHT[0] + n[1] * LIGHT[1] + n[2] * LIGHT[2]);
+            return rampColor(ELEV_STOPS, (H[k] - min) / range).map((v) => v * shade);
+        });
+    }
+
+    function buildSlopeLayer() {
+        const { H, cell } = getHeightField();
+        return buildFieldLayer((_, i, j) => {
+            const [gx, gz] = gradAt(H, cell, i, j);
+            const slopeMag = 1 - 1 / Math.hypot(gx, 1, gz); // = 1 - normal.y
+            return rampColor(SLOPE_STOPS, slopeMag);
+        });
+    }
+
+    let elevCanvas = null;
+    let slopeCanvas = null;
+    let currentMode = 'photo';
+    try {
+        const m = localStorage.getItem(LS_OVERLAY);
+        if (OVERLAY_MODES.includes(m)) currentMode = m;
+    } catch { /* private mode */ }
+
+    /** Menu SCIENCE OVERLAYS buttons land here (hud.js -> main.js). */
+    function setOverlayMode(mode) {
+        if (!OVERLAY_MODES.includes(mode)) return;
+        currentMode = mode;
+        try { localStorage.setItem(LS_OVERLAY, mode); } catch { /* private mode */ }
+    }
+
     function buildBase() {
         const c = document.createElement('canvas');
         c.width = FOG_RES;
@@ -60,16 +180,9 @@ export function createFog(site, minimapEl, terrain) {
         const img = ctx.getImageData(0, 0, FOG_RES, FOG_RES);
         const d = img.data;
 
-        // real DEM heights on the same grid (CPU sampler, one-off cost)
-        const H = new Float32Array(FOG_RES * FOG_RES);
-        const cell = worldSize / FOG_RES;
-        for (let j = 0; j < FOG_RES; j++) {
-            const z = ((j + 0.5) / FOG_RES - 0.5) * worldSize;
-            for (let i = 0; i < FOG_RES; i++) {
-                const x = ((i + 0.5) / FOG_RES - 0.5) * worldSize;
-                H[j * FOG_RES + i] = terrain.sampleHeight(x, z);
-            }
-        }
+        // real DEM heights on the shared cached grid (one-off cost,
+        // reused by the elevation/slope science layers)
+        const { H, cell } = getHeightField();
 
         // 2-98 percentile luminance stretch (the raw ortho crops are
         // low-contrast at this scale, Jezero's especially)
@@ -90,11 +203,7 @@ export function createFog(site, minimapEl, terrain) {
         for (let j = 0; j < FOG_RES; j++) {
             for (let i = 0; i < FOG_RES; i++) {
                 const k = j * FOG_RES + i;
-                // central-difference gradient, clamped at the borders
-                const iw = Math.max(0, i - 1), ie = Math.min(FOG_RES - 1, i + 1);
-                const jn = Math.max(0, j - 1), js = Math.min(FOG_RES - 1, j + 1);
-                const gx = (H[j * FOG_RES + ie] - H[j * FOG_RES + iw]) / ((ie - iw) * cell);
-                const gz = (H[js * FOG_RES + i] - H[jn * FOG_RES + i]) / ((js - jn) * cell);
+                const [gx, gz] = gradAt(H, cell, i, j);
                 const n = normalize3(-gx * HILL_EXAG, 1, -gz * HILL_EXAG);
                 const shade = 0.55 + 0.45 * Math.max(0, n[0] * LIGHT[0] + n[1] * LIGHT[1] + n[2] * LIGHT[2]);
 
@@ -132,11 +241,18 @@ export function createFog(site, minimapEl, terrain) {
         fogCtx.globalCompositeOperation = 'source-over';
     }
 
-    /** extras: { lab: {x,z} | null, targetId: string | null } */
+    /** extras: { lab: {x,z} | null, targetId: string | null,
+        caches: [{x,z}, ...] | null (field containers awaiting pickup),
+        path: [{x,z}, ...] | null (drawn only in PATH mode) } */
     function render(markerPositions, unitPositions, extras) {
         displayCtx.clearRect(0, 0, MAP_RES, MAP_RES);
-        if (baseCanvas) {
-            displayCtx.drawImage(baseCanvas, 0, 0, MAP_RES, MAP_RES);
+        // Science overlays swap ONLY the base layer (lazy-built off the
+        // shared height grid); fog + furniture composite identically on top.
+        const base = currentMode === 'elevation' ? (elevCanvas ??= buildElevationLayer())
+            : currentMode === 'slope' ? (slopeCanvas ??= buildSlopeLayer())
+            : baseCanvas;
+        if (base) {
+            displayCtx.drawImage(base, 0, 0, MAP_RES, MAP_RES);
         } else {
             displayCtx.fillStyle = '#3a1f14';
             displayCtx.fillRect(0, 0, MAP_RES, MAP_RES);
@@ -176,6 +292,39 @@ export function createFog(site, minimapEl, terrain) {
                 displayCtx.arc(px, py, 12, 0, Math.PI * 2);
                 displayCtx.stroke();
             }
+        }
+
+        // Cache pickup points — sealed containers dropped in the field,
+        // waiting for the lift drone. Player-created objectives, so they
+        // sit ABOVE the fog (like unit dots); orange diamonds matching
+        // the containers' lid color.
+        if (extras?.caches) {
+            for (const c of extras.caches) {
+                const { px, py } = worldToPx(c.x, c.z);
+                displayCtx.save();
+                displayCtx.translate(px, py);
+                displayCtx.rotate(Math.PI / 4);
+                displayCtx.fillStyle = '#e07b39';
+                displayCtx.strokeStyle = 'rgba(0,0,0,0.7)';
+                displayCtx.lineWidth = 2;
+                displayCtx.fillRect(-4.5, -4.5, 9, 9);
+                displayCtx.strokeRect(-4.5, -4.5, 9, 9);
+                displayCtx.restore();
+            }
+        }
+
+        // PATH mode: the active unit's breadcrumb trail (main.js records
+        // it on the telemetry tick), above the fog like the unit dots.
+        if (currentMode === 'path' && extras?.path?.length > 1) {
+            displayCtx.strokeStyle = 'rgba(94, 224, 200, 0.85)';
+            displayCtx.lineWidth = 2;
+            displayCtx.beginPath();
+            for (let i = 0; i < extras.path.length; i++) {
+                const { px, py } = worldToPx(extras.path[i].x, extras.path[i].z);
+                if (i === 0) displayCtx.moveTo(px, py);
+                else displayCtx.lineTo(px, py);
+            }
+            displayCtx.stroke();
         }
 
         // unit dots — you always know where your own units are, even in
@@ -223,5 +372,8 @@ export function createFog(site, minimapEl, terrain) {
         displayCtx.fillText('1 KM', bx + kmPx / 2 - 18, by - 9);
     }
 
-    return { reveal, render };
+    return {
+        reveal, render, setOverlayMode,
+        get overlayMode() { return currentMode; },
+    };
 }

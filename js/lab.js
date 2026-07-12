@@ -21,7 +21,12 @@ import { attachStaticModel } from './models.js';
 
 const PAD_RADIUS = 5.5;
 const DELIVER_RADIUS = 7.5;   // horizontal "over the pad" test
-const CABLE_LEN = 4.2;        // m, drone belly to container top
+// Real cargo drones keep slung loads on SHORT lines — operators trade
+// line length for control authority (less pendulum), and winch systems
+// (A2Z RDS-class) snug the payload close under the airframe for cruise;
+// long lines are a crane/helicopter-longline thing. 4.2m read as a
+// dangling rope and kept the load scraping terrain at low AGL.
+const CABLE_LEN = 2.2;        // m, drone belly to container top
 // Station dock center, west of the pad. The GLB scales to a 15m footprint
 // (models.js STATIC_MODELS), so its half-length is ~7.5m — offset keeps a
 // ~1m gap to the pad skirt.

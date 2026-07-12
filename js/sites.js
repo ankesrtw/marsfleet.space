@@ -52,6 +52,22 @@ export const SITES = {
         // Octavia E. Butler Landing (77.45088E, 18.44463N); heading faces
         // northwest so W drives toward Séítah and the delta front.
         spawn: { x: 2127, z: 615, heading: Math.PI / 4 },
+        // Objective chains offered here (missions.js keys). Sites without
+        // the field simply have none — Wave 4 pattern, Jezero-first.
+        missions: ['tutorial'],
+        // Wave 4 hazards (hazardZones.js / weather.js) — additive, sites
+        // without the field have none. softSand circles sit on real
+        // aeolian ground: the Séítah dune margins (the rippled sand that
+        // actually bogged flight-planning debates), the Dust Devil Flats
+        // ripple field, and the Neretva Vallis channel floor sands.
+        hazards: {
+            softSand: [
+                { x: 1350, z: 480, r: 170, intensity: 0.7 },   // Séítah east dune margin
+                { x: 1800, z: 2300, r: 230, intensity: 0.5 },  // Dust Devil Flats ripples
+                { x: -2380, z: -2450, r: 190, intensity: 0.6 }, // Neretva channel sands
+            ],
+            dustStorm: { peakIntensity: 0.7 },
+        },
         // `finding` = the real published science for that sample, revealed
         // in-game only after the FIELD LAB edge node finishes analysis.
         // Coordinates: precise where derived from published lon/lat (the

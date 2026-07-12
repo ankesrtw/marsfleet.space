@@ -31,8 +31,26 @@ const GEAR_KEY = 'mc-gear-rover';
 const CLEARANCE = 0.6;       // meters, wheel-to-chassis (procedural mesh)
 const SLOPE_K = 3.0;         // speed falloff strength
 const MIN_SPEED_FACTOR = 0.15;
+// Longitudinal inertia: actual speed chases the throttle's TARGET speed
+// with a time constant, so the rover rolls up and coasts to a stop like
+// a mass on wheels instead of snapping to velocity the frame a key is
+// pressed/released. ACCEL_TAU governs power-up, BRAKE_TAU the (quicker)
+// coast-down. Seconds — larger = more sluggish.
+const ACCEL_TAU = 0.9;
+const BRAKE_TAU = 0.6;
 const BODY_RADIUS = 1.4;     // m, collision footprint (also main.js registry)
 const EDGE_MARGIN = 30;      // m inside the DEM edge — the mission boundary
+// Wave 4 hazard terms — more factors in the same multiplicative speed
+// chain as the slope falloff above, never a hard block:
+const SAND_DRAG = 0.6;       // full-effect soft sand cuts speed to 40%
+const STORM_DRAG = 0.35;     // peak dust storm cuts speed to 65%
+const SLIP_K = 1.5;          // wheel overspin in sand: x(1 + K*effect)
+// Rollover risk (Wave 4 vehicle feel): a warning threshold derived from
+// the SAME slopeMag the traction falloff already samples — no torque
+// sim, matching the "direct height-function query" philosophy above.
+// Thresholds are in slopeMag = 1 - cos(tilt) space:
+const ROLL_START = 0.05;     // ~18 deg — risk starts ramping
+const ROLL_MAX = 0.18;       // ~35 deg — flagged imminent (real rover limit)
 
 const _up = new THREE.Vector3(0, 1, 0);
 const _tiltQuat = new THREE.Quaternion();
@@ -40,7 +58,9 @@ const _yawQuat = new THREE.Quaternion();
 
 // `obstacles` is a colliders.js facade (boulders + structures + other
 // units), shaped like the old rocks collider: collides(x, z, radius).
-export function createRover(site, terrain, obstacles) {
+// `hazards`/`weather` (Wave 4, both optional): hazardZones.js graded
+// zone sampler + weather.js storm timeline — soft factors, not blockers.
+export function createRover(site, terrain, obstacles, { hazards, weather } = {}) {
     const mesh = buildRoverMesh();
     mesh.position.set(site.spawn.x, 0, site.spawn.z);
     mesh.rotation.y = site.spawn.heading;
@@ -68,6 +88,9 @@ export function createRover(site, terrain, obstacles) {
     let heading = site.spawn.heading;
     let speed = 0;
     let atBoundary = false;
+    let inHazard = null;    // current soft-terrain zone (atBoundary idiom)
+    let slipRatio = 1;      // wheel overspin factor fed to the wheel rig
+    let rolloverRisk = 0;   // 0 safe .. 1 imminent, smoothed for the HUD
     const bound = site.worldSize / 2 - EDGE_MARGIN;
 
     function cycleGear() {
@@ -86,7 +109,31 @@ export function createRover(site, terrain, obstacles) {
         const slopeMag = 1 - normal.y; // 0 = flat, up to ~1 = vertical
         const speedFactor = Math.max(MIN_SPEED_FACTOR, 1 - slopeMag * SLOPE_K);
 
-        speed = input.throttle * REAL_SPEED * GEARS[gearIdx].mult * speedFactor;
+        // Soft terrain + storm drag: same multiplicative chain as the
+        // slope falloff. Sand is positional (hazardZones sampler), storm
+        // drag is global (weather intensity) — kept as separate factors
+        // so inHazard only ever reports the zone the wheels are in.
+        inHazard = hazards?.sample(mesh.position.x, mesh.position.z) ?? null;
+        const sandFactor = inHazard ? 1 - SAND_DRAG * inHazard.effect : 1;
+        const stormFactor = weather ? 1 - STORM_DRAG * weather.intensity : 1;
+        slipRatio = inHazard ? 1 + SLIP_K * inHazard.effect : 1;
+
+        // Rollover: ramp 0..1 across the slopeMag band, smoothed so the
+        // micro-relief in the ground sampler reads as a steady gauge, not
+        // a flickering alarm.
+        const rollTarget = THREE.MathUtils.clamp((slopeMag - ROLL_START) / (ROLL_MAX - ROLL_START), 0, 1);
+        rolloverRisk += (rollTarget - rolloverRisk) * Math.min(1, 5 * dt);
+
+        // Target speed from the throttle; actual speed eases toward it so
+        // the rover accelerates and coasts instead of snapping (releasing
+        // the key no longer stops it dead). Coast-down is quicker than
+        // spin-up (regolith rolling resistance), and terrain/hazard drag
+        // pulls the target down live. Below G1 the multiplier is tiny, so
+        // the ease is imperceptible — REAL gear still feels 1:1.
+        const targetSpeed = input.throttle * REAL_SPEED * GEARS[gearIdx].mult
+            * speedFactor * sandFactor * stormFactor;
+        const tau = Math.abs(targetSpeed) > Math.abs(speed) ? ACCEL_TAU : BRAKE_TAU;
+        speed += (targetSpeed - speed) * (1 - Math.exp(-dt / tau));
 
         let nx = mesh.position.x + Math.sin(heading) * speed * dt;
         let nz = mesh.position.z + Math.cos(heading) * speed * dt;
@@ -118,8 +165,9 @@ export function createRover(site, terrain, obstacles) {
         mesh.quaternion.slerp(_tiltQuat, 1 - Math.exp(-12 * dt));
 
         // wheels roll from actual ground speed (signed — reverse spins
-        // backward) and steer with the input
-        wheelRig.update(dt, speed, input.steer);
+        // backward), steer with the input, and churn faster than the
+        // ground speed while bogged in soft sand (visible slip)
+        wheelRig.update(dt, speed, input.steer, slipRatio);
     }
 
     return {
@@ -127,6 +175,10 @@ export function createRover(site, terrain, obstacles) {
         get position() { return mesh.position; },
         get heading() { return heading; },
         get atBoundary() { return atBoundary; },
+        get inHazard() { return inHazard; },
+        get slipRatio() { return slipRatio; },
+        get rolloverRisk() { return rolloverRisk; },
+        get speed() { return speed; }, // signed current ground speed (inertia state)
         get maxSpeed() { return REAL_SPEED * GEARS[gearIdx].mult; },
         get gearLabel() { return GEARS[gearIdx].label; },
         get drainScale() { return GEARS[gearIdx].drain; },

@@ -138,11 +138,14 @@ export function createWheelRig() {
         });
     }
 
-    /** Per frame. speed: signed ground speed m/s; steerInput: -1..1. */
-    function update(dt, speed, steerInput) {
+    /** Per frame. speed: signed ground speed m/s; steerInput: -1..1;
+        slip: wheel-spin ratio >= 1 — soft terrain makes the wheels churn
+        faster than the ground speed they actually achieve (rover.js
+        computes it from the hazard zone effect; 1 = full traction). */
+    function update(dt, speed, steerInput, slip = 1) {
         steer += (steerInput * STEER_MAX - steer) * Math.min(1, STEER_RESPONSE * dt);
         for (const w of wheels) {
-            const omega = speed / w.r;
+            const omega = (speed * slip) / w.r;
             w.spinPivot.rotation.x += omega * dt;
             w.steerPivot.rotation.y = steer * w.steerDir;
             const blur = THREE.MathUtils.clamp((Math.abs(omega) - 8) / (BLUR_FULL - 8), 0, 1);

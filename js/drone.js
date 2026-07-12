@@ -46,7 +46,7 @@ const GEAR_KEY = 'mc-gear-drone';
 // slower, weaker climb, hungrier — carrying should feel like work.
 const SLING_SPEED = 0.6;
 const SLING_CLIMB = 0.7;
-const SLING_DRAIN = 1.6;
+const SLING_DRAIN = 1.35;   // laden endurance ~25-30% lower, not halved
 
 export function createDrone(site, terrain, opts = {}) {
     const {

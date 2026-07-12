@@ -13,7 +13,9 @@ import { createSamples } from './samples.js';
 import { createHud } from './hud.js';
 import { createJoystick, isTouchDevice } from './touch.js';
 import { createCameraRig } from './camera.js';
-import { createEnvironment, FOG } from './environment.js';
+import { createEnvironment, FOG, FOG_BASE_DENSITY } from './environment.js';
+import { createHazardZones } from './hazardZones.js';
+import { createWeather } from './weather.js';
 import { createRocks } from './rocks.js';
 import { createEffects } from './effects.js';
 import { createWaypoint } from './waypoint.js';
@@ -22,21 +24,22 @@ import { createLab, createSling } from './lab.js';
 import { createAnalysis } from './analysis.js';
 import { createColliders } from './colliders.js';
 import { createLandingIntro } from './intro.js';
-import { createTutorial } from './tutorial.js';
+import { createMissions } from './missions.js';
 
 // Lift-drone logistics interaction envelope (see lab.js):
-const SLING_ALT = 8;      // m AGL — must hover this low to hook a container
+const SLING_ALT = 8;      // m AGL — hover this low (or sit landed: alt 0
+                          // passes the same gate) to hook a container
 const SLING_RADIUS = 7;   // m horizontal to the container
 const DELIVER_ALT = 16;   // m AGL over the pad — ABOVE cruiseAlt (12), so
                           // arriving at cruise height delivers, no hunt-the-
-                          // altitude (the 4.2m cable sells the lowering)
+                          // altitude (the short cable sells the lowering)
 
-// First-visit-only cinematic gates (see intro.js / tutorial.js). Set the
-// moment each sequence STARTS, not when it finishes, so a refresh mid-
-// sequence or a skip doesn't re-trigger it. Deliberately NOT cleared by
-// RESET MISSION — same spirit as `mc-results` surviving resets.
+// First-visit-only cinematic gate (see intro.js). Set the moment the
+// sequence STARTS, not when it finishes, so a refresh mid-sequence or a
+// skip doesn't re-trigger it. Deliberately NOT cleared by RESET MISSION —
+// same spirit as `mc-results` surviving resets. (Mission completion flags
+// live in missions.js: `mc-mission-<id>-done`, same convention.)
 const LS_INTRO_KEY = 'mc-intro-seen';
-const LS_TUTORIAL_KEY = 'mc-tutorial-done';
 
 // Per-site mesh density (sites.js `segments`) by device class — Gale's 1m
 // DEM earns 512 desktop quads, Jezero's 20m DEM doesn't. Fallback for
@@ -138,7 +141,11 @@ async function startGame(site) {
     // unit-vs-unit (colliders.js). Each unit moves against its own facade
     // (which excludes itself); registration happens right after creation.
     const colliders = createColliders(rocks);
-    const rover = createRover(site, terrain, colliders.forUnit('rover'));
+    // Wave 4 hazards: graded soft-terrain zones + the dust-storm timeline
+    // (both no-op on sites without a `hazards` field in sites.js).
+    const hazardZones = createHazardZones(site);
+    const weather = createWeather(site);
+    const rover = createRover(site, terrain, colliders.forUnit('rover'), { hazards: hazardZones, weather });
     // Two quads, both spawn LANDED beside the rover: a fast recon scout
     // and a slower heavy-lift frame (Ingenuity-class vs cargo-class).
     const recon = createDrone(site, terrain, {
@@ -176,7 +183,7 @@ async function startGame(site) {
             hud.setInventory(samples.inventory, deliveredIds, analysis.analyzedIds);
             hud.setArchive(analysis.archive);
             sound.analysisDone();
-            tutorial?.advance('analyze');
+            missions.advance('analyze');
         },
     });
 
@@ -190,20 +197,49 @@ async function startGame(site) {
     const waypoint = createWaypoint(scene, terrain);
     const sound = createSound();
 
+    // Per-site objective chains (missions.js): the guided tutorial ships
+    // as mission 'tutorial' (autostart, first-visit-only via its own
+    // mc-mission-tutorial-done flag), re-runnable anytime from the menu
+    // MISSIONS section. Action call sites below just announce what
+    // happened via missions.advance(id) — broadcast, no-op when nothing
+    // is listening. Completion survives RESET MISSION (archive spirit).
+    const missions = createMissions(site, {
+        onComplete: () => hud.setMissions(missions.menuEntries()),
+    });
+    let overviewMissionId = null; // all-steps card, shown once per (re)start
+    function startMission(id) {
+        if (!missions.start(id)) return;
+        overviewMissionId = id;
+        hud.setMissions(missions.menuEntries());
+    }
+    for (const id of missions.autostarts) {
+        missions.start(id);
+        overviewMissionId = id;
+    }
+
     // Per-unit sim state: battery (drains with movement, solar-recharges
     // when idle; an empty battery immobilises the unit until it recovers
     // above the restart threshold) and odometer.
-    // Drain rates retuned for real-scale speeds (range per charge stays
-    // sane). Drones burn charge the whole time they are AIRBORNE (hover
-    // isn't free) and only solar-recharge on the ground — land to charge.
+    // Drain rates target real endurance. Real cargo/heavy-lift drones
+    // hover for ~20-30 min on a charge; the OLD rates burned a full pack
+    // in 1-2 min (playtest report). Calibrated so the lift drone hovers
+    // (airborne load floor = 0.4, G1 drainScale = 1) at
+    // 0.11 * 0.4 = 0.044 %/s -> ~38 min idle hover, ~22-25 min in active
+    // flight, less on a laden run — squarely in the real envelope. Drones
+    // burn charge the whole time they are AIRBORNE (hover isn't free) and
+    // only solar-recharge on the ground — land to charge.
     const units = [
-        { name: 'Rover', unit: rover, kind: 'ground', charge: 100, odo: 0, drainRate: 0.08 },
-        { name: 'Recon Drone', unit: recon, kind: 'fly', charge: 100, odo: 0, drainRate: 0.35 },
-        { name: 'Lift Drone', unit: lift, kind: 'fly', charge: 100, odo: 0, drainRate: 0.5 },
-        { name: 'Humanoid', unit: humanoid, kind: 'ground', charge: 100, odo: 0, drainRate: 0.12 },
+        { name: 'Rover', unit: rover, kind: 'ground', charge: 100, odo: 0, drainRate: 0.05 },
+        { name: 'Recon Drone', unit: recon, kind: 'fly', charge: 100, odo: 0, drainRate: 0.10 },
+        { name: 'Lift Drone', unit: lift, kind: 'fly', charge: 100, odo: 0, drainRate: 0.11 },
+        { name: 'Humanoid', unit: humanoid, kind: 'ground', charge: 100, odo: 0, drainRate: 0.07 },
     ];
-    const SOLAR_RATE = 0.6;      // %/s recharge while not driving
+    const SOLAR_RATE = 0.25;     // %/s recharge while not driving (~7 min
+                                 // full charge in daylight — proportional
+                                 // to the slower real-endurance drain)
     const RESTART_CHARGE = 10;   // empty units stay dead until this
+    const NIGHT_DRAIN_K = 0.5;   // cold-night heater tax: +50% drain at full dark
+    const STORM_FOG_K = 8;       // FOG.density multiplier span at storm peak
     let activeIndex = 0;
 
     const hudRoot = document.getElementById('mc-hud');
@@ -227,30 +263,24 @@ async function startGame(site) {
         // Persistent things survive on purpose: SCIENCE ARCHIVE, gear prefs.
         onReset: () => window.location.reload(),
         onSkipIntro: () => intro?.skip(),
-        onSkipTutorial: () => tutorial?.skip(),
+        onSkipMission: () => {
+            const cur = missions.currentAny();
+            if (cur) missions.skip(cur.missionId);
+        },
         onReplayIntro: () => startIntro(),
-        onReplayTutorial: () => startTutorial(),
+        onStartMission: (id) => startMission(id),
+        missions: missions.menuEntries(),
+        onSetOverlayMode: (mode) => fog.setOverlayMode(mode),
     });
     const fog = createFog(site, hud.minimapEl, terrain);
+    hud.setOverlayMode(fog.overlayMode); // reflect the persisted choice
+
+    // PATH overlay breadcrumbs: the active unit's recent track, appended
+    // on the telemetry tick below, rendered by fog.js in PATH mode only.
+    const pathTrail = [];
 
     hud.setLab(0, site.samples.length);
     hud.setArchive(analysis.archive); // persisted results from past sessions
-
-    // Guided tutorial (first-mission onboarding, tutorial.js): auto-starts
-    // for players who haven't finished/skipped it before, and re-runnable
-    // anytime from the menu (▶ TUTORIAL). Same persistence convention as
-    // the intro — NOT cleared by RESET MISSION.
-    let tutorial = null;
-    let tutorialOverviewShown = false; // all-steps card, shown once per (re)start
-    function startTutorial() {
-        tutorial = createTutorial({
-            onComplete: () => { try { localStorage.setItem(LS_TUTORIAL_KEY, '1'); } catch { /* private mode */ } },
-        });
-        tutorialOverviewShown = false;
-    }
-    try {
-        if (localStorage.getItem(LS_TUTORIAL_KEY) !== '1') startTutorial();
-    } catch { /* private mode — treat as already-seen rather than nag every load */ }
 
     const touchZones = setupTouchControls();
     const keys = setupKeyboard();
@@ -300,7 +330,7 @@ async function startGame(site) {
     // Debug/E2E handle (also used by the sampleHeight ground-truth check;
     // renderer/scene/camera exposed so tests on software-GL boxes can pause
     // the loop and capture canvas pixels via a same-task render+toDataURL).
-    window.__mc = { site, terrain, rover, drone: recon, recon, lift, humanoid, samples, renderer, scene, camera, camRig, units, env, effects, waypoint, sound, rocks, lab, sling, analysis, fog, colliders, get intro() { return intro; }, get tutorial() { return tutorial; } };
+    window.__mc = { site, terrain, rover, drone: recon, recon, lift, humanoid, samples, renderer, scene, camera, camRig, units, env, effects, waypoint, sound, rocks, lab, sling, analysis, fog, colliders, missions, hazardZones, weather, get intro() { return intro; } };
 
     function applyUnitMode() {
         const active = units[activeIndex];
@@ -314,7 +344,7 @@ async function startGame(site) {
         activeIndex = (activeIndex + 1) % units.length;
         applyUnitMode();
         sound.switchUnit();
-        if (units[activeIndex].unit === lift) tutorial?.advance('switch');
+        if (units[activeIndex].unit === lift) missions.advance('switch');
     }
 
     function toggleLanding() {
@@ -332,7 +362,7 @@ async function startGame(site) {
                 samples.collect(sample);
                 hud.setInventory(samples.inventory, deliveredIds, analysis.analyzedIds);
                 sound.collect();
-                tutorial?.advance('collect');
+                missions.advance('collect');
             }
             return;
         }
@@ -349,7 +379,7 @@ async function startGame(site) {
                 hud.setLab(lab.delivered.length, site.samples.length);
                 hud.setInventory(samples.inventory, deliveredIds, analysis.analyzedIds);
                 sound.deliver();
-                tutorial?.advance('deliver');
+                missions.advance('deliver');
             } else {
                 // field release: set the container back down where it hangs
                 const c = sling.detach();
@@ -361,13 +391,16 @@ async function startGame(site) {
             }
             return;
         }
-        if (!unit.landed && unit.alt <= SLING_ALT) {
+        // Hook while hovering low OR while parked next to the cache
+        // (landed alt is 0, so one gate covers both) — the load simply
+        // lifts off the ground with the drone on take-off.
+        if (unit.alt <= SLING_ALT) {
             const c = samples.nearestContainer(unit.position, SLING_RADIUS);
             if (c) {
                 sling.attach(c);
                 unit.setSlung(true);
                 sound.sling();
-                tutorial?.advance('sling');
+                missions.advance('sling');
             }
         }
     }
@@ -440,14 +473,20 @@ async function startGame(site) {
         if (active.dead) input = active.kind === 'ground'
             ? { throttle: 0, steer: 0 }
             : { forward: 0, strafe: 0, turn: 0, climb: 0 };
-        const solarNow = SOLAR_RATE * env.daylight();
+        // Wave 4 hazards: dust storms dim the panels (weather.js), and the
+        // Martian night is COLD — heaters eat into every load (up to
+        // +NIGHT_DRAIN_K x at full dark, scaled by the same daylight()
+        // that already gates solar recharge).
+        weather.update(dt);
+        const solarNow = SOLAR_RATE * env.daylight() * (1 - 0.8 * weather.intensity);
+        const coldDrain = 1 + (1 - env.daylight()) * NIGHT_DRAIN_K;
         for (const u of units) {
             if (u.kind === 'fly') u.unit.setPower(!u.dead); // dead => force-land
             const airborne = u.kind === 'fly' && !u.unit.landed;
             const activeLoad = u === active && !active.dead && inputMag > 0.02 ? inputMag : 0;
             const load = airborne ? Math.max(0.4, activeLoad) : activeLoad;
             u.charge = load > 0
-                ? Math.max(0, u.charge - u.drainRate * load * (u.unit.drainScale ?? 1) * dt)
+                ? Math.max(0, u.charge - u.drainRate * load * (u.unit.drainScale ?? 1) * coldDrain * dt)
                 : Math.min(100, u.charge + solarNow * dt);
         }
 
@@ -497,6 +536,10 @@ async function startGame(site) {
         })), {
             lab: { x: lab.padPos.x, z: lab.padPos.z },
             targetId: targetInfo ? targetInfo.sample.id.replace('-cache', '') : null,
+            caches: samples.containers
+                .filter((c) => c.state === 'field')
+                .map((c) => ({ x: c.mesh.position.x, z: c.mesh.position.z })),
+            path: pathTrail,
         });
         waypoint.update(dt, targetInfo);
         sling.update(dt, lift.position);
@@ -511,18 +554,32 @@ async function startGame(site) {
         // Edge-of-DEM warning while the active unit pushes the boundary.
         hud.setBoundary(!!active.unit.atBoundary);
 
-        // Tutorial banner + its one non-action-callback gate (opening the
+        // Hazard banner: the soft-terrain zone the active unit is bogged
+        // in (rover-only getter), else the site-wide dust storm once it's
+        // thick enough to matter. One slot — they rarely coincide.
+        hud.setHazard(active.unit.inHazard
+            ?? (weather.intensity > 0.15 ? { type: 'dust-storm' } : null));
+
+        // Dust storm haze: FOG.color is synced by env.update, but density
+        // is copied by VALUE into both scene.fog (environment.js re-syncs
+        // it) and the terrain shader's uniform — that one is synced here.
+        FOG.density = FOG_BASE_DENSITY * (1 + weather.intensity * STORM_FOG_K);
+        terrain.mesh.material.uniforms.uFogDensity.value = FOG.density;
+
+        // Mission banner + its one non-action-callback gate (opening the
         // menu to read the SCIENCE ARCHIVE has no discrete main.js call
-        // site to hook, unlike the other 6 steps — checked once per frame).
-        // All-steps overview card, once per tutorial (re)start — deferred to
+        // site to hook, unlike the other action steps — announced once per
+        // frame; advance() is a no-op unless a chain is waiting on it).
+        // All-steps overview card, once per mission (re)start — deferred to
         // the first NON-intro frame so it never fights the landing drop.
-        if (tutorial?.active && !tutorialOverviewShown) {
-            tutorialOverviewShown = true;
-            hud.setTutorialOverview(tutorial.steps);
+        if (overviewMissionId) {
+            hud.setTutorialOverview(missions.stepTexts(overviewMissionId), missions.titleOf(overviewMissionId));
+            overviewMissionId = null;
         }
-        if (tutorial?.current()?.id === 'archive' && hud.isMenuOpen()) tutorial.advance('archive');
-        hud.setObjective(tutorial?.active
-            ? `${tutorial.step}/${tutorial.total} · ${tutorial.current().text}`
+        if (hud.isMenuOpen()) missions.advance('archive');
+        const objective = missions.currentAny();
+        hud.setObjective(objective
+            ? `${objective.stepNum}/${objective.total} · ${objective.step.text}`
             : null);
 
         if (active.kind === 'ground') {
@@ -531,14 +588,14 @@ async function startGame(site) {
             // Piggyback on the same "close enough to collect" condition
             // that drives the COLLECT prompt above — no new distance
             // constant for the tutorial's first step.
-            if (nearest && tutorial?.current()?.id === 'drive') tutorial.advance('drive');
+            if (nearest) missions.advance('drive');
         } else if (active.unit.canSling && !active.dead) {
             if (sling.carrying) {
                 hud.setPrompt(lab.isOverPad(active.unit.position) && active.unit.alt <= DELIVER_ALT
                     ? 'DELIVER TO LAB'
                     : 'RELEASE LOAD');
             } else {
-                const c = !active.unit.landed && active.unit.alt <= SLING_ALT
+                const c = active.unit.alt <= SLING_ALT
                     ? samples.nearestContainer(active.unit.position, SLING_RADIUS)
                     : null;
                 hud.setPrompt(c ? `SLING: ${c.name} CACHE` : null);
@@ -581,6 +638,7 @@ async function startGame(site) {
                 dead: !!active.dead,
                 target: targetInfo,
                 tgtRelDeg,
+                rolloverRisk: active.unit.rolloverRisk ?? null, // rover-only gauge
             });
             hud.setNode(analysis.status());
             if (active.kind === 'fly') {
@@ -591,6 +649,13 @@ async function startGame(site) {
                     ceiling: active.unit.ceiling,
                     altTarget: active.unit.altTarget,
                 });
+            }
+            // Breadcrumb for the PATH overlay: only when the unit has
+            // actually moved a map-visible step (3m ~ 0.25px on the tile).
+            const lastCrumb = pathTrail[pathTrail.length - 1];
+            if (!lastCrumb || Math.hypot(pos.x - lastCrumb.x, pos.z - lastCrumb.z) >= 3) {
+                pathTrail.push({ x: pos.x, z: pos.z });
+                if (pathTrail.length > 400) pathTrail.shift();
             }
             prevPos.copy(pos);
             teleAccum = 0;
