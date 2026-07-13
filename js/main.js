@@ -259,6 +259,20 @@ async function startGame(site) {
     // happened via missions.advance(id) — broadcast, no-op when nothing
     // is listening. Completion survives RESET MISSION (archive spirit).
     const missions = createMissions(site, {
+        // Wave 9.8: the objective banner swapped steps in silently — you had
+        // to notice the bottom line had changed to know you'd done anything.
+        // Name what just got done, and what's next.
+        onStep: ({ done, doneNum, next, nextNum, total, complete, title }) => {
+            if (complete) {
+                hud.guide(`✓ ${title} — COMPLETE`, `${total}/${total} STEPS`);
+            } else {
+                hud.guide(`✓ STEP ${doneNum}/${total} — ${done.text}`,
+                    `NEXT · ${nextNum}/${total} · ${next.text}`);
+            }
+            // No cue of its own: every step fires on an action that already
+            // has one (collect, sling, deliver, analyze), and a second chime
+            // on the same frame just reads as a double-tap.
+        },
         onComplete: () => {
             hud.setMissions(missions.menuEntries());
             // Wave 7 capstone: the site's last mission raises the HQ.

@@ -792,6 +792,54 @@ html, body {
     to { opacity: 1; transform: translateX(-50%); }
 }
 
+/* Next-step guidance (Wave 9.8): 4th slot in the top banner stack — its own,
+   because a step completion and a build toast can fire in the same breath
+   (analyzing a sample does both) and one slot would eat one of them. Amber
+   = "what to do next" (the objective/waypoint language), against the toast's
+   teal "this happened". Two lines: what you just finished, what follows. */
+.mars-hud__guide {
+    position: absolute;
+    top: max(184px, calc(env(safe-area-inset-top) + 176px));
+    left: 50%;
+    transform: translateX(-50%);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 3px;
+    padding: 8px 18px;
+    border: 1px solid #e0b95e;
+    background: rgba(42, 30, 10, 0.9);
+    font-size: 0.78rem;
+    letter-spacing: 0.1em;
+    white-space: nowrap;
+    pointer-events: none;
+    z-index: 20;
+    animation: mars-toast-in 0.35s ease-out;
+}
+
+.mars-hud__guide[data-visible="false"] {
+    display: none;
+}
+
+.mars-hud__guide b {
+    font-weight: 600;
+    color: #7ee0a8;
+    font-size: 0.72rem;
+}
+
+.mars-hud__guide span {
+    color: #ffd98f;
+}
+
+@media (max-width: 899px), (pointer: coarse) {
+    .mars-hud__guide {
+        font-size: 0.64rem;
+        max-width: 92vw;
+        white-space: normal;
+        text-align: center;
+    }
+}
+
 @media (max-width: 899px), (pointer: coarse) {
     .mars-hud__boundary, .mars-hud__hazard, .mars-hud__toast {
         font-size: 0.64rem;

@@ -73,6 +73,10 @@ export function createHud(rootEl, { site, onSwitchUnit, onCollect, onToggleSfx, 
             <div class="mars-hud__boundary" id="mc-boundary" data-visible="false">⚠ OUT OF MISSION DIRECTIVES — RETURN TO SURVEY ZONE</div>
             <div class="mars-hud__hazard" id="mc-hazard" data-visible="false"></div>
             <div class="mars-hud__toast" id="mc-toast" data-visible="false"></div>
+            <div class="mars-hud__guide" id="mc-guide" data-visible="false">
+                <b id="mc-guide-done"></b>
+                <span id="mc-guide-next"></span>
+            </div>
             <div class="mars-hud__objective" id="mc-objective" data-visible="false">
                 <span id="mc-objective-text"></span>
                 <button class="mars-btn mars-objective__skip" id="mc-skip-tutorial">SKIP</button>
@@ -368,6 +372,28 @@ export function createHud(rootEl, { site, onSwitchUnit, onCollect, onToggleSfx, 
         toastEl.dataset.visible = 'true';
         clearTimeout(toastTimer);
         toastTimer = setTimeout(() => { toastEl.dataset.visible = 'false'; }, 6000);
+    }
+
+    // Next-step guidance (Wave 9.8). The objective banner has always shown
+    // exactly one step and swapped it in silently, so completing a step gave
+    // no confirmation and no preview — you had to notice the bottom line had
+    // changed. This is the missing beat: a transient banner that names the
+    // step you just finished and the one that follows.
+    //
+    // It gets its OWN slot (4th in the top stack) rather than reusing the
+    // build toast: both can fire in the same breath — analyzing a sample
+    // completes a mission step AND raises a checkpost — and one slot would
+    // mean one of the two announcements silently eats the other.
+    const guideEl = rootEl.querySelector('#mc-guide');
+    const guideDoneEl = rootEl.querySelector('#mc-guide-done');
+    const guideNextEl = rootEl.querySelector('#mc-guide-next');
+    let guideTimer = null;
+    function guide(doneText, nextText) {
+        guideDoneEl.textContent = doneText;
+        guideNextEl.textContent = nextText ?? '';
+        guideEl.dataset.visible = 'true';
+        clearTimeout(guideTimer);
+        guideTimer = setTimeout(() => { guideEl.dataset.visible = 'false'; }, 6000);
     }
 
     // Mission objective banner — same cached-toggle idiom as setBoundary,
@@ -857,7 +883,7 @@ export function createHud(rootEl, { site, onSwitchUnit, onCollect, onToggleSfx, 
     return {
         minimapEl, setActiveUnit, setPrompt, setInventory, setLab,
         setNode, setArchive, setBoundary, setHazard, setObjective, setIntroActive, setTutorialOverview,
-        setMissions, setOverlayMode, setTelemetry, setMenuOpen, isMenuOpen, toast, setOutposts,
+        setMissions, setOverlayMode, setTelemetry, setMenuOpen, isMenuOpen, toast, guide, setOutposts,
         setDronePanel, setDroneState, setGear, setBases, setGps, setMarsClock, setNightVision,
     };
 }

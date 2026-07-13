@@ -50,7 +50,7 @@ const MISSIONS = {
 
 const doneKey = (id) => `mc-mission-${id}-done`;
 
-export function createMissions(site, { onComplete } = {}) {
+export function createMissions(site, { onComplete, onStep } = {}) {
     // Only missions this site offers (sites.js `missions` field); a site
     // without the field simply has none — Gale stays untouched by design.
     const available = (site.missions ?? []).filter((id) => MISSIONS[id]);
@@ -117,7 +117,22 @@ export function createMissions(site, { onComplete } = {}) {
             if (!done) continue;
             run.stepIdx += 1;
             run.progress = 0;
-            if (run.stepIdx >= MISSIONS[missionId].steps.length) finish(missionId);
+            const steps = MISSIONS[missionId].steps;
+            const last = run.stepIdx >= steps.length;
+            // Wave 9.8: announce the transition, so the HUD can say what just
+            // got done and what comes next. Still no game logic here — this is
+            // the same broadcast, it just carries the step it crossed.
+            onStep?.({
+                missionId,
+                title: MISSIONS[missionId].title,
+                done: step,                       // the step just completed
+                doneNum: run.stepIdx,             // 1-based number of that step
+                next: last ? null : steps[run.stepIdx],
+                nextNum: last ? null : run.stepIdx + 1,
+                total: steps.length,
+                complete: last,
+            });
+            if (last) finish(missionId);
         }
     }
 
