@@ -165,6 +165,7 @@ export function createHud(rootEl, { site, onSwitchUnit, onCollect, onToggleSfx, 
                     <h3>CONTROLS</h3>
                     <ul class="mars-menu__controls">
                         <li>Rover / humanoid — WASD or left stick</li>
+                        <li>Humanoid jump — SPACE (0.38 g: ~1.5 m up, ~1.8 s hang)</li>
                         <li>Drone keys — W/S pitch · A/D yaw · Q/E strafe · R/F climb</li>
                         <li>Drone altitude slider — drag to fly to a set height (top = 150m ceiling, bottom = land)</li>
                         <li>Drone touch (RC Mode 2) — left stick throttle+yaw, right stick pitch+roll</li>
@@ -172,7 +173,9 @@ export function createHud(rootEl, { site, onSwitchUnit, onCollect, onToggleSfx, 
                         <li>Switch unit — TAB · Collect — E · Menu — M</li>
                         <li>Lift drone — hover low over a cache container, E to sling it, fly to the FIELD LAB pad, E to deliver</li>
                         <li>Delivered caches auto-analyze on the lab edge node — findings land in the SCIENCE ARCHIVE</li>
-                        <li>Sol cycle — drones recharge only when landed, nothing recharges at night</li>
+                        <li>Sol cycle — solar recharges only when landed, and only in daylight</li>
+                        <li>Chargepads — park ON a base pad to fast-charge (and repair the rover). Station-powered, so it works at night: the only way back from a flat battery after dark</li>
+                        <li>Dead battery in the air — the rotors quit and the drone FALLS. Land before it does.</li>
                     </ul>
                 </div>
                 <button class="mars-btn mars-btn--resume" id="mc-resume">RESUME</button>

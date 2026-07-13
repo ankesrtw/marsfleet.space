@@ -301,6 +301,7 @@ async function startGame(site) {
     const ROLLOVER_BATT_PENALTY = 8; // % charge lost when the rover tips (Wave 6)
     let activeIndex = 0;
     let prevRoverCondition = 'ok';   // Wave 6 transition edge detector
+    let jumpHeld = false;            // Space edge-detect (no pogo on hold)
 
     const hudRoot = document.getElementById('mc-hud');
     const hud = createHud(hudRoot, {
@@ -514,7 +515,11 @@ async function startGame(site) {
         let input, inputMag;
         if (active.kind === 'ground') {
             const mv = readMoveInput(keys, touchZones.move);
-            input = { throttle: mv.y, steer: -mv.x };
+            // Space jumps — humanoid only (the rover has no legs). Consumed as
+            // an edge, so holding Space does not pogo.
+            const jump = active.unit === humanoid && keys.has('Space') && !jumpHeld;
+            jumpHeld = keys.has('Space');
+            input = { throttle: mv.y, steer: -mv.x, jump };
             inputMag = Math.min(1, Math.abs(mv.x) + Math.abs(mv.y));
         } else {
             input = readDroneInput(keys, touchZones.move, touchZones.look);
@@ -564,6 +569,11 @@ async function startGame(site) {
                 u.unit.repair(REPAIR_RATE * dt);
                 livePads.add(pad);
             }
+
+            // Wave 9 gravity: a drone whose battery died mid-air FALLS. Crunch
+            // on touchdown, scaled by how far it had to come.
+            const impact = u.unit.popImpact?.() ?? 0;
+            if (impact > 4) sound.dead();
         }
         chargepads.update(dt, livePads);
 

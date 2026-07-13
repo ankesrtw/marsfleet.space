@@ -20,10 +20,11 @@
 
    Land/take-off: climb input (or toggleLanding()) moves altitude-
    above-ground; touching down zeroes velocity and parks the frame
-   level on the terrain. A dead battery force-lands (setPower).
+   level on the terrain. A dead battery FALLS (setPower -> Wave 9 gravity).
    ============================================================ */
 
 import * as THREE from 'three';
+import { GRAVITY_MARS } from './physics.js';
 import { attachUnitModel } from './models.js';
 import { createRotorRig, hubsFromSize } from './rotors.js';
 
@@ -105,6 +106,9 @@ export function createDrone(site, terrain, opts = {}) {
     let autoLand = false;
     let autoTakeoffTo = null;
     let powered = true;
+    let falling = false;        // un-powered in the air: Mars has it
+    let fallVel = 0;            // m/s downward, integrated against GRAVITY_MARS
+    let impactSpeed = 0;        // m/s at touchdown — consumed by main.js
     let bob = 0;
     let atBoundary = false;
     const bound = site.worldSize / 2 - EDGE_MARGIN;
@@ -149,10 +153,19 @@ export function createDrone(site, terrain, opts = {}) {
         if (landed) landed = false;
     }
 
-    /** Battery hook: dead drones ignore sticks and auto-land. */
+    /** Wave 9: losing power mid-air is a FALL, not a landing. The old path
+        set autoLand, which walked the drone down at a constant, dignified
+        climb rate — rotors dead, still descending like an elevator. Now the
+        rotors quit and Mars takes it. */
     function setPower(on) {
         powered = on;
-        if (!on && !landed) { autoLand = true; autoTakeoffTo = null; }
+        if (!on && !landed) {
+            falling = true;
+            autoLand = false;
+            autoTakeoffTo = null;
+            altTarget = null;
+        }
+        if (on && falling) { falling = false; fallVel = 0; }   // rotors catch it
     }
 
     function update(dt, input) {
@@ -254,13 +267,26 @@ export function createDrone(site, terrain, opts = {}) {
             mesh.position.z = nz;
         }
 
-        alt = THREE.MathUtils.clamp(
-            alt + climb * climbRate * GEARS[gearIdx].climb * (slung ? SLING_CLIMB : 1) * dt,
-            0, MAX_ALT
-        );
+        if (falling) {
+            // Dead rotors: accelerate downward at Mars g. The drop is slow to
+            // start and then RUNS AWAY — that acceleration is the whole tell
+            // that this is a fall and not the old constant-rate descent.
+            fallVel += GRAVITY_MARS * dt;
+            alt = Math.max(0, alt - fallVel * dt);
+        } else {
+            alt = THREE.MathUtils.clamp(
+                alt + climb * climbRate * GEARS[gearIdx].climb * (slung ? SLING_CLIMB : 1) * dt,
+                0, MAX_ALT
+            );
+        }
         const groundY = terrain.sampleHeight(mesh.position.x, mesh.position.z);
-        if (alt <= 0.05 && climb < 0) {
-            // touchdown
+        if (alt <= 0.05 && (climb < 0 || falling)) {
+            // touchdown (or arrival)
+            if (falling) {
+                impactSpeed = fallVel;   // main.js reads this for the crunch
+                falling = false;
+                fallVel = 0;
+            }
             landed = true;
             autoLand = false;
             alt = 0;
@@ -270,11 +296,12 @@ export function createDrone(site, terrain, opts = {}) {
             rig.update(dt, 0);
             return;
         }
-        mesh.position.y = groundY + alt + Math.sin(bob * 2) * 0.15;
+        mesh.position.y = groundY + alt + (falling ? 0 : Math.sin(bob * 2) * 0.15);
         mesh.rotation.set(pitchTilt, heading, rollTilt, 'YXZ');
 
-        // airborne rotor effort: hover floor + speed/climb load
-        rig.update(dt, Math.min(1,
+        // airborne rotor effort: hover floor + speed/climb load. A falling
+        // drone has no rotor effort at all — that is why it is falling.
+        rig.update(dt, falling ? 0 : Math.min(1,
             0.55 + 0.45 * (vel.length() / speedCap()) + 0.2 * Math.abs(climb)));
     }
 
@@ -283,9 +310,19 @@ export function createDrone(site, terrain, opts = {}) {
         slung = !!on;
     }
 
+    /** Consume-on-read: main.js polls this to fire the impact cue once. */
+    function popImpact() {
+        const v = impactSpeed;
+        impactSpeed = 0;
+        return v;
+    }
+
     return {
         mesh, update, toggleLanding, setPower, cycleGear, setSlung, canSling, commandAlt,
+        popImpact,
         get position() { return mesh.position; },
+        get falling() { return falling; },
+        get fallSpeed() { return fallVel; },
         get heading() { return heading; },
         get atBoundary() { return atBoundary; },
         get landed() { return landed; },

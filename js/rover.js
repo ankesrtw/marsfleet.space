@@ -11,6 +11,7 @@
    ============================================================ */
 
 import * as THREE from 'three';
+import { GRAVITY_MARS } from './physics.js';
 import { attachUnitModel } from './models.js';
 import { createWheelRig, WHEELS_GLB, WHEELS_FALLBACK } from './wheels.js';
 
@@ -94,18 +95,25 @@ const ASSIST_RATE = 1 / 6;   // meter/s from a nearby assisting unit
 const IMPACT_SPD_MIN = 1.8;  // m/s — nudging a boulder at a crawl is harmless
 const IMPACT_DMG_K = 3.4;    // % hull per m/s over that floor, per collision
 // Measured on Jezero (roughness = |d(micro-relief)/dt| x min(1, speed/6)):
-// at G2 (6.3 m/s) it means 0.14 and peaks ~0.5; at G3 (16.8 m/s) it means
-// ~0.39 and peaks 1.1-2.0. A 0.45 floor therefore leaves REAL/G1/G2 driving
-// essentially free and bills the reckless G3 charge across broken ground —
-// which is the lesson (real rovers creep over rubble for exactly this reason).
-// Measured on Jezero: roughness means 0.14 / peaks ~0.5 at G2 (6.3 m/s) and
-// spikes far higher at G3. The floor leaves REAL/G1/G2 driving essentially
-// free; the CAP bounds the worst case at ~1 %/s (a sustained 20 s hammering
-// costs ~20% hull) — uncapped, single-frame micro-relief spikes wrecked the
-// rover in half a minute.
+// it means 0.14 / peaks ~0.5 at G2 (6.3 m/s) and spikes far higher at G3.
+// The floor leaves REAL/G1/G2 driving essentially free and bills the reckless
+// G3 charge across broken ground (real rovers creep over rubble for exactly
+// this reason); the CAP bounds the worst case at ~1 %/s — uncapped,
+// single-frame micro-relief spikes wrecked the rover in half a minute.
 const ROUGH_MIN = 0.45;      // ignore gentle undulation
 const ROUGH_DMG_K = 1.2;     // % hull /s per unit of roughness over the floor
 const ROUGH_DMG_MAX = 1.0;   // %/s cap — the worst ground can do
+
+// Wave 9 airtime. Only a fast-RISING crest launches the rover: below
+// LAUNCH_MIN the micro-relief under the wheels would have it hopping
+// permanently. Landings below LAND_IMPACT_MIN are free, so small hops cost
+// nothing and only a real drop bills the hull.
+const LAUNCH_MIN = 5.0;      // m/s of ground rise before it throws the body
+const LAUNCH_K = 0.55;       // how much of that rise the body inherits
+const MAX_LAUNCH = 4.0;      // m/s cap — no ski jumps
+const LAND_IMPACT_MIN = 3.5; // m/s of descent before a landing hurts
+const STICK_GAP = 0.25;      // m of suspension travel — wheels stay down over
+                             // dips this shallow (else micro-relief 'floats' it)
 const ROLL_DMG = 14;         // % hull on a tip-over
 const LIMP_FLOOR = 0.45;     // speed multiplier at 0% hull — hurt, still drivable
 
@@ -178,6 +186,9 @@ export function createRover(site, terrain, obstacles, { hazards, weather } = {})
     let assisted = false;       // another unit in range (main.js feeds)
     let bounceY = 0, bounceV = 0;
     let prevGroundY = null;
+    let bodyY = null;      // absolute chassis height (gravity integrator)
+    let vertVel = 0;       // m/s vertical
+    let prevBaseY = null;  // ground height last frame (its rise/fall rate)
 
     /** Rocking rhythm: count throttle reversals (with a tolerated neutral
         gap) into the recovery meter; track one-way holds for dig-in. */
@@ -401,8 +412,47 @@ export function createRover(site, terrain, obstacles, { hazards, weather } = {})
         flipAnim = flipTarget > flipAnim
             ? Math.min(flipTarget, flipAnim + dt / FLIP_ANIM_S)
             : Math.max(flipTarget, flipAnim - dt / FLIP_ANIM_S);
-        mesh.position.y = terrain.sampleGroundHeight(mesh.position.x, mesh.position.z)
-            + clearance + bounceY + flipAnim * FLIP_LIFT
+
+        // Wave 9 vertical integrator. ONE mechanism covers both asks:
+        //  - drive off a ledge and the ground falls away faster than gravity
+        //    can pull the body down, so the rover is airborne and FALLS
+        //    (before this, position.y snapped to terrain height every frame —
+        //    a cliff teleported it down the face)
+        //  - hit a crest at speed and the rising ground hands its upward
+        //    velocity to the body, which then carries over the top: airtime,
+        //    floaty at 0.38 g
+        // Downed states stay glued (a rolled rover does not jump).
+        const baseY = terrain.sampleGroundHeight(mesh.position.x, mesh.position.z) + clearance;
+        const groundVel = dt > 0 && prevBaseY != null ? (baseY - prevBaseY) / dt : 0;
+        prevBaseY = baseY;
+        if (bodyY == null || incapacitated) {
+            bodyY = baseY;
+            vertVel = 0;
+        } else {
+            vertVel -= GRAVITY_MARS * dt;
+            bodyY += vertVel * dt;
+            const gap = bodyY - baseY;
+            if (gap <= 0) {
+                const impact = -vertVel;
+                bodyY = baseY;
+                // The ground shoves back. Only a genuinely fast-rising crest
+                // launches (LAUNCH_MIN) — otherwise the micro-relief under the
+                // wheels would have the rover permanently hopping.
+                vertVel = groundVel > LAUNCH_MIN
+                    ? Math.min(MAX_LAUNCH, (groundVel - LAUNCH_MIN) * LAUNCH_K)
+                    : 0;
+                if (impact > LAND_IMPACT_MIN) takeImpact(impact);   // hard landing
+            } else if (gap < STICK_GAP && vertVel > -2) {
+                // Suspension travel: the wheels stay in contact across a dip
+                // this shallow. Without this the body counts as AIRBORNE over
+                // every few-cm hollow in the micro-relief and the rover floats
+                // for ~12% of frames on even the flattest ground. A real drop
+                // opens the gap far faster than STICK_GAP and still falls.
+                bodyY = baseY;
+                vertVel = 0;
+            }
+        }
+        mesh.position.y = bodyY + bounceY + flipAnim * FLIP_LIFT
             - (condition === 'bogged' ? 0.12 : 0);
 
         // Stay in quaternion space end-to-end: assigning mesh.rotation.y
@@ -489,6 +539,8 @@ export function createRover(site, terrain, obstacles, { hazards, weather } = {})
         get inHazard() { return inHazard; },
         get slipRatio() { return slipRatio; },
         get rolloverRisk() { return rolloverRisk; },
+        get airborne() { return bodyY != null && prevBaseY != null && bodyY > prevBaseY + 0.05; },
+        get vertVel() { return vertVel; },
         get health() { return health; },              // 0..100 hull condition
         set health(v) { health = Math.max(0, Math.min(100, v)); },  // E2E
         get condition() { return condition; },       // ok | rolled | bogged

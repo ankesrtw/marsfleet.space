@@ -9,6 +9,7 @@
    ============================================================ */
 
 import * as THREE from 'three';
+import { GRAVITY_MARS } from './physics.js';
 import { attachUnitModel } from './models.js';
 
 // ~5 km/h — a brisk suited walk (Apollo EVAs averaged ~2.2 km/h with
@@ -19,6 +20,11 @@ const SLOPE_K = 0.8;     // much gentler falloff than the rover
 const MIN_SPEED_FACTOR = 0.3;
 const BODY_RADIUS = 0.35; // m, collision footprint (also main.js registry)
 const EDGE_MARGIN = 30;   // m inside the DEM edge — the mission boundary
+
+// Wave 9 Mars jump. Apex = v^2 / 2g = 3.4^2 / (2 x 3.72) ~ 1.55 m, hang time
+// = 2v/g ~ 1.83 s. The identical impulse on Earth would clear only 0.59 m and
+// hang 0.69 s — the 2.6x floatiness IS the low-gravity read.
+const JUMP_IMPULSE = 3.4; // m/s
 
 // Procedural walk cycle on the GLB's rig (the Tripo export is rigged
 // but ships zero animation clips, so we drive the bones ourselves).
@@ -54,6 +60,8 @@ export function createHumanoid(site, terrain, obstacles) {
 
     let heading = site.spawn.heading;
     let stride = 0;
+    let airY = 0;        // m above the ground clamp (0 = boots down)
+    let jumpVel = 0;     // m/s vertical, integrated against GRAVITY_MARS
     let walkAmt = 0; // 0..1, eases the cycle in/out so stops don't snap
     let atBoundary = false;
     const bound = site.worldSize / 2 - EDGE_MARGIN;
@@ -62,8 +70,16 @@ export function createHumanoid(site, terrain, obstacles) {
     const _axis = new THREE.Vector3(1, 0, 0); // bind-local X = leg/arm swing
 
     function update(dt, input) {
-        // input: { throttle: -1..1, steer: -1..1 }
+        // input: { throttle: -1..1, steer: -1..1, jump: bool }
         heading += input.steer * TURN_RATE * dt;
+
+        // Mars jump (Wave 9). At 0.38 g the SAME impulse arcs ~2.6x higher and
+        // hangs ~2.6x longer than on Earth, and that floatiness is the point —
+        // it is the most legible "you are not on Earth" cue in the whole sim.
+        // JUMP_IMPULSE 3.4 m/s => apex ~1.55 m, hang ~1.8 s.
+        if (input.jump && airY <= 0 && jumpVel === 0) {
+            jumpVel = JUMP_IMPULSE;
+        }
 
         // Ground-contact samplers (see terrain.js micro-relief): boots feel
         // the sub-DEM regolith bumps, drone AGL and markers stay smooth-DEM.
@@ -86,9 +102,20 @@ export function createHumanoid(site, terrain, obstacles) {
             mesh.position.x = nx;
             mesh.position.z = nz;
         }
-        mesh.position.y = terrain.sampleGroundHeight(mesh.position.x, mesh.position.z);
+        // Vertical: airborne frames integrate Mars gravity; grounded frames
+        // stay clamped to the terrain exactly as before (a walker never needs
+        // a falling model while its boots are on the ground).
+        const groundY = terrain.sampleGroundHeight(mesh.position.x, mesh.position.z);
+        if (jumpVel !== 0 || airY > 0) {
+            jumpVel -= GRAVITY_MARS * dt;
+            airY += jumpVel * dt;
+            if (airY <= 0) { airY = 0; jumpVel = 0; }   // touchdown
+        }
+        mesh.position.y = groundY + airY;
 
-        const moving = Math.abs(input.throttle) > 0.05;
+        // Airborne = no walk cycle (legs stop pumping mid-flight).
+        const grounded = airY <= 0;
+        const moving = grounded && Math.abs(input.throttle) > 0.05;
         if (moving) stride += dt * 6;
         walkAmt += ((moving ? 1 : 0) - walkAmt) * Math.min(1, 8 * dt);
         mesh.rotation.y = heading;
@@ -107,6 +134,9 @@ export function createHumanoid(site, terrain, obstacles) {
         get position() { return mesh.position; },
         get heading() { return heading; },
         get atBoundary() { return atBoundary; },
+        get airborne() { return airY > 0; },
+        get airY() { return airY; },          // m above ground (jump arc)
+        get jumpVel() { return jumpVel; },
     };
 }
 
