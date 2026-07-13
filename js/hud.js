@@ -601,7 +601,7 @@ export function createHud(rootEl, { site, onSwitchUnit, onCollect, onToggleSfx, 
     // -[sin h, cos h], so bearing-from-north = -h), elev m, slope deg.
     // tgtRelDeg: steer angle to the target relative to forward travel
     // (0 = dead ahead, +90 = hard right) — rotates the TGT arrow.
-    function setTelemetry({ speed, heading, elevation, slopeDeg, x, z, odo, charge, dead, target, tgtRelDeg, rolloverRisk, wind }) {
+    function setTelemetry({ speed, heading, elevation, slopeDeg, x, z, odo, charge, dead, docked, charging, target, tgtRelDeg, rolloverRisk, wind }) {
         const bearing = ((-heading * 180 / Math.PI) % 360 + 360) % 360;
         const card = CARDINALS[Math.round(bearing / 45) % 8];
         const lat = site.center.lat - z / M_PER_DEG;
@@ -624,8 +624,16 @@ export function createHud(rootEl, { site, onSwitchUnit, onCollect, onToggleSfx, 
         tele.lon.textContent = `${Math.abs(lon).toFixed(5)}° ${lon >= 0 ? 'E' : 'W'}`;
         tele.odo.textContent = odo >= 1000 ? `${(odo / 1000).toFixed(2)} km` : `${Math.round(odo)} m`;
 
-        tele.batt.textContent = dead ? `${Math.round(charge)}% ⚠` : `${Math.round(charge)}%`;
-        tele.batt.className = charge <= 15 ? 'is-crit' : charge <= 35 ? 'is-low' : '';
+        // Charging state is spelled out: DOCK (fast, station-powered, works
+        // at night) reads differently from the ambient solar trickle, which
+        // is the distinction that made "why isn't it charging?" confusing.
+        const pct = Math.round(charge);
+        tele.batt.textContent = dead && !charging ? `${pct}% ⚠`
+            : docked && charging ? `${pct}% ⚡ DOCK`
+                : charging ? `${pct}% ☀`
+                    : `${pct}%`;
+        tele.batt.className = charging && docked ? 'is-charging'
+            : charge <= 15 ? 'is-crit' : charge <= 35 ? 'is-low' : '';
 
         // ROLL gauge (rover-only — null hides): same graduated color
         // language as BATT, warning readout rather than a banner.

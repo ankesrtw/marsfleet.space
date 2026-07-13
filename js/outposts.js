@@ -37,7 +37,7 @@ const CHECKPOST_RING = 14;
 const HQ_RING = 25;
 const BUILD_SECS = 3.2;
 
-export function createOutposts(scene, site, terrain, rocks, colliders, labPos) {
+export function createOutposts(scene, site, terrain, rocks, colliders, labPos, onBuilt) {
     const defs = (site.samples ?? []).filter((s) => s.outpost);
     const built = new Map();  // id -> { id, name, kind, x, z, group }
     const rising = [];        // { group, t } build-in animations in flight
@@ -138,6 +138,7 @@ export function createOutposts(scene, site, terrain, rocks, colliders, labPos) {
         }
         const rec = { id, name, kind, x, z, group };
         built.set(id, rec);
+        onBuilt?.(rec);   // Wave 9: main.js sites a chargepad beside it
         return rec;
     }
 

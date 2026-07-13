@@ -211,6 +211,11 @@ html, body {
     color: #e05e5e;
 }
 
+/* docked on a chargepad — fast, station-powered, works after dark */
+.mars-tele__grid b.is-charging {
+    color: #5ee08a;
+}
+
 /* steer arrow inside the TGT row — rotated via inline transform */
 .mars-tele__arrow {
     display: inline-block;

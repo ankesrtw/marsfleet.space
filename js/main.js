@@ -27,6 +27,7 @@ import { createColliders } from './colliders.js';
 import { createLandingIntro } from './intro.js';
 import { createMissions } from './missions.js';
 import { createOutposts } from './outposts.js';
+import { createChargepads } from './chargepad.js';
 
 // Lift-drone logistics interaction envelope (see lab.js):
 const SLING_ALT = 8;      // m AGL — hover this low (or sit landed: alt 0
@@ -189,10 +190,19 @@ async function startGame(site) {
     const sling = createSling(scene, terrain);
     const deliveredIds = new Set();
 
+    // Wave 9 charging stations (chargepad.js): every base gets a solar pad.
+    // The FIELD LAB gets one at boot — it is the origin base, and without it
+    // there is nowhere to dock before the first outpost is earned.
+    const chargepads = createChargepads(scene, terrain, rocks);
+    chargepads.addPadNear(lab.padPos.x, lab.padPos.z, 16);
+
     // Wave 7 base-building (outposts.js): checkposts rise at flagged
     // sample sites once analyzed; the HQ rises by the lab once every
     // mission is complete. No-ops on sites without outpost/hq fields.
-    const outposts = createOutposts(scene, site, terrain, rocks, colliders, lab.padPos);
+    // Each structure earns a chargepad beside it as it goes up (and at
+    // boot, via bootstrap -> construct -> onBuilt).
+    const outposts = createOutposts(scene, site, terrain, rocks, colliders, lab.padPos,
+        (rec) => chargepads.addPadNear(rec.x, rec.z, rec.kind === 'hq' ? 19 : 9));
 
     // Edge-node analysis queue + persistent science archive (analysis.js):
     // delivered caches auto-process; completion reveals the real finding.
@@ -278,6 +288,12 @@ async function startGame(site) {
     const SOLAR_RATE = 0.25;     // %/s recharge while not driving (~7 min
                                  // full charge in daylight — proportional
                                  // to the slower real-endurance drain)
+    // Docked on a chargepad: ~2.5 min to full, and NOT gated by daylight —
+    // the station runs off its own battery bank. That gate is the whole
+    // point: ambient solar dies with the sun (daylight() is exactly 0 for
+    // ~37% of the sol), so before the pads a unit that flattened its
+    // battery after dusk was stranded at 0% until sunrise with no way out.
+    const DOCK_RATE = 0.7;       // %/s while docked
     const RESTART_CHARGE = 10;   // empty units stay dead until this
     const NIGHT_DRAIN_K = 0.5;   // cold-night heater tax: +50% drain at full dark
     const STORM_FOG_K = 8;       // FOG.density multiplier span at storm peak
@@ -374,7 +390,7 @@ async function startGame(site) {
     // Debug/E2E handle (also used by the sampleHeight ground-truth check;
     // renderer/scene/camera exposed so tests on software-GL boxes can pause
     // the loop and capture canvas pixels via a same-task render+toDataURL).
-    window.__mc = { site, terrain, rover, drone: recon, recon, lift, humanoid, samples, renderer, scene, camera, camRig, units, env, effects, waypoint, sound, rocks, lab, sling, analysis, outposts, fog, colliders, missions, hazardZones, weather, dustDevils, wind, get intro() { return intro; } };
+    window.__mc = { site, terrain, rover, drone: recon, recon, lift, humanoid, samples, renderer, scene, camera, camRig, units, env, effects, waypoint, sound, rocks, lab, sling, analysis, outposts, fog, colliders, missions, hazardZones, weather, dustDevils, wind, chargepads, get intro() { return intro; } };
 
     function applyUnitMode() {
         const active = units[activeIndex];
@@ -524,15 +540,24 @@ async function startGame(site) {
         weather.update(dt);
         const solarNow = SOLAR_RATE * env.daylight() * (1 - 0.8 * weather.intensity);
         const coldDrain = 1 + (1 - env.daylight()) * NIGHT_DRAIN_K;
+        const livePads = new Set();  // pads charging something (ring pulses green)
         for (const u of units) {
             if (u.kind === 'fly') u.unit.setPower(!u.dead); // dead => force-land
             const airborne = u.kind === 'fly' && !u.unit.landed;
             const activeLoad = u === active && !active.dead && inputMag > 0.02 ? inputMag : 0;
             const load = airborne ? Math.max(0.4, activeLoad) : activeLoad;
+            // Docking needs the unit settled ON the pad — a drone hovering
+            // over one is still burning its rotors, so it must be landed.
+            const pad = airborne ? null : chargepads.padAt(u.unit.position);
+            u.docked = !!pad;
+            const rate = pad ? DOCK_RATE : solarNow;
             u.charge = load > 0
                 ? Math.max(0, u.charge - u.drainRate * load * (u.unit.drainScale ?? 1) * coldDrain * dt)
-                : Math.min(100, u.charge + solarNow * dt);
+                : Math.min(100, u.charge + rate * dt);
+            u.charging = load <= 0 && rate > 0 && u.charge < 100;
+            if (pad && u.charging) livePads.add(pad);
         }
+        chargepads.update(dt, livePads);
 
         // battery audio cues on downward transitions of the active unit
         if (active.charge <= 15 && !active.lowWarned) { active.lowWarned = true; sound.lowBattery(); }
@@ -720,6 +745,8 @@ async function startGame(site) {
                 odo: active.odo,
                 charge: active.charge,
                 dead: !!active.dead,
+                docked: !!active.docked,
+                charging: !!active.charging,
                 target: targetInfo,
                 tgtRelDeg,
                 rolloverRisk: active.unit.rolloverRisk ?? null, // rover-only gauge
