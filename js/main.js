@@ -29,6 +29,7 @@ import { createMissions } from './missions.js';
 import { createOutposts } from './outposts.js';
 import { createChargepads } from './chargepad.js';
 import { createComms } from './comms.js';
+import { createMarsClock } from './mars-clock.js';
 
 // Lift-drone logistics interaction envelope (see lab.js):
 const SLING_ALT = 8;      // m AGL — hover this low (or sit landed: alt 0
@@ -348,6 +349,11 @@ async function startGame(site) {
     const fog = createFog(site, hud.minimapEl, terrain);
     hud.setOverlayMode(fog.overlayMode); // reflect the persisted choice
 
+    // Wave 9.6: Mars local time, derived from the sun environment.js already
+    // moves (a display, not a second clock — see mars-clock.js).
+    const marsClock = createMarsClock(site, env);
+    hud.setMarsClock(marsClock.read());
+
     // PATH overlay breadcrumbs: the active unit's recent track, appended
     // on the telemetry tick below, rendered by fog.js in PATH mode only.
     const pathTrail = [];
@@ -405,7 +411,7 @@ async function startGame(site) {
     // Debug/E2E handle (also used by the sampleHeight ground-truth check;
     // renderer/scene/camera exposed so tests on software-GL boxes can pause
     // the loop and capture canvas pixels via a same-task render+toDataURL).
-    window.__mc = { site, terrain, rover, drone: recon, recon, lift, humanoid, samples, renderer, scene, camera, camRig, units, env, effects, waypoint, sound, rocks, lab, sling, analysis, outposts, fog, colliders, missions, hazardZones, weather, dustDevils, wind, chargepads, comms, baseList, get intro() { return intro; } };
+    window.__mc = { site, terrain, rover, drone: recon, recon, lift, humanoid, samples, renderer, scene, camera, camRig, units, env, effects, waypoint, sound, rocks, lab, sling, analysis, outposts, fog, colliders, missions, hazardZones, weather, dustDevils, wind, chargepads, comms, baseList, marsClock, get intro() { return intro; } };
 
     function applyUnitMode() {
         const active = units[activeIndex];
@@ -828,6 +834,7 @@ async function startGame(site) {
                 wind: wind.sample(pos.x, pos.z), // real m/s at the unit (Wave 6)
             });
             hud.setNode(analysis.status());
+            hud.setMarsClock(marsClock.read());
             // GPS wayfinding (Wave 9.4): bearings from the unit being driven
             // to every OTHER unit, plus the nearest base. Fed at telemetry
             // rate — 10 Hz is smooth on a dial and cheap on the DOM.

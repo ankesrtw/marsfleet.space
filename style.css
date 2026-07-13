@@ -102,6 +102,48 @@ html, body {
     display: block;
 }
 
+/* Mars clock (Wave 9.6): sol + local time-of-sol, docked as a footer strip
+   across the bottom of the minimap. That slot is the only one free on BOTH
+   viewports — the top bar cannot take another chip at 390px and every rail
+   is spoken for. It rides along when the map moves left in Wave 10. */
+.mars-hud__clock {
+    position: absolute;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    z-index: 2;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 3px 6px;
+    background: linear-gradient(to top, rgba(20, 12, 8, 0.92), rgba(20, 12, 8, 0.62));
+    border-top: 1px solid rgba(122, 79, 48, 0.7);
+    font-family: 'SF Mono', ui-monospace, Menlo, Consolas, monospace;
+    font-size: 0.56rem;
+    letter-spacing: 0.06em;
+    pointer-events: none;
+}
+
+.mars-hud__clock b {
+    font-weight: 600;
+    color: #e0b95e;
+}
+
+.mars-hud__clock span {
+    opacity: 0.85;
+}
+
+.mars-hud__clock i {
+    margin-left: auto;
+    font-style: normal;
+    color: #ffd9a0;
+}
+
+/* after dark the strip's sun glyph goes cold, like the world it reports */
+.mars-hud__clock[data-night="true"] i {
+    color: #8fb4d8;
+}
+
 .mars-btn--menu {
     margin-left: auto;
 }

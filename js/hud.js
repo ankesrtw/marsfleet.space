@@ -29,7 +29,13 @@ export function createHud(rootEl, { site, onSwitchUnit, onCollect, onToggleSfx, 
                 <button class="mars-btn mars-btn--menu" id="mc-menu-btn">MENU<span class="mars-btn__hint">[M]</span></button>
                 <button class="mars-btn mars-btn--sfx" id="mc-sfx">SFX ${sfxEnabled ? 'ON' : 'OFF'}</button>
             </div>
-            <div class="mars-hud__minimap" id="mc-minimap"></div>
+            <div class="mars-hud__minimap" id="mc-minimap">
+                <div class="mars-hud__clock" id="mc-clock">
+                    <b id="mc-clock-sol">SOL —</b>
+                    <span id="mc-clock-time">--:--</span>
+                    <i id="mc-clock-glyph">☀</i>
+                </div>
+            </div>
             <div class="mars-hud__compass" id="mc-compass" aria-hidden="true">
                 <span class="mars-compass__cardinal">N</span>
                 <span class="mars-compass__needle" id="mc-compass-needle">▲</span>
@@ -121,7 +127,10 @@ export function createHud(rootEl, { site, onSwitchUnit, onCollect, onToggleSfx, 
                     (10 / 6 m/s), G2 ×2, G3 ×4. SOL CYCLE runs a 40-min day/night — lock it for
                     permanent daylight (solar recharge needs the sun either way).
                     RESET MISSION restarts the site — unit positions, batteries, samples, lab and
-                    map fog. The SCIENCE ARCHIVE below survives resets.</p>
+                    map fog. The SCIENCE ARCHIVE below survives resets.
+                    The clock on the minimap reads that cycle as Mars local time (noon = the sun at
+                    apex, so it can never disagree with the sky), counting up from the real sol this
+                    site's rover is on today. LOCK appears there while the cycle is frozen.</p>
                 </div>
                 <div class="mars-menu__section">
                     <h3>MISSIONS</h3>
@@ -616,6 +625,23 @@ export function createHud(rootEl, { site, onSwitchUnit, onCollect, onToggleSfx, 
         }));
     }
 
+    // Mars clock (Wave 9.6): sol number + local time-of-sol, docked as a
+    // footer strip on the minimap — the one slot free on BOTH viewports
+    // (the top bar can't take another chip at 390px, and every rail is
+    // spoken for). Reads mars-clock.js, which reads the sun: this card can
+    // never disagree with the sky. LOCK shows when the sol cycle is frozen.
+    const clockSolEl = rootEl.querySelector('#mc-clock-sol');
+    const clockTimeEl = rootEl.querySelector('#mc-clock-time');
+    const clockGlyphEl = rootEl.querySelector('#mc-clock-glyph');
+    const clockEl = rootEl.querySelector('#mc-clock');
+    function setMarsClock({ sol, time, glyph, day, locked }) {
+        clockSolEl.textContent = `SOL ${sol}`;
+        clockTimeEl.textContent = locked ? `${time} LOCK` : time;
+        clockGlyphEl.textContent = glyph;
+        // night dims the strip's glyph the same way it dims the world
+        clockEl.dataset.night = String(day < 0.05);
+    }
+
     // GPS wayfinding (Wave 9.4): where every OTHER asset is, from the unit
     // you are driving. Two readouts, two conventions, each matching its
     // frame of reference:
@@ -807,6 +833,6 @@ export function createHud(rootEl, { site, onSwitchUnit, onCollect, onToggleSfx, 
         minimapEl, setActiveUnit, setPrompt, setInventory, setLab,
         setNode, setArchive, setBoundary, setHazard, setObjective, setIntroActive, setTutorialOverview,
         setMissions, setOverlayMode, setTelemetry, setMenuOpen, isMenuOpen, toast, setOutposts,
-        setDronePanel, setDroneState, setGear, setBases, setGps,
+        setDronePanel, setDroneState, setGear, setBases, setGps, setMarsClock,
     };
 }

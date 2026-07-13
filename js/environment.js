@@ -153,7 +153,16 @@ export function createEnvironment(scene) {
         sun.target.updateMatrixWorld();
     }
 
-    return { update, daylight, toggleSol, get cycling() { return cycling; }, sunDir: SUN_DIR };
+    return {
+        update, daylight, toggleSol,
+        get cycling() { return cycling; },
+        // Wave 9.6: the sol-cycle phase in radians, monotonic while cycling.
+        // mars-clock.js dresses it as Mars local time — noon is the sun's
+        // apex (phase = pi/2) by construction, so the clock can never
+        // disagree with the sun you can see in the sky.
+        get phase() { return phase; },
+        sunDir: SUN_DIR,
+    };
 }
 
 function smoothstep(a, b, x) {
