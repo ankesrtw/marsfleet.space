@@ -55,6 +55,11 @@ const STATIC_MODELS = {
     // pipeline — a procedural placeholder covers both until the GLBs exist.
     checkpost: { url: 'assets/models/checkpost.glb', yaw: 0, footprint: 6, doubleSide: true },
     hq: { url: 'assets/models/hq.glb', yaw: 0, footprint: 22, doubleSide: true },
+    // The sealed sample-cache container the sample loop drops in the field
+    // and the lift drone slings to the lab. Small movable prop (no travel
+    // axis), so it rides the STATIC_MODELS footprint-scaling path; footprint
+    // ~0.8m keeps the old procedural box's read (0.56m + lid) at pickup scale.
+    'sample-container': { url: 'assets/models/sample-container.glb', yaw: 0, footprint: 0.8, doubleSide: true },
 };
 
 // SIGNAL brand accent (cyan-teal — distinct from the amber logo mark) and

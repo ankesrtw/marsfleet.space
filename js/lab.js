@@ -24,9 +24,10 @@ const DELIVER_RADIUS = 7.5;   // horizontal "over the pad" test
 // Real cargo drones keep slung loads on SHORT lines — operators trade
 // line length for control authority (less pendulum), and winch systems
 // (A2Z RDS-class) snug the payload close under the airframe for cruise;
-// long lines are a crane/helicopter-longline thing. 4.2m read as a
-// dangling rope and kept the load scraping terrain at low AGL.
-const CABLE_LEN = 2.2;        // m, drone belly to container top
+// long lines are a crane/helicopter-longline thing. Per the reference
+// (sample-container.jpeg — a package harnessed right under the belly,
+// barely a gap), the load rides snug: 0.9m belly-to-container-top.
+const CABLE_LEN = 0.9;        // m, drone belly to container top
 // Station dock center, west of the pad. The GLB scales to a 15m footprint
 // (models.js STATIC_MODELS), so its half-length is ~7.5m — offset keeps a
 // ~1m gap to the pad skirt.
@@ -117,9 +118,11 @@ export function createLab(scene, site, terrain, rocks) {
         container.state = 'delivered';
         const a = delivered.length * (Math.PI / 3.5) + 0.4;
         const r = PAD_RADIUS - 2.4;
+        // Container grounds at its base (y=0), so rest it ON the pad top
+        // surface (padPos.y + 0.35) — no half-height lift.
         container.mesh.position.set(
             padPos.x + Math.sin(a) * r,
-            padPos.y + 0.35 + 0.28,
+            padPos.y + 0.35,
             padPos.z + Math.cos(a) * r
         );
         container.mesh.rotation.set(0, a, 0);
@@ -196,8 +199,11 @@ export function createSling(scene, terrain) {
         m.rotation.z = THREE.MathUtils.clamp(-vel.x * 0.04, -0.4, 0.4);
         m.rotation.x = THREE.MathUtils.clamp(vel.y * 0.04, -0.4, 0.4);
 
+        // Container grounds at its base, so attach the cable near its TOP
+        // (~0.7m up) rather than just above the base — the line reads as
+        // hooked to the lid, not passing through the box.
         cablePos[0] = dronePos.x; cablePos[1] = dronePos.y - 0.15; cablePos[2] = dronePos.z;
-        cablePos[3] = m.position.x; cablePos[4] = m.position.y + 0.3; cablePos[5] = m.position.z;
+        cablePos[3] = m.position.x; cablePos[4] = m.position.y + 0.7; cablePos[5] = m.position.z;
         cableGeo.attributes.position.needsUpdate = true;
     }
 

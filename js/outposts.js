@@ -105,22 +105,27 @@ export function createOutposts(scene, site, terrain, rocks, colliders, labPos) {
         attachStaticModel(inner, kind);
 
         // Beacon column (waypoint/lab idiom). Checkposts glow faint brand
-        // cyan; the HQ gets a taller amber-gold column — the capstone
-        // landmark reads apart from every teal utility beacon on site.
+        // brand cyan for both — the HQ just gets a TALLER column so it's
+        // findable from farther, not a different color (an amber additive
+        // column washed the white structure gold — user chose cyan-both).
+        // Low opacity + a base lifted clear of the roof keeps the structure
+        // reading true white/bone rather than tinted by the additive glow.
         const hq = kind === 'hq';
         const beaconMat = new THREE.MeshBasicMaterial({
-            color: hq ? 0xe0a83f : 0x2ec4d6,
+            color: 0x2ec4d6,
             transparent: true,
-            opacity: hq ? 0.2 : 0.13,
+            opacity: hq ? 0.12 : 0.13,
             blending: THREE.AdditiveBlending,
             depthWrite: false,
             side: THREE.DoubleSide,
         });
         const beacon = new THREE.Mesh(
-            new THREE.CylinderGeometry(hq ? 1.1 : 0.5, hq ? 0.45 : 0.2, hq ? 80 : 24, 10, 1, true),
+            new THREE.CylinderGeometry(hq ? 0.8 : 0.5, hq ? 0.35 : 0.2, hq ? 70 : 24, 10, 1, true),
             beaconMat
         );
-        beacon.position.y = hq ? 40 : 12;
+        // Lift the column base above the structure roof (HQ ~13m, checkpost
+        // ~4.5m tall) so the dense bottom of the glow doesn't wash the walls.
+        beacon.position.y = hq ? 50 : 14;
         group.add(beacon);
         beacons.push({ mat: beaconMat, base: beaconMat.opacity, phase: beacons.length * 1.3 });
 

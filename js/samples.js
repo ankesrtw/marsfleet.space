@@ -12,12 +12,37 @@
    ============================================================ */
 
 import * as THREE from 'three';
+import { attachStaticModel } from './models.js';
 
 const COLLECT_RADIUS = 8;
 
+// Procedural fallback container (fallback-first idiom, same as the units):
+// a light box + orange lid, shown until sample-container.glb loads — and
+// kept forever if it 404s / fails, so the sample loop plays offline.
 const containerGeo = new THREE.BoxGeometry(0.56, 0.56, 0.56);
 const containerMat = new THREE.MeshStandardMaterial({ color: 0xdadde3, metalness: 0.55, roughness: 0.35 });
 const containerLidMat = new THREE.MeshStandardMaterial({ color: 0xe07b39, metalness: 0.3, roughness: 0.5 });
+
+/** One cache-container object: an outer group the sling/lab freely rotate,
+    with an inner group holding the procedural fallback that
+    attachStaticModel swaps for the real GLB once it loads. Matches the
+    outposts.js beacon-on-outer / model-on-inner split so a swap never
+    disturbs the transform the sling drives. */
+function makeContainerMesh() {
+    const outer = new THREE.Group();
+    const inner = new THREE.Group();
+    // Base at y=0 to match attachStaticModel's grounding (model.position.y
+    // -= box.min.y) — so the fallback and the swapped GLB rest identically,
+    // and the sling/lab place the container by its BASE, not its center.
+    const box = new THREE.Mesh(containerGeo, containerMat);
+    box.position.y = 0.28;
+    const lid = new THREE.Mesh(new THREE.BoxGeometry(0.6, 0.1, 0.6), containerLidMat);
+    lid.position.y = 0.59;
+    inner.add(box, lid);
+    outer.add(inner);
+    attachStaticModel(inner, 'sample-container');
+    return outer;
+}
 
 export function createSamples(site, terrain) {
     const group = new THREE.Group();
@@ -76,12 +101,11 @@ export function createSamples(site, terrain) {
 
         // Leave a sealed cache container beside the marker for the lift
         // drone to sling out (lab.js). Offset so it doesn't z-fight the cone.
-        const mesh = new THREE.Mesh(containerGeo, containerMat);
-        const lid = new THREE.Mesh(new THREE.BoxGeometry(0.6, 0.1, 0.6), containerLidMat);
-        lid.position.y = 0.31;
-        mesh.add(lid);
+        const mesh = makeContainerMesh();
         const cx = sample.x + 1.6, cz = sample.z + 1.2;
-        mesh.position.set(cx, terrain.sampleHeight(cx, cz) + 0.28, cz);
+        // Placed by BASE now (container grounds at y=0) — terrain height,
+        // no half-height lift.
+        mesh.position.set(cx, terrain.sampleHeight(cx, cz), cz);
         group.add(mesh);
         containers.push({ id: sample.id, name: sample.name, note: sample.note, finding: sample.finding, mesh, state: 'field' });
     }
