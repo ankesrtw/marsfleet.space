@@ -387,6 +387,43 @@ html, body {
     text-align: left;
 }
 
+/* BASES — TRAVEL (Wave 9.3): name + live range on the left, action on the
+   right. Same card language as .mars-menu__site, but a row, not a link. */
+.mars-menu__bases {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.mars-menu__base {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    padding: 8px 12px;
+    border: 1px solid #5a3a26;
+    border-radius: 8px;
+    background: rgba(90, 58, 38, 0.15);
+}
+
+.mars-menu__base b {
+    display: block;
+    font-size: 0.85rem;
+}
+
+.mars-menu__base span {
+    font-size: 0.72rem;
+    opacity: 0.7;
+}
+
+.mars-menu__travel {
+    flex: none;
+    padding: 6px 12px;
+    font-size: 0.72rem;
+    border-color: #59d8c9;
+    color: #a6f2e8;
+}
+
 .mars-menu__mission.is-done {
     border-color: #59d8c9;
     color: #59d8c9;

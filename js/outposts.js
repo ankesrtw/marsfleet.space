@@ -37,11 +37,22 @@ const CHECKPOST_RING = 14;
 const HQ_RING = 25;
 const BUILD_SECS = 3.2;
 
+// Wave 9.3 name plates. A sprite is a fixed WORLD size, so a plate legible
+// from the chase cam (12m back) is a speck from a drone at 400m — the scale
+// is therefore stretched with camera distance, clamped so it neither shrinks
+// away nor swallows the structure up close. LABEL_REF is the distance at
+// which a plate renders at its true LABEL_H metres.
+const LABEL_H = 3.0;      // m tall at LABEL_REF
+const LABEL_REF = 55;     // m — reference camera distance
+const LABEL_MIN = 0.85;
+const LABEL_MAX = 7;
+
 export function createOutposts(scene, site, terrain, rocks, colliders, labPos, onBuilt) {
     const defs = (site.samples ?? []).filter((s) => s.outpost);
     const built = new Map();  // id -> { id, name, kind, x, z, group }
     const rising = [];        // { group, t } build-in animations in flight
     const beacons = [];       // pulsing beacon materials
+    const labels = [];        // { sprite, w, h } name plates (camera-scaled)
 
     /** Flattest of 8 candidates on a ring around an anchor, clear of
         boulders (lab.js's placement idiom). `blocked` optionally adds a
@@ -91,6 +102,42 @@ export function createOutposts(scene, site, terrain, rocks, colliders, labPos, o
         return g;
     }
 
+    /** Canvas-textured billboard plate: base name over a dark chip with the
+        brand-cyan rule under it, matching the HUD's card language. Sprites
+        always face the camera, so no per-frame orientation work. */
+    function makeLabel(text) {
+        const canvas = document.createElement('canvas');
+        const ctx = canvas.getContext('2d');
+        const font = '600 44px ui-monospace, SFMono-Regular, Menlo, monospace';
+        ctx.font = font;
+        const padX = 26, padY = 16;
+        canvas.width = Math.ceil(ctx.measureText(text).width) + padX * 2;
+        canvas.height = 44 + padY * 2;
+
+        // sizing the canvas resets its 2D state — restyle after the resize
+        ctx.font = font;
+        ctx.textBaseline = 'middle';
+        ctx.fillStyle = 'rgba(20, 12, 8, 0.78)';
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+        ctx.fillStyle = '#2ec4d6';
+        ctx.fillRect(0, canvas.height - 5, canvas.width, 5);
+        ctx.fillStyle = '#f2ece3';
+        ctx.fillText(text, padX, canvas.height / 2 - 2);
+
+        const tex = new THREE.CanvasTexture(canvas);
+        tex.colorSpace = THREE.SRGBColorSpace;
+        const sprite = new THREE.Sprite(new THREE.SpriteMaterial({
+            map: tex, transparent: true, depthWrite: false,
+            // fog on: a plate 3km away must not float out of the haze as a
+            // crisp readable chip — it fades with the structure it names
+            fog: true,
+        }));
+        const h = LABEL_H;
+        const w = h * (canvas.width / canvas.height);
+        sprite.scale.set(w, h, 1);
+        return { sprite, w, h };
+    }
+
     function construct({ id, name, kind, x, z, animate }) {
         const group = new THREE.Group();
         group.name = `outpost-${id}`;
@@ -128,6 +175,14 @@ export function createOutposts(scene, site, terrain, rocks, colliders, labPos, o
         beacon.position.y = hq ? 50 : 14;
         group.add(beacon);
         beacons.push({ mat: beaconMat, base: beaconMat.opacity, phase: beacons.length * 1.3 });
+
+        // Name plate above the roof (Wave 9.3): the beacon says "a base is
+        // over there", the plate says WHICH — the whole point once a site
+        // has three of them up.
+        const label = makeLabel(name.toUpperCase());
+        label.sprite.position.y = hq ? 17 : 6.4;
+        group.add(label.sprite);
+        labels.push(label);
 
         scene.add(group);
         colliders.addStatic(x, z, hq ? HQ_R : CHECKPOST_R, hq ? HQ_H : CHECKPOST_H);
@@ -185,11 +240,29 @@ export function createOutposts(scene, site, terrain, rocks, colliders, labPos, o
         return [...built.values()].map((b) => ({ x: b.x, z: b.z, hq: b.kind === 'hq' }));
     }
 
+    /** Wave 9.3 travel menu + comms bearings: built structures with names. */
+    function builtList() {
+        return [...built.values()].map((b) => ({ id: b.id, name: b.name, kind: b.kind, x: b.x, z: b.z }));
+    }
+
     let t = 0;
-    function update(dt) {
+    const _camPos = new THREE.Vector3();
+    const _v = new THREE.Vector3();
+    function update(dt, camera) {
         t += dt;
         for (const b of beacons) {
             b.mat.opacity = b.base * (0.7 + 0.3 * Math.sin(t * 1.6 + b.phase));
+        }
+        // Name plates hold a roughly constant on-screen size across the whole
+        // range you actually read them from — the chase cam at 12m and a drone
+        // 400m up the ridge.
+        if (camera && labels.length) {
+            camera.getWorldPosition(_camPos);
+            for (const l of labels) {
+                const d = _camPos.distanceTo(l.sprite.getWorldPosition(_v));
+                const s = Math.min(LABEL_MAX, Math.max(LABEL_MIN, d / LABEL_REF));
+                l.sprite.scale.set(l.w * s, l.h * s, 1);
+            }
         }
         for (let i = rising.length - 1; i >= 0; i--) {
             const r = rising[i];
@@ -201,7 +274,7 @@ export function createOutposts(scene, site, terrain, rocks, colliders, labPos, o
     }
 
     return {
-        buildFor, buildHq, bootstrap, list, builtPositions, update,
+        buildFor, buildHq, bootstrap, list, builtPositions, builtList, update,
         get builtCount() { return built.size; },
     };
 }

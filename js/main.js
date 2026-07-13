@@ -302,6 +302,7 @@ async function startGame(site) {
     let activeIndex = 0;
     let prevRoverCondition = 'ok';   // Wave 6 transition edge detector
     let jumpHeld = false;            // Space edge-detect (no pogo on hold)
+    let prevMenuOpen = false;        // menu closed->open edge (BASES refresh)
 
     const hudRoot = document.getElementById('mc-hud');
     const hud = createHud(hudRoot, {
@@ -332,6 +333,7 @@ async function startGame(site) {
         onStartMission: (id) => startMission(id),
         missions: missions.menuEntries(),
         onSetOverlayMode: (mode) => fog.setOverlayMode(mode),
+        onTravel: (id) => travelTo(id),
     });
     const fog = createFog(site, hud.minimapEl, terrain);
     hud.setOverlayMode(fog.overlayMode); // reflect the persisted choice
@@ -343,6 +345,7 @@ async function startGame(site) {
     hud.setLab(0, site.samples.length);
     hud.setArchive(analysis.archive); // persisted results from past sessions
     hud.setOutposts(outposts.list()); // built + still-locked structures
+    hud.setBases(baseEntries(rover.position)); // travel list (re-ranged on menu open)
 
     const touchZones = setupTouchControls();
     const keys = setupKeyboard();
@@ -413,6 +416,41 @@ async function startGame(site) {
         const active = units[activeIndex];
         if (active.kind !== 'fly' || active.dead) return;
         active.unit.toggleLanding();
+        sound.switchUnit();
+    }
+
+    // ---- Wave 9.3: established bases + travel ----------------------------
+    // The FIELD LAB is a base too — it just arrived by cargo drop instead of
+    // being earned — so it heads the list and is the one destination that
+    // always exists.
+    function baseList() {
+        return [
+            { id: 'lab', name: 'Field Lab', kind: 'lab', x: lab.padPos.x, z: lab.padPos.z },
+            ...outposts.builtList(),
+        ];
+    }
+
+    /** Menu feed: bases + live range from the unit currently being driven. */
+    function baseEntries(from) {
+        return baseList().map((b) => ({
+            ...b, dist: Math.hypot(b.x - from.x, b.z - from.z),
+        }));
+    }
+
+    /** TRAVEL: put the active unit down on the base's chargepad rather than
+        on the structure itself — arriving docked (charging, and repairing if
+        it's the rover) is the whole reward for having built the place. */
+    function travelTo(id) {
+        const base = baseList().find((b) => b.id === id);
+        if (!base) return;
+        const pad = chargepads.nearestTo(base.x, base.z);
+        const tx = pad ? pad.x : base.x;
+        const tz = pad ? pad.z : base.z;
+        const active = units[activeIndex];
+        active.unit.teleport(tx, tz);
+        fog.reveal(tx, tz);
+        camRig.update(active.unit.position, active.unit.heading, active.kind, true); // snap, no fly-through
+        hud.toast(`▸ ARRIVED — ${base.name.toUpperCase()}`);
         sound.switchUnit();
     }
 
@@ -633,7 +671,7 @@ async function startGame(site) {
         waypoint.update(dt, targetInfo);
         sling.update(dt, lift.position);
         lab.update(dt);
-        outposts.update(dt);
+        outposts.update(dt, camera);   // camera: name plates scale with range
         analysis.update(dt);
         dustDevils.update(dt);
         effects.update(dt, active, speedNow, env.daylight());
@@ -703,7 +741,13 @@ async function startGame(site) {
             hud.setTutorialOverview(missions.stepTexts(overviewMissionId), missions.titleOf(overviewMissionId));
             overviewMissionId = null;
         }
-        if (hud.isMenuOpen()) missions.advance('archive');
+        // BASES list is rebuilt on the closed->open EDGE, not per frame: a
+        // per-frame replaceChildren swaps the button out between mousedown
+        // and mouseup and the TRAVEL click never fires.
+        const menuOpen = hud.isMenuOpen();
+        if (menuOpen && !prevMenuOpen) hud.setBases(baseEntries(active.unit.position));
+        prevMenuOpen = menuOpen;
+        if (menuOpen) missions.advance('archive');
         const objective = missions.currentAny();
         hud.setObjective(objective
             ? `${objective.stepNum}/${objective.total} · ${objective.step.text}`

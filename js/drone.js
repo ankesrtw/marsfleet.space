@@ -317,9 +317,22 @@ export function createDrone(site, terrain, opts = {}) {
         return v;
     }
 
+    /** Wave 9.3 base travel: keep the current AGL (a cruising drone arrives
+        cruising, a landed one arrives landed) and re-seat the world y on the
+        new ground. A fall in progress is caught — arriving mid-plummet at a
+        base you just asked to travel to would be a cruel joke. */
+    function teleport(x, z) {
+        mesh.position.x = x;
+        mesh.position.z = z;
+        mesh.position.y = terrain.sampleHeight(x, z) + alt;
+        falling = false;
+        fallVel = 0;
+        vel.set(0, 0);
+    }
+
     return {
         mesh, update, toggleLanding, setPower, cycleGear, setSlung, canSling, commandAlt,
-        popImpact,
+        popImpact, teleport,
         get position() { return mesh.position; },
         get falling() { return falling; },
         get fallSpeed() { return fallVel; },

@@ -129,8 +129,15 @@ export function createHumanoid(site, terrain, obstacles) {
         }
     }
 
+    /** Wave 9.3 base travel: boots down on the new ground, jump arc cleared. */
+    function teleport(x, z) {
+        mesh.position.set(x, terrain.sampleGroundHeight(x, z), z);
+        airY = 0;
+        jumpVel = 0;
+    }
+
     return {
-        mesh, update,
+        mesh, update, teleport,
         get position() { return mesh.position; },
         get heading() { return heading; },
         get atBoundary() { return atBoundary; },

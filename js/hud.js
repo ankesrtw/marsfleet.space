@@ -20,7 +20,7 @@
 import { isTouchDevice } from './touch.js';
 import { SITES, M_PER_DEG, SOL_MS } from './sites.js';
 
-export function createHud(rootEl, { site, onSwitchUnit, onCollect, onToggleSfx, sfxEnabled = true, onCycleGear, gear = 'G2', onToggleSol, solOn = true, onToggleLanding, onCommandAlt, onReset, onSkipIntro, onSkipMission, onReplayIntro, onStartMission, missions = [], onSetOverlayMode }) {
+export function createHud(rootEl, { site, onSwitchUnit, onCollect, onToggleSfx, sfxEnabled = true, onCycleGear, gear = 'G2', onToggleSol, solOn = true, onToggleLanding, onCommandAlt, onReset, onSkipIntro, onSkipMission, onReplayIntro, onStartMission, missions = [], onSetOverlayMode, onTravel }) {
     rootEl.innerHTML = `
         <div class="mars-hud">
             <div class="mars-hud__top">
@@ -132,6 +132,14 @@ export function createHud(rootEl, { site, onSwitchUnit, onCollect, onToggleSfx, 
                     <p class="mars-menu__note">Analyzing a flagged sample establishes a checkpost at its
                     site. Complete every mission to raise the Marsapiens Headquarters beside the FIELD LAB.
                     Structures are earned from the archive and mission record, so they survive RESET MISSION.</p>
+                </div>
+                <div class="mars-menu__section">
+                    <h3>BASES — TRAVEL</h3>
+                    <div class="mars-menu__bases" id="mc-bases-list"></div>
+                    <p class="mars-menu__note">Every established base, with the distance from the unit you
+                    are driving. TRAVEL relocates that unit to the base's chargepad — it arrives docked,
+                    charging (and repairing, if it's the rover). Bases are named in-world on a plate above
+                    the structure.</p>
                 </div>
                 <div class="mars-menu__section">
                     <h3>LAB — COLLECTED SAMPLES</h3>
@@ -602,6 +610,41 @@ export function createHud(rootEl, { site, onSwitchUnit, onCollect, onToggleSfx, 
         }));
     }
 
+    // BASES — TRAVEL menu section (Wave 9.3): one row per established base
+    // (the FIELD LAB is one, it just wasn't earned), with a live distance
+    // from the active unit and a TRAVEL action. Rebuilt on menu open so the
+    // distances are current — cheap, and the menu pauses nothing.
+    const basesListEl = rootEl.querySelector('#mc-bases-list');
+    function setBases(entries) {
+        basesListEl.replaceChildren(...entries.map((b) => {
+            const row = document.createElement('div');
+            row.className = 'mars-menu__base';
+            const label = document.createElement('div');
+            const name = document.createElement('b');
+            name.textContent = `${b.kind === 'hq' ? '★' : '⬢'} ${b.name}`;
+            const meta = document.createElement('span');
+            meta.textContent = b.dist >= 1000
+                ? `${(b.dist / 1000).toFixed(2)} km away`
+                : `${Math.round(b.dist)} m away`;
+            label.append(name, meta);
+            const btn = document.createElement('button');
+            btn.className = 'mars-btn mars-menu__travel';
+            btn.textContent = 'TRAVEL';
+            btn.addEventListener('click', () => {
+                setMenuOpen(false);
+                onTravel?.(b.id);
+            });
+            row.append(label, btn);
+            return row;
+        }));
+        if (!entries.length) {
+            const p = document.createElement('p');
+            p.className = 'mars-menu__lab-empty';
+            p.textContent = 'No bases established yet.';
+            basesListEl.appendChild(p);
+        }
+    }
+
     // speed m/s, heading rad (unit convention: W travels along
     // -[sin h, cos h], so bearing-from-north = -h), elev m, slope deg.
     // tgtRelDeg: steer angle to the target relative to forward travel
@@ -694,6 +737,6 @@ export function createHud(rootEl, { site, onSwitchUnit, onCollect, onToggleSfx, 
         minimapEl, setActiveUnit, setPrompt, setInventory, setLab,
         setNode, setArchive, setBoundary, setHazard, setObjective, setIntroActive, setTutorialOverview,
         setMissions, setOverlayMode, setTelemetry, setMenuOpen, isMenuOpen, toast, setOutposts,
-        setDronePanel, setDroneState, setGear,
+        setDronePanel, setDroneState, setGear, setBases,
     };
 }

@@ -100,6 +100,17 @@ export function createChargepads(scene, terrain, rocks) {
         return best;
     }
 
+    /** Nearest pad at ANY range (Wave 9.3 travel: a base's own pad is the
+        arrival spot, and it can sit up to its placement ring away). */
+    function nearestTo(x, z) {
+        let best = null, bestD = Infinity;
+        for (const p of pads) {
+            const d = Math.hypot(p.x - x, p.z - z);
+            if (d < bestD) { best = p; bestD = d; }
+        }
+        return best;
+    }
+
     let t = 0;
     /** activePads: Set of pads currently charging something (ring pulses). */
     function update(dt, activePads) {
@@ -113,7 +124,7 @@ export function createChargepads(scene, terrain, rocks) {
     }
 
     return {
-        addPad, addPadNear, padAt, update,
+        addPad, addPadNear, padAt, nearestTo, update,
         get count() { return pads.length; },
         get list() { return pads; },
     };

@@ -530,9 +530,25 @@ export function createRover(site, terrain, obstacles, { hazards, weather } = {})
         return v;
     }
 
+    /** Wave 9.3 base travel: drop the chassis at (x, z) and re-seat every
+        piece of vertical state. The gravity integrator holds an ABSOLUTE
+        body height, so a bare position write leaves it mid-fall from the
+        old terrain — nulling bodyY/prevBaseY re-snaps it to the new ground
+        on the next update (same path a fresh spawn takes). */
+    function teleport(x, z) {
+        mesh.position.set(x, terrain.sampleGroundHeight(x, z) + clearance, z);
+        bodyY = null;
+        prevBaseY = null;
+        prevGroundY = null;
+        vertVel = 0;
+        speed = 0;
+        bounceY = 0;
+        bounceV = 0;
+    }
+
     return {
         mesh, update, cycleGear, setAssist, forceRoll, forceBog,
-        repair, takeImpact, popImpact,
+        repair, takeImpact, popImpact, teleport,
         get position() { return mesh.position; },
         get heading() { return heading; },
         get atBoundary() { return atBoundary; },
