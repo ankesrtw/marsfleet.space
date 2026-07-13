@@ -32,6 +32,86 @@ html, body {
     display: block;
 }
 
+/* ---- Night vision (Wave 9.7) ----
+   An image intensifier, done as a CSS filter on the canvas rather than a
+   post-processing pass: this project has no EffectComposer (effects.js is
+   blob shadows + dust + tracks, deliberately unlit fakes), and adding a
+   whole render-target pipeline to tint the frame would be a heavy way to
+   pay for one toggle. Filtering the canvas ELEMENT also leaves the HUD
+   untouched — telemetry and the minimap stay legible in their own colours,
+   which is what a real NVG rig does too (the optic is intensified, the
+   instruments are not).
+
+   Chain: strip the Mars rust (grayscale) -> lift the black night floor
+   (brightness) -> re-tint to phosphor green (sepia + hue-rotate + saturate).
+   The lift IS the gameplay: at daylight() = 0 the terrain sits around 12/255
+   and this is what makes it navigable.
+
+   NO contrast() in the chain. It was there and it silently defeated the
+   whole feature: contrast maps v -> (v - 0.5) * c + 0.5, so at 1.15 a lifted
+   night pixel (0.067) lands back at 0.002 — blacker than it started. Caught
+   by measuring pixels, not by reading the computed style.
+
+   --nv-gain is the tube's automatic gain control, driven from env.daylight()
+   by main.js: wide open in the dark, stopped down in daylight so a player who
+   leaves NV on at noon gets a bright green view, not a white blowout. Real
+   intensifiers do exactly this. */
+#mc-canvas.is-nv {
+    filter: grayscale(1) brightness(var(--nv-gain, 8)) sepia(1) hue-rotate(62deg) saturate(3.6);
+}
+
+/* Scanlines + tube vignette over the (filtered) image, under the HUD. Sells
+   the optic and hides how flat a brightness-lifted night actually is. */
+.mars-hud__nv-overlay {
+    position: absolute;
+    inset: 0;
+    z-index: 1;
+    pointer-events: none;
+    background:
+        repeating-linear-gradient(to bottom,
+            rgba(120, 255, 170, 0.05) 0 1px,
+            rgba(0, 0, 0, 0.10) 1px 3px),
+        radial-gradient(ellipse at center,
+            rgba(0, 0, 0, 0) 42%,
+            rgba(0, 20, 6, 0.55) 78%,
+            rgba(0, 12, 4, 0.9) 100%);
+}
+
+.mars-hud__nv-overlay[data-visible="false"] {
+    display: none;
+}
+
+/* The top-bar NV button is a DESKTOP affordance. Measured at 390px: the bar
+   already runs SWITCH UNIT + unit label + MENU + SFX to 335px of the 366px
+   available, and a fifth button pushed SFX off the screen entirely (to
+   407px). Phones toggle night vision from the menu instead — the same one
+   switch, two taps. A proper mobile home for it comes with Wave 10's HUD
+   reshuffle. */
+/* .mars-btn--nv alone ties .mars-btn on specificity and loses on cascade
+   order (the base button rule is declared later), so the hide must outrank
+   it — scope both rules to the bar. */
+.mars-hud__top .mars-btn--nv {
+    display: none;
+}
+
+@media (min-width: 900px) {
+    .mars-hud--desktop .mars-hud__top .mars-btn--nv {
+        display: flex;
+    }
+}
+
+/* top-bar NV button lights up in its own phosphor while the mode is live */
+.mars-btn--nv[data-on="true"] {
+    border-color: #5ee08a;
+    color: #a8f5c6;
+    background: rgba(12, 46, 26, 0.75);
+}
+
+.mars-menu__section .mars-btn.is-active {
+    border-color: #5ee08a;
+    color: #a8f5c6;
+}
+
 /* ---- HUD ---- */
 
 #mc-hud {

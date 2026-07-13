@@ -20,15 +20,17 @@
 import { isTouchDevice } from './touch.js';
 import { SITES, M_PER_DEG, SOL_MS } from './sites.js';
 
-export function createHud(rootEl, { site, onSwitchUnit, onCollect, onToggleSfx, sfxEnabled = true, onCycleGear, gear = 'G2', onToggleSol, solOn = true, onToggleLanding, onCommandAlt, onReset, onSkipIntro, onSkipMission, onReplayIntro, onStartMission, missions = [], onSetOverlayMode, onTravel }) {
+export function createHud(rootEl, { site, onSwitchUnit, onCollect, onToggleSfx, sfxEnabled = true, onCycleGear, gear = 'G2', onToggleSol, solOn = true, onToggleLanding, onCommandAlt, onReset, onSkipIntro, onSkipMission, onReplayIntro, onStartMission, missions = [], onSetOverlayMode, onTravel, onToggleNv }) {
     rootEl.innerHTML = `
         <div class="mars-hud">
             <div class="mars-hud__top">
                 <button class="mars-btn mars-btn--switch" id="mc-switch">SWITCH UNIT<span class="mars-btn__hint">[TAB]</span></button>
                 <div class="mars-hud__unit" id="mc-active-unit">ROVER</div>
+                <button class="mars-btn mars-btn--nv" id="mc-nv">NV<span class="mars-btn__hint">[N]</span></button>
                 <button class="mars-btn mars-btn--menu" id="mc-menu-btn">MENU<span class="mars-btn__hint">[M]</span></button>
                 <button class="mars-btn mars-btn--sfx" id="mc-sfx">SFX ${sfxEnabled ? 'ON' : 'OFF'}</button>
             </div>
+            <div class="mars-hud__nv-overlay" id="mc-nv-overlay" data-visible="false"></div>
             <div class="mars-hud__minimap" id="mc-minimap">
                 <div class="mars-hud__clock" id="mc-clock">
                     <b id="mc-clock-sol">SOL —</b>
@@ -120,6 +122,7 @@ export function createHud(rootEl, { site, onSwitchUnit, onCollect, onToggleSfx, 
                 <div class="mars-menu__section">
                     <h3>SIM</h3>
                     <button class="mars-btn" id="mc-sol">SOL CYCLE ${solOn ? 'ON' : 'LOCKED (DAY)'}</button>
+                    <button class="mars-btn" id="mc-nv-menu">NIGHT VISION OFF</button>
                     <button class="mars-btn mars-btn--reset" id="mc-reset">RESET MISSION</button>
                     <button class="mars-btn" id="mc-replay-intro">▶ LANDING INTRO</button>
                     <p class="mars-menu__note">GEAR (HUD button or G) time-compresses speed per unit:
@@ -193,6 +196,7 @@ export function createHud(rootEl, { site, onSwitchUnit, onCollect, onToggleSfx, 
                         <li>Drone touch (RC Mode 2) — left stick throttle+yaw, right stick pitch+roll</li>
                         <li>Take off / land — L or the drone panel button</li>
                         <li>Switch unit — TAB · Collect — E · Menu — M</li>
+                        <li>Night vision — N (or the NV button): an image intensifier for driving after dark, when the terrain is otherwise nearly black. The HUD stays in its own colours</li>
                         <li>Lift drone — hover low over a cache container, E to sling it, fly to the FIELD LAB pad, E to deliver</li>
                         <li>Delivered caches auto-analyze on the lab edge node — findings land in the SCIENCE ARCHIVE</li>
                         <li>GPS RELAY — coloured ticks on the compass rim point at every other unit and the nearest base (dial is north-up); the card's arrows are steer angles (up = dead ahead)</li>
@@ -278,6 +282,27 @@ export function createHud(rootEl, { site, onSwitchUnit, onCollect, onToggleSfx, 
         const on = onToggleSol ? onToggleSol() : true;
         solBtn.textContent = `SOL CYCLE ${on ? 'ON' : 'LOCKED (DAY)'}`;
     });
+
+    // Night vision (Wave 9.7). TWO entry points, ONE state: the top-bar NV
+    // button (and the N key) for a mid-drive toggle, and a menu button —
+    // main.js owns the state and calls setNightVision() back, so the two
+    // labels can never drift apart.
+    const nvBtn = rootEl.querySelector('#mc-nv');
+    const nvMenuBtn = rootEl.querySelector('#mc-nv-menu');
+    const nvOverlay = rootEl.querySelector('#mc-nv-overlay');
+    nvBtn.addEventListener('click', () => onToggleNv?.());
+    nvMenuBtn.addEventListener('click', () => onToggleNv?.());
+
+    /** Reflect the mode: button states + the scanline/vignette overlay.
+        The image itself is filtered on the canvas by main.js — the HUD
+        must stay unfiltered and readable. */
+    function setNightVision(on) {
+        nvBtn.dataset.on = String(on);
+        nvBtn.firstChild.textContent = on ? 'NV ON' : 'NV';
+        nvMenuBtn.textContent = `NIGHT VISION ${on ? 'ON' : 'OFF'}`;
+        nvMenuBtn.classList.toggle('is-active', on);
+        nvOverlay.dataset.visible = String(on);
+    }
 
     // RESET MISSION: two-step arm/confirm (no native confirm() dialog —
     // it would freeze the render loop and look nothing like the HUD).
@@ -833,6 +858,6 @@ export function createHud(rootEl, { site, onSwitchUnit, onCollect, onToggleSfx, 
         minimapEl, setActiveUnit, setPrompt, setInventory, setLab,
         setNode, setArchive, setBoundary, setHazard, setObjective, setIntroActive, setTutorialOverview,
         setMissions, setOverlayMode, setTelemetry, setMenuOpen, isMenuOpen, toast, setOutposts,
-        setDronePanel, setDroneState, setGear, setBases, setGps, setMarsClock,
+        setDronePanel, setDroneState, setGear, setBases, setGps, setMarsClock, setNightVision,
     };
 }

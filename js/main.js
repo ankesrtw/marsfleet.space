@@ -46,6 +46,15 @@ const DELIVER_ALT = 16;   // m AGL over the pad — ABOVE cruiseAlt (12), so
 // live in missions.js: `mc-mission-<id>-done`, same convention.)
 const LS_INTRO_KEY = 'mc-intro-seen';
 
+// Night-vision mode (Wave 9.7) — a view preference, persisted like gear and
+// the overlay mode. The gain pair is the intensifier's AGC: the CSS chain
+// multiplies luminance by --nv-gain, so 10x is what turns a ~12/255 night
+// into something you can drive on, and 1.6x is what keeps a daylight frame
+// from clipping to white.
+const LS_NV_KEY = 'mc-nv';
+const NV_GAIN_DARK = 10;
+const NV_GAIN_DAY = 1.6;
+
 // Per-site mesh density (sites.js `segments`) by device class — Gale's 1m
 // DEM earns 512 desktop quads, Jezero's 20m DEM doesn't. Fallback for
 // sites without the field keeps the old shared 256/128.
@@ -314,6 +323,10 @@ async function startGame(site) {
     let prevRoverCondition = 'ok';   // Wave 6 transition edge detector
     let jumpHeld = false;            // Space edge-detect (no pogo on hold)
     let prevMenuOpen = false;        // menu closed->open edge (BASES refresh)
+    // Night vision persists like the other small view prefs (gear, overlay
+    // mode, telemetry collapse) — a player who drives at night with it on
+    // wants it on next session too.
+    let nightVision = localStorage.getItem(LS_NV_KEY) === '1';
 
     const hudRoot = document.getElementById('mc-hud');
     const hud = createHud(hudRoot, {
@@ -345,7 +358,30 @@ async function startGame(site) {
         missions: missions.menuEntries(),
         onSetOverlayMode: (mode) => fog.setOverlayMode(mode),
         onTravel: (id) => travelTo(id),
+        onToggleNv: () => setNightVision(!nightVision),
     });
+
+    // Night vision (Wave 9.7): main.js owns the state because the filter goes
+    // on the CANVAS, which lives outside the HUD root — and that is the point.
+    // The optic is intensified; the instruments are not.
+    function setNightVision(on) {
+        nightVision = on;
+        canvas.classList.toggle('is-nv', on);
+        hud.setNightVision(on);
+        if (on) applyNvGain();
+        try { localStorage.setItem(LS_NV_KEY, on ? '1' : '0'); } catch { /* private mode */ }
+    }
+
+    /** Automatic gain control, like a real intensifier tube: wide open in the
+        dark (where the terrain sits near 12/255 and the mode has to earn its
+        keep), stopped down in daylight so leaving NV on at noon gives a bright
+        green view instead of a white blowout. The chain itself stays in CSS —
+        only the scalar crosses over. */
+    function applyNvGain() {
+        const gain = NV_GAIN_DARK + (NV_GAIN_DAY - NV_GAIN_DARK) * env.daylight();
+        canvas.style.setProperty('--nv-gain', gain.toFixed(2));
+    }
+    setNightVision(nightVision);
     const fog = createFog(site, hud.minimapEl, terrain);
     hud.setOverlayMode(fog.overlayMode); // reflect the persisted choice
 
@@ -411,7 +447,7 @@ async function startGame(site) {
     // Debug/E2E handle (also used by the sampleHeight ground-truth check;
     // renderer/scene/camera exposed so tests on software-GL boxes can pause
     // the loop and capture canvas pixels via a same-task render+toDataURL).
-    window.__mc = { site, terrain, rover, drone: recon, recon, lift, humanoid, samples, renderer, scene, camera, camRig, units, env, effects, waypoint, sound, rocks, lab, sling, analysis, outposts, fog, colliders, missions, hazardZones, weather, dustDevils, wind, chargepads, comms, baseList, marsClock, get intro() { return intro; } };
+    window.__mc = { site, terrain, rover, drone: recon, recon, lift, humanoid, samples, renderer, scene, camera, camRig, units, env, effects, waypoint, sound, rocks, lab, sling, analysis, outposts, fog, colliders, missions, hazardZones, weather, dustDevils, wind, chargepads, comms, baseList, marsClock, setNightVision, get nightVision() { return nightVision; }, get intro() { return intro; } };
 
     function applyUnitMode() {
         const active = units[activeIndex];
@@ -835,6 +871,8 @@ async function startGame(site) {
             });
             hud.setNode(analysis.status());
             hud.setMarsClock(marsClock.read());
+            // AGC follows the sol: dusk opens the tube up, dawn stops it down.
+            if (nightVision) applyNvGain();
             // GPS wayfinding (Wave 9.4): bearings from the unit being driven
             // to every OTHER unit, plus the nearest base. Fed at telemetry
             // rate — 10 Hz is smooth on a dial and cheap on the DOM.
@@ -884,6 +922,7 @@ function setupKeyboard() {
         if (e.code === 'KeyE') document.dispatchEvent(new CustomEvent('mc-collect'));
         if (e.code === 'KeyL') document.dispatchEvent(new CustomEvent('mc-toggle-land'));
         if (e.code === 'KeyG') document.dispatchEvent(new CustomEvent('mc-cycle-gear'));
+        if (e.code === 'KeyN') document.dispatchEvent(new CustomEvent('mc-night-vision'));
         if (e.code === 'KeyM' || e.code === 'Escape') document.dispatchEvent(new CustomEvent('mc-menu'));
     });
     return keys;
@@ -951,6 +990,7 @@ document.addEventListener('mc-switch-unit', () => document.getElementById('mc-sw
 document.addEventListener('mc-collect', () => document.getElementById('mc-collect')?.click());
 document.addEventListener('mc-toggle-land', () => document.getElementById('mc-land')?.click());
 document.addEventListener('mc-cycle-gear', () => document.getElementById('mc-gear')?.click());
+document.addEventListener('mc-night-vision', () => document.getElementById('mc-nv')?.click());
 document.addEventListener('mc-menu', () => {
     const menu = document.getElementById('mc-menu');
     if (menu) menu.dataset.open = menu.dataset.open === 'true' ? 'false' : 'true';
