@@ -294,6 +294,7 @@ async function startGame(site) {
     // ~37% of the sol), so before the pads a unit that flattened its
     // battery after dusk was stranded at 0% until sunrise with no way out.
     const DOCK_RATE = 0.7;       // %/s while docked
+    const REPAIR_RATE = 1.4;     // %/s hull repair while docked (Wave 9.2)
     const RESTART_CHARGE = 10;   // empty units stay dead until this
     const NIGHT_DRAIN_K = 0.5;   // cold-night heater tax: +50% drain at full dark
     const STORM_FOG_K = 8;       // FOG.density multiplier span at storm peak
@@ -556,6 +557,13 @@ async function startGame(site) {
                 : Math.min(100, u.charge + rate * dt);
             u.charging = load <= 0 && rate > 0 && u.charge < 100;
             if (pad && u.charging) livePads.add(pad);
+
+            // Repair bay: a base pad is also the ONLY thing that puts hull
+            // condition back (nothing in the field heals it). Park to fix.
+            if (pad && u.unit.repair && u.unit.health < 100) {
+                u.unit.repair(REPAIR_RATE * dt);
+                livePads.add(pad);
+            }
         }
         chargepads.update(dt, livePads);
 
@@ -747,6 +755,8 @@ async function startGame(site) {
                 dead: !!active.dead,
                 docked: !!active.docked,
                 charging: !!active.charging,
+                health: active.unit.health ?? null,   // rover-only gauge
+                repairing: !!active.docked && (active.unit.health ?? 100) < 100,
                 target: targetInfo,
                 tgtRelDeg,
                 rolloverRisk: active.unit.rolloverRisk ?? null, // rover-only gauge

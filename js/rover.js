@@ -90,6 +90,25 @@ const DIG_PENALTY = 0.08;    // meter/s lost while digging (bogged only)
 const ASSIST_RANGE = 9;      // m (main.js checks unit distances)
 const ASSIST_RATE = 1 / 6;   // meter/s from a nearby assisting unit
 
+// Wave 9 damage model (see `health` below)
+const IMPACT_SPD_MIN = 1.8;  // m/s — nudging a boulder at a crawl is harmless
+const IMPACT_DMG_K = 3.4;    // % hull per m/s over that floor, per collision
+// Measured on Jezero (roughness = |d(micro-relief)/dt| x min(1, speed/6)):
+// at G2 (6.3 m/s) it means 0.14 and peaks ~0.5; at G3 (16.8 m/s) it means
+// ~0.39 and peaks 1.1-2.0. A 0.45 floor therefore leaves REAL/G1/G2 driving
+// essentially free and bills the reckless G3 charge across broken ground —
+// which is the lesson (real rovers creep over rubble for exactly this reason).
+// Measured on Jezero: roughness means 0.14 / peaks ~0.5 at G2 (6.3 m/s) and
+// spikes far higher at G3. The floor leaves REAL/G1/G2 driving essentially
+// free; the CAP bounds the worst case at ~1 %/s (a sustained 20 s hammering
+// costs ~20% hull) — uncapped, single-frame micro-relief spikes wrecked the
+// rover in half a minute.
+const ROUGH_MIN = 0.45;      // ignore gentle undulation
+const ROUGH_DMG_K = 1.2;     // % hull /s per unit of roughness over the floor
+const ROUGH_DMG_MAX = 1.0;   // %/s cap — the worst ground can do
+const ROLL_DMG = 14;         // % hull on a tip-over
+const LIMP_FLOOR = 0.45;     // speed multiplier at 0% hull — hurt, still drivable
+
 const _up = new THREE.Vector3(0, 1, 0);
 const _tiltQuat = new THREE.Quaternion();
 const _yawQuat = new THREE.Quaternion();
@@ -137,6 +156,19 @@ export function createRover(site, terrain, obstacles, { hazards, weather } = {})
     let condition = 'ok';   // ok | rolled | bogged
     let recoveryMeter = 0;  // 0..1, shared by both recovery flows
     let bogMeter = 0;       // 0..1 sinking progress while still mobile
+
+    // Wave 9 damage model: hull condition, separate from the battery. Charge
+    // is spent and refilled by driving/solar; HEALTH only ever goes DOWN in
+    // the field — the one way back up is a repair bay at a base. Three ways
+    // to lose it, mapped to what actually breaks a real rover:
+    //   - boulders: a hard collision at speed (an edge event, not per-frame)
+    //   - pebbles/rough ground: continuous wear from the micro-relief that
+    //     already drives the suspension bounce — hammering broken terrain at
+    //     speed grinds the chassis; crawling over it costs nothing
+    //   - tipping over
+    let health = 100;
+    let wasBlocked = false;   // collision edge detector
+    let lastImpact = 0;       // m/s of the last hit (main.js: sound/HUD cue)
     let flipAnim = 0;       // 0 upright .. 1 on its side (animated)
     let flipSign = 1;       // which side it went over
     let rollHoldT = 0;      // time spent at trigger risk + speed
@@ -249,6 +281,21 @@ export function createRover(site, terrain, obstacles, { hazards, weather } = {})
         // ground together is what actually tips it.
         const bumpRisk = incapacitated ? 0
             : Math.min(0.45, Math.abs(microVel) * Math.abs(speed) * BUMP_RISK_K);
+
+        // Pebble/washboard wear: the same roughness-at-speed term the risk
+        // gauge uses. Hammering broken ground grinds the hull; below
+        // ROUGH_MIN (gentle undulation, or any speed at a crawl) it is free —
+        // which is exactly why real rovers pick their way slowly over rubble.
+        // The wear RATE is capped, like the bumpRisk term just above it. The
+        // micro-relief sampler can spike hard on a single frame, and an
+        // uncapped rate turned those spikes into a hull-shredder (a G3 run
+        // over rubble cost 60-90% in 20 s, i.e. wrecked in half a minute).
+        // The cap makes the worst case a knowable ~1 %/s.
+        const roughness = Math.abs(microVel) * Math.min(1, Math.abs(speed) / 6);
+        if (!incapacitated && roughness > ROUGH_MIN) {
+            const wear = Math.min(ROUGH_DMG_MAX, (roughness - ROUGH_MIN) * ROUGH_DMG_K);
+            health = Math.max(0, health - wear * dt);
+        }
         const rollTarget = THREE.MathUtils.clamp(
             (slopeMag - ROLL_START) / (ROLL_MAX - ROLL_START) + bumpRisk, 0, 1);
         rolloverRisk += (rollTarget - rolloverRisk) * Math.min(1, 5 * dt);
@@ -259,6 +306,7 @@ export function createRover(site, terrain, obstacles, { hazards, weather } = {})
             rollHoldT += dt;
             if (rollHoldT >= ROLL_HOLD_S) {
                 condition = 'rolled';
+                health = Math.max(0, health - ROLL_DMG);   // going over hurts
                 // tip toward the downhill side (normal leans away from uphill)
                 const lateral = normal.x * Math.cos(heading) - normal.z * Math.sin(heading);
                 flipSign = lateral >= 0 ? 1 : -1;
@@ -298,8 +346,12 @@ export function createRover(site, terrain, obstacles, { hazards, weather } = {})
             // quicker than spin-up (regolith rolling resistance), and
             // terrain/hazard drag pulls the target down live. Below G1 the
             // multiplier is tiny — REAL gear still feels 1:1.
+            // A battered hull is slower — damage has to cost something the
+            // player feels, not just a number going down. Still drivable at
+            // 0% (LIMP_FLOOR): stranded-with-no-recourse is never fun.
+            const healthFactor = LIMP_FLOOR + (1 - LIMP_FLOOR) * (health / 100);
             const targetSpeed = input.throttle * REAL_SPEED * GEARS[gearIdx].mult
-                * speedFactor * sandFactor * stormFactor;
+                * speedFactor * sandFactor * stormFactor * healthFactor;
             const tau = Math.abs(targetSpeed) > Math.abs(speed) ? ACCEL_TAU : BRAKE_TAU;
             speed += (targetSpeed - speed) * (1 - Math.exp(-dt / tau));
 
@@ -321,9 +373,24 @@ export function createRover(site, terrain, obstacles, { hazards, weather } = {})
                 mesh.position.x = nx;
                 mesh.position.z = nz;
             }
+            // Boulder strike. Edge-triggered: pressing against a rock you are
+            // already touching must not bill you every frame — only the moment
+            // of impact, priced on the speed you carried into it. The hit also
+            // kills most of the speed, so it lands as a CRUNCH rather than a
+            // silent wall.
+            if (blocked && !wasBlocked) {
+                const impact = Math.abs(speed);
+                if (impact > IMPACT_SPD_MIN) {
+                    health = Math.max(0, health - (impact - IMPACT_SPD_MIN) * IMPACT_DMG_K);
+                    lastImpact = impact;
+                    speed *= 0.2;
+                }
+            }
+            wasBlocked = blocked;
         } else {
             speed = 0;
             atBoundary = false;
+            wasBlocked = false;
         }
 
         // Pose: tip-over animation rides on top of the slope tilt + yaw.
@@ -390,14 +457,40 @@ export function createRover(site, terrain, obstacles, { hazards, weather } = {})
         swingGapT = Infinity;
     }
 
+    /** Repair at a base (main.js, while docked on a chargepad). The only way
+        hull condition ever goes back up — nothing in the field heals it. */
+    function repair(amount) {
+        health = Math.min(100, health + amount);
+    }
+
+    /** One-off hull hit from outside the driving model (Wave 9.9: a hard
+        landing after a fall). Same pricing as a boulder strike. */
+    function takeImpact(speedMs) {
+        if (speedMs <= IMPACT_SPD_MIN) return 0;
+        const dmg = (speedMs - IMPACT_SPD_MIN) * IMPACT_DMG_K;
+        health = Math.max(0, health - dmg);
+        lastImpact = speedMs;
+        return dmg;
+    }
+
+    /** Consume-on-read: main.js polls this to fire a one-shot impact cue. */
+    function popImpact() {
+        const v = lastImpact;
+        lastImpact = 0;
+        return v;
+    }
+
     return {
         mesh, update, cycleGear, setAssist, forceRoll, forceBog,
+        repair, takeImpact, popImpact,
         get position() { return mesh.position; },
         get heading() { return heading; },
         get atBoundary() { return atBoundary; },
         get inHazard() { return inHazard; },
         get slipRatio() { return slipRatio; },
         get rolloverRisk() { return rolloverRisk; },
+        get health() { return health; },              // 0..100 hull condition
+        set health(v) { health = Math.max(0, Math.min(100, v)); },  // E2E
         get condition() { return condition; },       // ok | rolled | bogged
         get bogMeter() { return bogMeter; },         // 0..1 sinking progress
         get recoveryMeter() { return recoveryMeter; }, // 0..1 while down

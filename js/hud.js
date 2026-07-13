@@ -48,6 +48,7 @@ export function createHud(rootEl, { site, onSwitchUnit, onCollect, onToggleSfx, 
                     <span>LON</span><b id="mc-t-lon">—</b>
                     <span>ODO</span><b id="mc-t-odo">0 m</b>
                     <span>BATT</span><b id="mc-t-batt">100%</b>
+                    <span>HULL</span><b id="mc-t-hull">—</b>
                     <span>ROLL</span><b id="mc-t-roll">—</b>
                     <span>WIND</span><b id="mc-t-wind">CALM</b>
                     <span>TGT</span><b id="mc-t-tgt"><span class="mars-tele__arrow" id="mc-t-tgt-arrow" hidden>▲</span><span id="mc-t-tgt-txt">—</span></b>
@@ -215,6 +216,7 @@ export function createHud(rootEl, { site, onSwitchUnit, onCollect, onToggleSfx, 
         lon: rootEl.querySelector('#mc-t-lon'),
         odo: rootEl.querySelector('#mc-t-odo'),
         batt: rootEl.querySelector('#mc-t-batt'),
+        hull: rootEl.querySelector('#mc-t-hull'),
         roll: rootEl.querySelector('#mc-t-roll'),
         wind: rootEl.querySelector('#mc-t-wind'),
         tgt: rootEl.querySelector('#mc-t-tgt-txt'),
@@ -601,7 +603,7 @@ export function createHud(rootEl, { site, onSwitchUnit, onCollect, onToggleSfx, 
     // -[sin h, cos h], so bearing-from-north = -h), elev m, slope deg.
     // tgtRelDeg: steer angle to the target relative to forward travel
     // (0 = dead ahead, +90 = hard right) — rotates the TGT arrow.
-    function setTelemetry({ speed, heading, elevation, slopeDeg, x, z, odo, charge, dead, docked, charging, target, tgtRelDeg, rolloverRisk, wind }) {
+    function setTelemetry({ speed, heading, elevation, slopeDeg, x, z, odo, charge, dead, docked, charging, health, repairing, target, tgtRelDeg, rolloverRisk, wind }) {
         const bearing = ((-heading * 180 / Math.PI) % 360 + 360) % 360;
         const card = CARDINALS[Math.round(bearing / 45) % 8];
         const lat = site.center.lat - z / M_PER_DEG;
@@ -634,6 +636,18 @@ export function createHud(rootEl, { site, onSwitchUnit, onCollect, onToggleSfx, 
                     : `${pct}%`;
         tele.batt.className = charging && docked ? 'is-charging'
             : charge <= 15 ? 'is-crit' : charge <= 35 ? 'is-low' : '';
+
+        // HULL gauge (rover-only — null hides). Reads DOWN (100 = pristine),
+        // so its warning colors invert the ROLL gauge's: low is bad here.
+        if (health == null) {
+            tele.hull.textContent = '—';
+            tele.hull.className = '';
+        } else {
+            const h = Math.round(health);
+            tele.hull.textContent = repairing ? `${h}% 🔧` : h <= 25 ? `${h}% ⚠` : `${h}%`;
+            tele.hull.className = repairing ? 'is-charging'
+                : health <= 25 ? 'is-crit' : health <= 55 ? 'is-low' : '';
+        }
 
         // ROLL gauge (rover-only — null hides): same graduated color
         // language as BATT, warning readout rather than a banner.
