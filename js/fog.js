@@ -241,6 +241,18 @@ export function createFog(site, minimapEl, terrain) {
         fogCtx.globalCompositeOperation = 'source-over';
     }
 
+    function starPath(ctx, cx, cy, outerR, innerR, spikes = 5) {
+        ctx.beginPath();
+        for (let i = 0; i < spikes * 2; i++) {
+            const r = i % 2 === 0 ? outerR : innerR;
+            const a = (Math.PI * i) / spikes - Math.PI / 2;
+            const x = cx + Math.cos(a) * r;
+            const y = cy + Math.sin(a) * r;
+            if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+        }
+        ctx.closePath();
+    }
+
     /** extras: { lab: {x,z} | null, targetId: string | null,
         caches: [{x,z}, ...] | null (field containers awaiting pickup),
         outposts: [{x,z,hq}, ...] | null (Wave 7 built structures),
@@ -316,17 +328,31 @@ export function createFog(site, minimapEl, terrain) {
 
         // Built structures (Wave 7): known bases, above the fog like the
         // lab. Checkposts = hollow teal squares (smaller than the solid
-        // lab square); the HQ = a bigger solid square, the site capital.
+        // lab square). The HQ is the site capital, so it gets its own
+        // GLYPH rather than just a bigger square — at 140px the map is
+        // already crowded with squares (lab, checkposts), amber circles
+        // (samples) and orange diamonds (caches), and a size-only cue was
+        // impossible to pick out. A haloed star stays in the teal "base"
+        // family but is unmistakable at a glance.
         if (extras?.outposts) {
             for (const o of extras.outposts) {
                 const { px, py } = worldToPx(o.x, o.z);
-                displayCtx.strokeStyle = 'rgba(0,0,0,0.7)';
-                displayCtx.lineWidth = 2;
                 if (o.hq) {
-                    displayCtx.fillStyle = '#59d8c9';
-                    displayCtx.fillRect(px - 7, py - 7, 14, 14);
-                    displayCtx.strokeRect(px - 7, py - 7, 14, 14);
+                    const pulse = 0.45 + 0.3 * Math.sin(performance.now() * 0.003);
+                    displayCtx.fillStyle = `rgba(89, 216, 201, ${pulse * 0.5})`;
+                    displayCtx.beginPath();
+                    displayCtx.arc(px, py, 13, 0, Math.PI * 2);
+                    displayCtx.fill();
+
+                    starPath(displayCtx, px, py, 9, 4);
+                    displayCtx.fillStyle = '#7ef0e0';
+                    displayCtx.fill();
+                    displayCtx.strokeStyle = 'rgba(255,255,255,0.95)';
+                    displayCtx.lineWidth = 1.5;
+                    displayCtx.stroke();
                 } else {
+                    displayCtx.strokeStyle = 'rgba(0,0,0,0.7)';
+                    displayCtx.lineWidth = 2;
                     displayCtx.strokeRect(px - 4, py - 4, 8, 8);
                     displayCtx.strokeStyle = '#59d8c9';
                     displayCtx.lineWidth = 1.5;

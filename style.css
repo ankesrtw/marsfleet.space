@@ -634,10 +634,14 @@ html, body {
 
 /* ---- GEAR button (rover + drones; hidden for the humanoid) ---- */
 
+/* Sits in the bottom-right column ABOVE the telemetry card. The card is
+   ~231 px tall (bottom: 12px => its top edge lands 243 px up), so the old
+   215px offset dropped the gear straight onto it. Keep a margin over the
+   measured height: a wrapped site line can add a row. */
 .mars-hud__gear {
     position: absolute;
     right: 12px;
-    bottom: 215px;
+    bottom: 285px;
     z-index: 15;
 }
 
@@ -646,10 +650,12 @@ html, body {
 }
 
 @media (max-width: 899px), (pointer: coarse) {
-    /* dock under the minimap, clear of telemetry (top-left) and sticks */
+    /* Right rail, stacked under the minimap (70-212) and compass (218-264):
+       gear 272-302, then the drone board below it. The old 222px offset
+       landed the gear on top of the compass. */
     .mars-hud__gear {
         bottom: auto;
-        top: max(222px, calc(env(safe-area-inset-top) + 212px));
+        top: max(272px, calc(env(safe-area-inset-top) + 262px));
     }
 }
 
@@ -747,7 +753,8 @@ html, body {
         left: auto;
         right: 12px;
         bottom: auto;
-        top: max(270px, calc(env(safe-area-inset-top) + 260px));
+        /* last in the right rail: minimap -> compass -> gear (272-302) */
+        top: max(310px, calc(env(safe-area-inset-top) + 300px));
         transform: none;
         flex-direction: column;
         align-items: flex-end;
