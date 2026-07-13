@@ -34,6 +34,11 @@ export function createHud(rootEl, { site, onSwitchUnit, onCollect, onToggleSfx, 
                 <span class="mars-compass__cardinal">N</span>
                 <span class="mars-compass__needle" id="mc-compass-needle">▲</span>
                 <span class="mars-compass__wind" id="mc-compass-wind" hidden>▲</span>
+                <div class="mars-compass__gps" id="mc-compass-gps"></div>
+            </div>
+            <div class="mars-hud__gps" id="mc-gps">
+                <div class="mars-hud__gps-title">GPS RELAY</div>
+                <ul id="mc-gps-list"></ul>
             </div>
             <div class="mars-hud__telemetry" id="mc-telemetry">
                 <button class="mars-tele__toggle" id="mc-tele-toggle" aria-label="Collapse telemetry">▾</button>
@@ -181,6 +186,7 @@ export function createHud(rootEl, { site, onSwitchUnit, onCollect, onToggleSfx, 
                         <li>Switch unit — TAB · Collect — E · Menu — M</li>
                         <li>Lift drone — hover low over a cache container, E to sling it, fly to the FIELD LAB pad, E to deliver</li>
                         <li>Delivered caches auto-analyze on the lab edge node — findings land in the SCIENCE ARCHIVE</li>
+                        <li>GPS RELAY — coloured ticks on the compass rim point at every other unit and the nearest base (dial is north-up); the card's arrows are steer angles (up = dead ahead)</li>
                         <li>Sol cycle — solar recharges only when landed, and only in daylight</li>
                         <li>Chargepads — park ON a base pad to fast-charge (and repair the rover). Station-powered, so it works at night: the only way back from a flat battery after dark</li>
                         <li>Dead battery in the air — the rotors quit and the drone FALLS. Land before it does.</li>
@@ -610,6 +616,70 @@ export function createHud(rootEl, { site, onSwitchUnit, onCollect, onToggleSfx, 
         }));
     }
 
+    // GPS wayfinding (Wave 9.4): where every OTHER asset is, from the unit
+    // you are driving. Two readouts, two conventions, each matching its
+    // frame of reference:
+    //  - compass ticks ride the rim at the target's ABSOLUTE bearing (the
+    //    dial is N-up, so a tick at the top means "north of you")
+    //  - the card's arrows point at the bearing RELATIVE to the nose (up =
+    //    dead ahead), like the TGT arrow — that's the one you steer by
+    // Rows are keyed by target id and REUSED, not rebuilt: replaceChildren
+    // at telemetry rate churns the DOM 10x/s for text that mostly doesn't
+    // change.
+    const gpsDialEl = rootEl.querySelector('#mc-compass-gps');
+    const gpsListEl = rootEl.querySelector('#mc-gps-list');
+    const gpsRows = new Map();   // id -> { tick, li, arrow, name, dist }
+    let gpsOrder = '';           // last rendered id order (re-seat only on change)
+
+    function setGps(tracks) {
+        const seen = new Set();
+        for (const t of tracks) {
+            seen.add(t.id);
+            let row = gpsRows.get(t.id);
+            if (!row) {
+                const tick = document.createElement('span');
+                tick.className = 'mars-compass__tick';
+                tick.style.color = t.color;
+                gpsDialEl.appendChild(tick);
+
+                const li = document.createElement('li');
+                const arrow = document.createElement('i');
+                arrow.className = 'mars-gps__arrow';
+                arrow.textContent = '▲';
+                arrow.style.color = t.color;
+                const name = document.createElement('b');
+                const dist = document.createElement('span');
+                li.append(arrow, name, dist);
+                gpsListEl.appendChild(li);
+
+                row = { tick, li, arrow, name, dist };
+                gpsRows.set(t.id, row);
+            }
+            row.tick.style.transform =
+                `translate(-50%, -50%) rotate(${Math.round(t.bearing)}deg) translateY(-17px)`;
+            row.arrow.style.transform = `rotate(${Math.round(t.rel)}deg)`;
+            if (row.name.textContent !== t.label) row.name.textContent = t.label;
+            row.dist.textContent = t.dist >= 1000
+                ? `${(t.dist / 1000).toFixed(2)} km` : `${Math.round(t.dist)} m`;
+        }
+        // the unit you switch TO drops out of its own target list
+        for (const [id, row] of gpsRows) {
+            if (seen.has(id)) continue;
+            row.tick.remove();
+            row.li.remove();
+            gpsRows.delete(id);
+        }
+        // Reused rows keep their old slot, so after a unit switch the card
+        // reorders itself (the row that left frees a slot, the row that
+        // joined lands last). Re-seat them in track order — but only when
+        // the set actually changed, not 10x a second.
+        const key = tracks.map((t) => t.id).join('|');
+        if (key !== gpsOrder) {
+            gpsOrder = key;
+            gpsListEl.append(...tracks.map((t) => gpsRows.get(t.id).li));
+        }
+    }
+
     // BASES — TRAVEL menu section (Wave 9.3): one row per established base
     // (the FIELD LAB is one, it just wasn't earned), with a live distance
     // from the active unit and a TRAVEL action. Rebuilt on menu open so the
@@ -737,6 +807,6 @@ export function createHud(rootEl, { site, onSwitchUnit, onCollect, onToggleSfx, 
         minimapEl, setActiveUnit, setPrompt, setInventory, setLab,
         setNode, setArchive, setBoundary, setHazard, setObjective, setIntroActive, setTutorialOverview,
         setMissions, setOverlayMode, setTelemetry, setMenuOpen, isMenuOpen, toast, setOutposts,
-        setDronePanel, setDroneState, setGear, setBases,
+        setDronePanel, setDroneState, setGear, setBases, setGps,
     };
 }

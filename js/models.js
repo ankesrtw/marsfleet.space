@@ -55,6 +55,10 @@ const STATIC_MODELS = {
     // pipeline — a procedural placeholder covers both until the GLBs exist.
     checkpost: { url: 'assets/models/checkpost.glb', yaw: 0, footprint: 6, doubleSide: true },
     hq: { url: 'assets/models/hq.glb', yaw: 0, footprint: 22, doubleSide: true },
+    // Wave 9.4 relay mast at every base (comms.js). Footprint is the guy-leg
+    // spread, not the mast height — the static path scales on the horizontal
+    // extent, so a tall thin mast must declare its BASE width here.
+    antenna: { url: 'assets/models/antenna.glb', yaw: 0, footprint: 3.2, doubleSide: true },
     // The sealed sample-cache container the sample loop drops in the field
     // and the lift drone slings to the lab. Small movable prop (no travel
     // axis), so it rides the STATIC_MODELS footprint-scaling path; footprint

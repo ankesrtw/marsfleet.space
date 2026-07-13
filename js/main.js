@@ -28,6 +28,7 @@ import { createLandingIntro } from './intro.js';
 import { createMissions } from './missions.js';
 import { createOutposts } from './outposts.js';
 import { createChargepads } from './chargepad.js';
+import { createComms } from './comms.js';
 
 // Lift-drone logistics interaction envelope (see lab.js):
 const SLING_ALT = 8;      // m AGL — hover this low (or sit landed: alt 0
@@ -196,13 +197,22 @@ async function startGame(site) {
     const chargepads = createChargepads(scene, terrain, rocks);
     chargepads.addPadNear(lab.padPos.x, lab.padPos.z, 16);
 
+    // Wave 9.4 relay network (comms.js): a mast at every base — the in-world
+    // answer to "how do the units know where each other are", and what the
+    // GPS ticks/card are reading. Same boot-plus-onBuilt lifecycle as pads.
+    const comms = createComms(scene, terrain, rocks);
+    comms.addMastNear(lab.padPos.x, lab.padPos.z, 20);
+
     // Wave 7 base-building (outposts.js): checkposts rise at flagged
     // sample sites once analyzed; the HQ rises by the lab once every
     // mission is complete. No-ops on sites without outpost/hq fields.
     // Each structure earns a chargepad beside it as it goes up (and at
     // boot, via bootstrap -> construct -> onBuilt).
     const outposts = createOutposts(scene, site, terrain, rocks, colliders, lab.padPos,
-        (rec) => chargepads.addPadNear(rec.x, rec.z, rec.kind === 'hq' ? 19 : 9));
+        (rec) => {
+            chargepads.addPadNear(rec.x, rec.z, rec.kind === 'hq' ? 19 : 9);
+            comms.addMastNear(rec.x, rec.z, rec.kind === 'hq' ? 24 : 12);
+        });
 
     // Edge-node analysis queue + persistent science archive (analysis.js):
     // delivered caches auto-process; completion reveals the real finding.
@@ -395,7 +405,7 @@ async function startGame(site) {
     // Debug/E2E handle (also used by the sampleHeight ground-truth check;
     // renderer/scene/camera exposed so tests on software-GL boxes can pause
     // the loop and capture canvas pixels via a same-task render+toDataURL).
-    window.__mc = { site, terrain, rover, drone: recon, recon, lift, humanoid, samples, renderer, scene, camera, camRig, units, env, effects, waypoint, sound, rocks, lab, sling, analysis, outposts, fog, colliders, missions, hazardZones, weather, dustDevils, wind, chargepads, get intro() { return intro; } };
+    window.__mc = { site, terrain, rover, drone: recon, recon, lift, humanoid, samples, renderer, scene, camera, camRig, units, env, effects, waypoint, sound, rocks, lab, sling, analysis, outposts, fog, colliders, missions, hazardZones, weather, dustDevils, wind, chargepads, comms, baseList, get intro() { return intro; } };
 
     function applyUnitMode() {
         const active = units[activeIndex];
@@ -672,6 +682,7 @@ async function startGame(site) {
         sling.update(dt, lift.position);
         lab.update(dt);
         outposts.update(dt, camera);   // camera: name plates scale with range
+        comms.update(dt);
         analysis.update(dt);
         dustDevils.update(dt);
         effects.update(dt, active, speedNow, env.daylight());
@@ -817,6 +828,15 @@ async function startGame(site) {
                 wind: wind.sample(pos.x, pos.z), // real m/s at the unit (Wave 6)
             });
             hud.setNode(analysis.status());
+            // GPS wayfinding (Wave 9.4): bearings from the unit being driven
+            // to every OTHER unit, plus the nearest base. Fed at telemetry
+            // rate — 10 Hz is smooth on a dial and cheap on the DOM.
+            hud.setGps(comms.track(
+                pos,
+                active.unit.heading,
+                units.filter((u) => u !== active).map((u) => ({ name: u.name, position: u.unit.position })),
+                baseList(),
+            ));
             if (active.kind === 'fly') {
                 hud.setDroneState({
                     landed: active.unit.landed,
