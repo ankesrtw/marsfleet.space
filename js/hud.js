@@ -44,6 +44,13 @@ export function createHud(rootEl, { site, onSwitchUnit, onCollect, onToggleSfx, 
                 <button class="mars-btn mars-btn--sfx" id="mc-sfx">SFX ${sfxEnabled ? 'ON' : 'OFF'}</button>
             </div>
             <div class="mars-hud__nv-overlay" id="mc-nv-overlay" data-visible="false"></div>
+            <div class="mars-hud__rotate" id="mc-rotate" aria-hidden="true">
+                <div class="mars-hud__rotate-card">
+                    <div class="mars-hud__rotate-glyph">⟳</div>
+                    <b>ROTATE TO LANDSCAPE</b>
+                    <p>The colony HUD needs the wide view.</p>
+                </div>
+            </div>
             <div class="mars-hud__minimap" id="mc-minimap">
                 <div class="mars-hud__clock" id="mc-clock">
                     <b id="mc-clock-sol">SOL —</b>

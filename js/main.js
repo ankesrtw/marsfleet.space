@@ -964,6 +964,13 @@ function setupTouchControls() {
         lookZone.hidden = true;
         return { move: null, look: null, setMode: () => {} };
     }
+    // Wave 10.1: phones play landscape. The CSS rotate prompt is the
+    // dependable path; orientation.lock is a best-effort bonus (Android
+    // Chrome, fullscreen contexts) that quietly rejects everywhere else —
+    // retried once on first touch, where transient activation helps.
+    const tryLock = () => screen.orientation?.lock?.('landscape')?.catch(() => {});
+    tryLock();
+    window.addEventListener('pointerdown', tryLock, { once: true });
     const move = createJoystick(moveZone);
     const look = createJoystick(lookZone);
     return {

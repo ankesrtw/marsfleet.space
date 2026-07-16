@@ -100,6 +100,49 @@ html, body {
     }
 }
 
+/* Wave 10.1 (#13): phones play landscape. screen.orientation.lock() is
+   unsupported on iOS Safari and fullscreen-gated elsewhere, so the
+   dependable path is this CSS-only prompt: portrait touch viewports get
+   a dimmed rotate card that blocks input; rotating the phone hides it
+   with no JS involved. */
+.mars-hud__rotate {
+    display: none;
+    position: absolute;
+    inset: 0;
+    z-index: 40;
+    background: rgba(10, 6, 4, 0.88);
+    align-items: center;
+    justify-content: center;
+    text-align: center;
+    pointer-events: auto;
+}
+
+@media (orientation: portrait) and (pointer: coarse) and (max-width: 899px) {
+    .mars-hud__rotate {
+        display: flex;
+    }
+}
+
+.mars-hud__rotate-card b {
+    display: block;
+    letter-spacing: 0.14em;
+    font-size: 0.95rem;
+    color: #e0b95e;
+}
+
+.mars-hud__rotate-card p {
+    margin: 8px 0 0;
+    font-size: 0.75rem;
+    opacity: 0.75;
+}
+
+.mars-hud__rotate-glyph {
+    font-size: 2.4rem;
+    line-height: 1;
+    margin-bottom: 10px;
+    color: #2ec4d6;
+}
+
 /* Wave 10.4: top-bar OVERLAYS dropdown — desktop-only fast path to the
    menu's SCIENCE OVERLAYS plus a live sample tally (the menu section
    stays; redundant access is deliberate, same as GEAR/dronectl). Hidden
