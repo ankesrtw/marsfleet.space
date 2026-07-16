@@ -59,6 +59,10 @@ const STATIC_MODELS = {
     // spread, not the mast height — the static path scales on the horizontal
     // extent, so a tall thin mast must declare its BASE width here.
     antenna: { url: 'assets/models/antenna.glb', yaw: 0, footprint: 3.2, doubleSide: true },
+    // Wave 11: solar charging pad (chargepad.js). Drones settle ON it, so
+    // the GLB must stay low/flat — the dock trigger and pulsing status
+    // ring are positional on the outer group and survive the swap.
+    chargepad: { url: 'assets/models/chargepad.glb', yaw: 0, footprint: 10, doubleSide: true },
     // The sealed sample-cache container the sample loop drops in the field
     // and the lift drone slings to the lab. Small movable prop (no travel
     // axis), so it rides the STATIC_MODELS footprint-scaling path; footprint

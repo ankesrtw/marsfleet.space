@@ -19,6 +19,7 @@
    ============================================================ */
 
 import * as THREE from 'three';
+import { attachStaticModel } from './models.js';
 
 const PAD_R = 3.6;        // visual disc radius
 export const DOCK_R = 5.0; // dock trigger radius (a bit past the disc lip)
@@ -41,10 +42,29 @@ export function createChargepads(scene, terrain, rocks) {
         const g = new THREE.Group();
         g.position.set(x, terrain.sampleHeight(x, z) + 0.02, z);
 
+        // Inner group holds the procedural pad until chargepad.glb swaps in
+        // (models.js fallback-first idiom, Wave 11); the status ring lives on
+        // the outer group so the swap can never take it down — outposts.js's
+        // beacon idiom.
+        const inner = new THREE.Group();
+
         // Landing deck
         const deck = new THREE.Mesh(new THREE.CylinderGeometry(PAD_R, PAD_R, 0.12, 24), deckMat);
         deck.position.y = 0.06;
-        g.add(deck);
+        inner.add(deck);
+
+        // Two solar wings on posts, tilted to the sky, clear of the deck so
+        // a drone can settle on it.
+        for (const side of [-1, 1]) {
+            const post = new THREE.Mesh(new THREE.CylinderGeometry(0.09, 0.11, 1.9, 6), frameMat);
+            post.position.set(side * (PAD_R + 0.7), 0.95, 0);
+            const panel = new THREE.Mesh(new THREE.BoxGeometry(2.6, 0.08, 1.7), cellMat);
+            panel.position.set(side * (PAD_R + 0.7), 1.95, 0);
+            panel.rotation.z = side * -0.42;
+            inner.add(post, panel);
+        }
+        g.add(inner);
+        attachStaticModel(inner, 'chargepad');
 
         // Status ring — dim idle, bright + pulsing while something charges
         const ringMat = new THREE.MeshBasicMaterial({
@@ -55,17 +75,6 @@ export function createChargepads(scene, terrain, rocks) {
         ring.rotation.x = -Math.PI / 2;
         ring.position.y = 0.14;
         g.add(ring);
-
-        // Two solar wings on posts, tilted to the sky, clear of the deck so
-        // a drone can settle on it.
-        for (const side of [-1, 1]) {
-            const post = new THREE.Mesh(new THREE.CylinderGeometry(0.09, 0.11, 1.9, 6), frameMat);
-            post.position.set(side * (PAD_R + 0.7), 0.95, 0);
-            const panel = new THREE.Mesh(new THREE.BoxGeometry(2.6, 0.08, 1.7), cellMat);
-            panel.position.set(side * (PAD_R + 0.7), 1.95, 0);
-            panel.rotation.z = side * -0.42;
-            g.add(post, panel);
-        }
 
         group.add(g);
         const pad = { x, z, group: g, ringMat, base: 0.35 };
