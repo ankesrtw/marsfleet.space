@@ -47,7 +47,7 @@ const LABEL_REF = 55;     // m — reference camera distance
 const LABEL_MIN = 0.85;
 const LABEL_MAX = 7;
 
-export function createOutposts(scene, site, terrain, rocks, colliders, labPos, onBuilt) {
+export function createOutposts(scene, site, terrain, rocks, colliders, labPos, onBuilt, blockedAt) {
     const defs = (site.samples ?? []).filter((s) => s.outpost);
     const built = new Map();  // id -> { id, name, kind, x, z, group }
     const rising = [];        // { group, t } build-in animations in flight
@@ -202,17 +202,18 @@ export function createOutposts(scene, site, terrain, rocks, colliders, labPos, o
     function buildFor(sampleId, { animate = true } = {}) {
         const def = defs.find((s) => s.id === sampleId);
         if (!def || built.has(sampleId)) return null;
-        const spot = findSpot(def.x, def.z, CHECKPOST_RING, CHECKPOST_R + 1);
+        const spot = findSpot(def.x, def.z, CHECKPOST_RING, CHECKPOST_R + 1, blockedAt);
         return construct({ id: sampleId, name: def.outpost.name, kind: 'checkpost', x: spot.x, z: spot.z, animate });
     }
 
-    /** HQ capstone near the FIELD LAB — statics-aware spot pick so it
-        dodges the station dock and mast (colliders facade, lab.js gap). */
+    /** HQ capstone near the FIELD LAB. Wave 11: the spot pick uses the
+        shared blockedAt test (statics incl. masts, plus chargepads —
+        the HQ once rose ON the lab's boot pad, which no facade could
+        see because pads deliberately don't block movement). */
     function buildHq({ animate = true } = {}) {
         if (!site.hq || built.has('hq') || !labPos) return null;
-        const facade = colliders.forUnit('__outpost-build');
-        const spot = findSpot(labPos.x, labPos.z, HQ_RING, HQ_R + 1.5,
-            (x, z, r) => facade.collides(x, z, r));
+        const blocked = blockedAt ?? ((x, z, r) => colliders.forUnit('__outpost-build').collides(x, z, r));
+        const spot = findSpot(labPos.x, labPos.z, HQ_RING, HQ_R + 1.5, blocked);
         return construct({ id: 'hq', name: site.hq.name, kind: 'hq', x: spot.x, z: spot.z, animate });
     }
 

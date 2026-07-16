@@ -205,13 +205,24 @@ async function startGame(site) {
     // The FIELD LAB gets one at boot — it is the origin base, and without it
     // there is nowhere to dock before the first outpost is earned.
     const chargepads = createChargepads(scene, terrain, rocks);
-    chargepads.addPadNear(lab.padPos.x, lab.padPos.z, 16);
 
     // Wave 9.4 relay network (comms.js): a mast at every base — the in-world
     // answer to "how do the units know where each other are", and what the
     // GPS ticks/card are reading. Same boot-plus-onBuilt lifecycle as pads.
-    const comms = createComms(scene, terrain, rocks);
-    comms.addMastNear(lab.padPos.x, lab.padPos.z, 20);
+    // Wave 11: masts register as static colliders (a 9m pole blocks).
+    const comms = createComms(scene, terrain, rocks, colliders);
+
+    // Wave 11: ONE occupancy test for everything that rises near a base —
+    // statics (lab dock, masts, structures) via the colliders facade, plus
+    // chargepads, which stay non-blocking for MOVEMENT (units land/drive
+    // onto them) but must never be built over: the HQ once rose on the
+    // lab's boot pad because no facade could see it.
+    const blockedAt = (x, z, r) =>
+        colliders.forUnit('__site-build').collides(x, z, r)
+        || chargepads.list.some((p) => Math.hypot(p.x - x, p.z - z) < r + 4.6);
+
+    chargepads.addPadNear(lab.padPos.x, lab.padPos.z, 16, blockedAt);
+    comms.addMastNear(lab.padPos.x, lab.padPos.z, 20, blockedAt);
 
     // Wave 7 base-building (outposts.js): checkposts rise at flagged
     // sample sites once analyzed; the HQ rises by the lab once every
@@ -220,9 +231,9 @@ async function startGame(site) {
     // boot, via bootstrap -> construct -> onBuilt).
     const outposts = createOutposts(scene, site, terrain, rocks, colliders, lab.padPos,
         (rec) => {
-            chargepads.addPadNear(rec.x, rec.z, rec.kind === 'hq' ? 19 : 9);
-            comms.addMastNear(rec.x, rec.z, rec.kind === 'hq' ? 24 : 12);
-        });
+            chargepads.addPadNear(rec.x, rec.z, rec.kind === 'hq' ? 19 : 9, blockedAt);
+            comms.addMastNear(rec.x, rec.z, rec.kind === 'hq' ? 24 : 12, blockedAt);
+        }, blockedAt);
 
     // Edge-node analysis queue + persistent science archive (analysis.js):
     // delivered caches auto-process; completion reveals the real finding.

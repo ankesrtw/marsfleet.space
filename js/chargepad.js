@@ -75,14 +75,16 @@ export function createChargepads(scene, terrain, rocks) {
 
     /** Site a pad on a ring around a base, flattest of 8 candidates and
         clear of boulders (outposts.js/lab.js placement idiom). Keeps the
-        pad off the structure footprint and off the lab's delivery pad. */
-    function addPadNear(cx, cz, ring) {
+        pad off the structure footprint and off the lab's delivery pad.
+        `blocked` (Wave 11) adds the shared occupancy test from main.js. */
+    function addPadNear(cx, cz, ring, blocked) {
         let best = null;
         for (let i = 0; i < 8; i++) {
             const a = (i / 8) * Math.PI * 2;
             const x = cx + Math.sin(a) * ring;
             const z = cz + Math.cos(a) * ring;
             if (rocks?.collides(x, z, PAD_R + 1)) continue;
+            if (blocked?.(x, z, PAD_R + 1)) continue;
             const slope = 1 - terrain.sampleNormal(x, z).y;
             if (!best || slope < best.slope) best = { x, z, slope };
         }

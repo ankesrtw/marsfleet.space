@@ -59,7 +59,7 @@ export function relativeBearing(x, z, heading, tx, tz) {
     return ((abs - nose + 540) % 360) - 180;
 }
 
-export function createComms(scene, terrain, rocks) {
+export function createComms(scene, terrain, rocks, colliders) {
     const group = new THREE.Group();
     group.name = 'comms-antennas';
     scene.add(group);
@@ -100,14 +100,17 @@ export function createComms(scene, terrain, rocks) {
     }
 
     /** Site a mast on a ring around a base — flattest of 8 candidates,
-        clear of boulders (chargepad.js / outposts.js placement idiom). */
-    function addMastNear(cx, cz, ring) {
+        clear of boulders (chargepad.js / outposts.js placement idiom).
+        `blocked` (Wave 11) adds the shared occupancy test from main.js
+        so a mast can't rise on a pad or another structure. */
+    function addMastNear(cx, cz, ring, blocked) {
         let best = null;
         for (let i = 0; i < 8; i++) {
             const a = (i / 8) * Math.PI * 2 + Math.PI / 8;  // offset from the pad ring
             const x = cx + Math.sin(a) * ring;
             const z = cz + Math.cos(a) * ring;
             if (rocks?.collides(x, z, 2)) continue;
+            if (blocked?.(x, z, 2)) continue;
             const slope = 1 - terrain.sampleNormal(x, z).y;
             if (!best || slope < best.slope) best = { x, z, slope };
         }
@@ -134,6 +137,9 @@ export function createComms(scene, terrain, rocks) {
         g.add(lamp);
 
         group.add(g);
+        // Wave 11: the mast is a physical 9m pole — units shouldn't pass
+        // through it, and registering it also keeps future structures off it.
+        colliders?.addStatic(spot.x, spot.z, 1.2, MAST_H);
         const mast = { x: spot.x, z: spot.z, lampMat, phase: masts.length * 0.8 };
         masts.push(mast);
         return mast;
