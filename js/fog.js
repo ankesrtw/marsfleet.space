@@ -256,6 +256,7 @@ export function createFog(site, minimapEl, terrain) {
     /** extras: { lab: {x,z} | null, targetId: string | null,
         caches: [{x,z}, ...] | null (field containers awaiting pickup),
         outposts: [{x,z,hq}, ...] | null (Wave 7 built structures),
+        sand: [{x,z,r,intensity}, ...] | null (Wave 11 soft-sand zones),
         path: [{x,z}, ...] | null (drawn only in PATH mode) } */
     function render(markerPositions, unitPositions, extras) {
         displayCtx.clearRect(0, 0, MAP_RES, MAP_RES);
@@ -283,6 +284,29 @@ export function createFog(site, minimapEl, terrain) {
         displayCtx.globalAlpha = 1;
 
         // ---- always-visible overlays (above the fog) ----
+
+        // Soft-sand hazard zones (Wave 11): static site knowledge drawn
+        // above the fog so "BOGGED DOWN" never feels random — the dune
+        // margins you're about to cross are charted. True map scale, tan
+        // wash + dotted rim, dimmer than the live dust-devil rings, and
+        // FIRST in the overlay stack so every icon stays legible on top.
+        if (extras?.sand) {
+            for (const s of extras.sand) {
+                const { px, py } = worldToPx(s.x, s.z);
+                const r = (s.r / worldSize) * MAP_RES;
+                displayCtx.fillStyle = `rgba(214, 168, 110, ${0.12 + 0.1 * s.intensity})`;
+                displayCtx.beginPath();
+                displayCtx.arc(px, py, r, 0, Math.PI * 2);
+                displayCtx.fill();
+                displayCtx.strokeStyle = 'rgba(226, 190, 128, 0.55)';
+                displayCtx.lineWidth = 1.5;
+                displayCtx.setLineDash([3, 5]);
+                displayCtx.beginPath();
+                displayCtx.arc(px, py, r, 0, Math.PI * 2);
+                displayCtx.stroke();
+                displayCtx.setLineDash([]);
+            }
+        }
 
         // FIELD LAB: teal square — the delivery target is a known base
         if (extras?.lab) {

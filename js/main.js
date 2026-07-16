@@ -744,6 +744,9 @@ async function startGame(site) {
             outposts: outposts.builtPositions(),
             path: pathTrail,
             devils: dustDevils.devils.map((d) => ({ x: d.x, z: d.z, r: d.r })),
+            // Wave 11: static soft-sand zones — visible on the map so
+            // "BOGGED DOWN" never feels random.
+            sand: hazardZones.zones,
         });
         waypoint.update(dt, targetInfo);
         sling.update(dt, lift.position);
