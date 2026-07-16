@@ -21,6 +21,12 @@ const MIN_SPEED_FACTOR = 0.3;
 const BODY_RADIUS = 0.35; // m, collision footprint (also main.js registry)
 const EDGE_MARGIN = 30;   // m inside the DEM edge — the mission boundary
 
+// Wave 9.5: EVA safety tether. Beyond TETHER_LENGTH the humanoid's max
+// speed is clamped (the suit drags the line), simulating a taut tether
+// without actual physics constraint.
+const TETHER_LENGTH = 80; // m — generous, keeps the tether cosmetic most of the time
+const TETHER_DROP_FACTOR = 0.3; // speed multiplier when fully beyond length
+
 // Wave 9 Mars jump. Apex = v^2 / 2g = 3.4^2 / (2 x 3.72) ~ 1.55 m, hang time
 // = 2v/g ~ 1.83 s. The identical impulse on Earth would clear only 0.59 m and
 // hang 0.69 s — the 2.6x floatiness IS the low-gravity read.
@@ -64,6 +70,9 @@ export function createHumanoid(site, terrain, obstacles) {
     let jumpVel = 0;     // m/s vertical, integrated against GRAVITY_MARS
     let walkAmt = 0; // 0..1, eases the cycle in/out so stops don't snap
     let atBoundary = false;
+    let tetherAnchor = null;   // THREE.Vector3 | null (Wave 9.5)
+    let tetherTaut = false;
+    const _tetherVec = new THREE.Vector3();
     const bound = site.worldSize / 2 - EDGE_MARGIN;
 
     const _swing = new THREE.Quaternion();
@@ -85,7 +94,18 @@ export function createHumanoid(site, terrain, obstacles) {
         // the sub-DEM regolith bumps, drone AGL and markers stay smooth-DEM.
         const normal = terrain.sampleGroundNormal(mesh.position.x, mesh.position.z);
         const slopeMag = 1 - normal.y;
-        const speedFactor = Math.max(MIN_SPEED_FACTOR, 1 - slopeMag * SLOPE_K);
+        let speedFactor = Math.max(MIN_SPEED_FACTOR, 1 - slopeMag * SLOPE_K);
+        // Wave 9.5: tether tension — beyond TETHER_LENGTH, the suit drags
+        // the line and speed falls off rapidly.
+        tetherTaut = false;
+        if (tetherAnchor) {
+            const dist = _tetherVec.copy(mesh.position).distanceTo(tetherAnchor);
+            if (dist > TETHER_LENGTH) {
+                const overage = (dist - TETHER_LENGTH) / TETHER_LENGTH;
+                speedFactor *= Math.max(TETHER_DROP_FACTOR, 1 - overage);
+                tetherTaut = true;
+            }
+        }
         const speed = input.throttle * WALK_SPEED * speedFactor;
 
         let nx = mesh.position.x + Math.sin(heading) * speed * dt;
@@ -134,16 +154,30 @@ export function createHumanoid(site, terrain, obstacles) {
         mesh.position.set(x, terrain.sampleGroundHeight(x, z), z);
         airY = 0;
         jumpVel = 0;
+        tetherAnchor = null; // teleport detaches the tether
+    }
+
+    /** Wave 9.5: set the EVA tether anchor position (a THREE.Vector3 at
+        the base/rover end), or null to detach. Called each frame from
+        main.js so the anchor tracks the nearest base or rover. */
+    function setTether(pos) {
+        tetherAnchor = pos;
     }
 
     return {
-        mesh, update, teleport,
+        mesh, update, teleport, setTether,
         get position() { return mesh.position; },
         get heading() { return heading; },
         get atBoundary() { return atBoundary; },
         get airborne() { return airY > 0; },
         get airY() { return airY; },          // m above ground (jump arc)
         get jumpVel() { return jumpVel; },
+        get tetherTaut() { return tetherTaut; },
+        get tetherAnchor() { return tetherAnchor; },
+        // Tether attachment point on the humanoid: shoulder height (~1.5m)
+        get tetherPoint() {
+            return new THREE.Vector3(mesh.position.x, mesh.position.y + 1.5, mesh.position.z);
+        },
     };
 }
 

@@ -20,7 +20,7 @@
 import { isTouchDevice } from './touch.js';
 import { SITES, M_PER_DEG, SOL_MS } from './sites.js';
 
-export function createHud(rootEl, { site, onSwitchUnit, onCollect, onToggleSfx, sfxEnabled = true, onCycleGear, gear = 'G2', onToggleSol, solOn = true, onToggleLanding, onCommandAlt, onReset, onSkipIntro, onSkipMission, onReplayIntro, onStartMission, missions = [], onSetOverlayMode, onTravel, onToggleNv }) {
+export function createHud(rootEl, { site, onSwitchUnit, onCollect, onToggleSfx, sfxEnabled = true, onCycleGear, gear = 'G2', onToggleSol, solOn = true, onToggleLanding, onCommandAlt, onReset, onSkipIntro, onSkipMission, onReplayIntro, onStartMission, missions = [], onSetOverlayMode, onTravel, onToggleNv, onReplayHologram }) {
     rootEl.innerHTML = `
         <div class="mars-hud">
             <div class="mars-hud__top">
@@ -193,6 +193,7 @@ export function createHud(rootEl, { site, onSwitchUnit, onCollect, onToggleSfx, 
                     <ul class="mars-menu__lab" id="mc-archive-list">
                         <li class="mars-menu__lab-empty">No analyzed samples yet — deliver caches to the FIELD LAB.</li>
                     </ul>
+                    <button class="mars-btn" id="mc-hologram-replay">▶ ARIANA HOLOGRAM</button>
                     <p class="mars-menu__note">Delivered caches are processed one at a time on the lab's
                     onboard edge node (Jetson-class, simulated). Analysis reveals the sample's real published
                     mission finding and files it here — the archive persists in your browser across visits
@@ -463,6 +464,12 @@ export function createHud(rootEl, { site, onSwitchUnit, onCollect, onToggleSfx, 
     rootEl.querySelector('#mc-replay-intro').addEventListener('click', () => {
         setMenuOpen(false);
         onReplayIntro?.();
+    });
+
+    // Wave 9.5: Ariana hologram replay from the SCIENCE ARCHIVE section.
+    rootEl.querySelector('#mc-hologram-replay').addEventListener('click', () => {
+        setMenuOpen(false);
+        onReplayHologram?.();
     });
 
     // MISSIONS menu section: one ▶ button per chain this site offers

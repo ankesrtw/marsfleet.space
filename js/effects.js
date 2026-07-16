@@ -189,6 +189,42 @@ export function createEffects(scene, terrain) {
         trackGeo.attributes.position.needsUpdate = true;
     }
 
+    // ---- humanoid EVA tether (Wave 9.5) ----------------------------------
+    // A THREE.Line drawn between the humanoid and its tether anchor (the
+    // nearest base or rover), with a 3-point catenary approximation.
+    // Buffer is allocated once and mutated in place each frame.
+    const TETHER_POS = new Float32Array(9); // 3 points × xyz
+    const tetherGeo = new THREE.BufferGeometry();
+    tetherGeo.setAttribute('position', new THREE.BufferAttribute(TETHER_POS, 3));
+    const tetherMat = new THREE.LineDashedMaterial({
+        color: 0x2ec4d6, dashSize: 0.7, gapSize: 0.5,
+        transparent: true, opacity: 0.7, depthWrite: false,
+    });
+    const tetherLine = new THREE.Line(tetherGeo, tetherMat);
+    tetherLine.frustumCulled = false;
+    tetherLine.visible = false;
+    tetherLine.renderOrder = 2;
+    scene.add(tetherLine);
+
+    function updateTether(start, end, taut = false) {
+        if (!start || !end) {
+            tetherLine.visible = false;
+            return;
+        }
+        tetherLine.visible = true;
+        // Simple catenary approximation: mid-point droop below both ends.
+        const droop = taut ? 0.15 : 1.2;
+        TETHER_POS[0] = start.x;  TETHER_POS[1] = start.y;  TETHER_POS[2] = start.z;
+        TETHER_POS[3] = (start.x + end.x) / 2;
+        TETHER_POS[4] = Math.min(start.y, end.y) + droop;
+        TETHER_POS[5] = (start.z + end.z) / 2;
+        TETHER_POS[6] = end.x;    TETHER_POS[7] = end.y;    TETHER_POS[8] = end.z;
+        tetherGeo.attributes.position.needsUpdate = true;
+        tetherLine.computeLineDistances();
+        tetherMat.opacity = taut ? 1.0 : 0.7;
+        tetherMat.color.setHex(taut ? 0xe07b39 : 0x2ec4d6);
+    }
+
     function update(dt, active, speed, daylight = 1) {
         updateShadows();
         updateDust(dt, active, speed);
@@ -203,7 +239,7 @@ export function createEffects(scene, terrain) {
         }
     }
 
-    return { addShadow, update, _dust: dust, _tracks: tracks };
+    return { addShadow, update, updateTether, _dust: dust, _tracks: tracks };
 }
 
 /** Soft radial falloff canvas — shared by blob shadows and dust sprites. */

@@ -24,8 +24,13 @@ import { attachStaticModel } from './models.js';
 const PAD_R = 3.6;        // visual disc radius
 export const DOCK_R = 5.0; // dock trigger radius (a bit past the disc lip)
 
+// Wave 9.5: repair bay sits beside its chargepad, offset slightly
+// so the workshop reads as a separate structure next to the landing disc.
+const REPAIR_BAY_OFFSET = 5.5;
+
 export function createChargepads(scene, terrain, rocks) {
     const pads = [];   // { x, z, group, ringMat, base }
+    const repairBays = []; // { x, z } for minimap
     const group = new THREE.Group();
     group.name = 'chargepads';
     scene.add(group);
@@ -36,6 +41,27 @@ export function createChargepads(scene, terrain, rocks) {
         color: 0x16344e, roughness: 0.25, metalness: 0.7,
         emissive: 0x0b2036, emissiveIntensity: 0.35,
     });
+
+    /** Procedural fallback for the repair bay — an open-fronted
+        half-cylinder arch with a roof panel. Warm amber (#d6862e)
+        distinguishes it from the pad's cyan and the station's teal. */
+    function makeRepairBayFallback() {
+        const g = new THREE.Group();
+        const wallMat = new THREE.MeshStandardMaterial({ color: 0xd6862e, roughness: 0.7, metalness: 0.15 });
+        const roofMat = new THREE.MeshStandardMaterial({ color: 0xc47a2a, roughness: 0.6, metalness: 0.2 });
+        // Half-cylinder back wall (open front)
+        const arch = new THREE.Mesh(
+            new THREE.CylinderGeometry(2.4, 2.4, 3.6, 12, 1, true, 0, Math.PI),
+            wallMat
+        );
+        arch.rotation.x = Math.PI / 2;
+        arch.position.set(0, 1.8, 0);
+        // Roof panel
+        const roof = new THREE.Mesh(new THREE.BoxGeometry(4.8, 0.15, 2.6), roofMat);
+        roof.position.set(0, 3.4, 0);
+        g.add(arch, roof);
+        return g;
+    }
 
     function addPad(x, z) {
         if (pads.some((p) => Math.hypot(p.x - x, p.z - z) < 2)) return null;
@@ -65,6 +91,20 @@ export function createChargepads(scene, terrain, rocks) {
         }
         g.add(inner);
         attachStaticModel(inner, 'chargepad');
+
+        // Repair bay beside the chargepad (Wave 9.5). A small workshop
+        // that provides the in-world explanation for dock-based repair.
+        // Built alongside every pad — one bay per base.
+        const bayGroup = new THREE.Group();
+        const bx = x + Math.cos(Math.PI / 4) * REPAIR_BAY_OFFSET;
+        const bz = z + Math.sin(Math.PI / 4) * REPAIR_BAY_OFFSET;
+        bayGroup.position.set(bx, terrain.sampleHeight(bx, bz), bz);
+        const bayInner = new THREE.Group();
+        bayInner.add(makeRepairBayFallback());
+        bayGroup.add(bayInner);
+        attachStaticModel(bayInner, 'repair-bay');
+        group.add(bayGroup);
+        repairBays.push({ x: bx, z: bz });
 
         // Status ring — dim idle, bright + pulsing while something charges.
         // Wave 11: sits OUTSIDE the deck at the DOCK_R trigger perimeter, on
@@ -142,5 +182,6 @@ export function createChargepads(scene, terrain, rocks) {
         addPad, addPadNear, padAt, nearestTo, update,
         get count() { return pads.length; },
         get list() { return pads; },
+        get repairPositions() { return repairBays; },
     };
 }

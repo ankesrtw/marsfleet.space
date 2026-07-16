@@ -253,11 +253,12 @@ export function createFog(site, minimapEl, terrain) {
         ctx.closePath();
     }
 
-    /** extras: { lab: {x,z} | null, targetId: string | null,
-        caches: [{x,z}, ...] | null (field containers awaiting pickup),
-        outposts: [{x,z,hq}, ...] | null (Wave 7 built structures),
-        sand: [{x,z,r,intensity}, ...] | null (Wave 11 soft-sand zones),
-        path: [{x,z}, ...] | null (drawn only in PATH mode) } */
+/** extras: { lab: {x,z} | null, targetId: string | null,
+    caches: [{x,z}, ...] | null (field containers awaiting pickup),
+    outposts: [{x,z,hq}, ...] | null (Wave 7 built structures),
+    sand: [{x,z,r,intensity}, ...] | null (Wave 11 soft-sand zones),
+    path: [{x,z}, ...] | null (drawn only in PATH mode),
+    repairShops: [{x,z}, ...] | null (Wave 9.5 repair bays) } */
     function render(markerPositions, unitPositions, extras) {
         displayCtx.clearRect(0, 0, MAP_RES, MAP_RES);
         // Science overlays swap ONLY the base layer (lazy-built off the
@@ -350,6 +351,20 @@ export function createFog(site, minimapEl, terrain) {
             }
         }
 
+        // Survey zone (Wave 9.5 recon scan mission): teal dashed ring
+        // above the fog, visible only when a survey mission is active.
+        if (extras?.surveyZone) {
+            const { px, py } = worldToPx(extras.surveyZone.x, extras.surveyZone.z);
+            const r = (extras.surveyZone.radius / worldSize) * MAP_RES;
+            displayCtx.strokeStyle = 'rgba(46, 196, 214, 0.7)';
+            displayCtx.lineWidth = 2;
+            displayCtx.setLineDash([6, 4]);
+            displayCtx.beginPath();
+            displayCtx.arc(px, py, r, 0, Math.PI * 2);
+            displayCtx.stroke();
+            displayCtx.setLineDash([]);
+        }
+
         // Built structures (Wave 7): known bases, above the fog like the
         // lab. Checkposts = hollow teal squares (smaller than the solid
         // lab square). The HQ is the site capital, so it gets its own
@@ -382,6 +397,25 @@ export function createFog(site, minimapEl, terrain) {
                     displayCtx.lineWidth = 1.5;
                     displayCtx.strokeRect(px - 4, py - 4, 8, 8);
                 }
+            }
+        }
+
+        // Repair bay markers (Wave 9.5): small orange diamonds at each
+        // bay position, above fog like other base structures. Amber to
+        // match the workshop's warm color and distinguish from the teal
+        // checkpost squares and lab square.
+        if (extras?.repairShops) {
+            for (const r of extras.repairShops) {
+                const { px, py } = worldToPx(r.x, r.z);
+                displayCtx.save();
+                displayCtx.translate(px, py);
+                displayCtx.rotate(Math.PI / 4);
+                displayCtx.fillStyle = '#e07b39';
+                displayCtx.strokeStyle = 'rgba(0,0,0,0.7)';
+                displayCtx.lineWidth = 1.5;
+                displayCtx.fillRect(-3, -3, 6, 6);
+                displayCtx.strokeRect(-3, -3, 6, 6);
+                displayCtx.restore();
             }
         }
 
@@ -462,8 +496,28 @@ export function createFog(site, minimapEl, terrain) {
         displayCtx.fillText('1 KM', bx + kmPx / 2 - 18, by - 9);
     }
 
+    /** Fraction of fog pixels revealed within a world-space circle.
+        Used by the recon scan mission to gauge survey progress. */
+    function revealedFraction(cx, cz, radius) {
+        const cell = worldSize / FOG_RES;
+        const rPx = Math.max(1, Math.round(radius / cell));
+        const cpx = Math.round(((cx / worldSize) + 0.5) * FOG_RES);
+        const cpz = Math.round(((cz / worldSize) + 0.5) * FOG_RES);
+        const img = fogCtx.getImageData(
+            Math.max(0, cpx - rPx), Math.max(0, cpz - rPx),
+            Math.min(FOG_RES, cpx + rPx) - Math.max(0, cpx - rPx),
+            Math.min(FOG_RES, cpz + rPx) - Math.max(0, cpz - rPx)
+        );
+        let total = 0, revealed = 0;
+        for (let i = 0; i < img.data.length; i += 4) {
+            total++;
+            if (img.data[i + 3] < 128) revealed++; // alpha < 50% = fog cleared
+        }
+        return total > 0 ? revealed / total : 0;
+    }
+
     return {
-        reveal, render, setOverlayMode,
+        reveal, render, setOverlayMode, revealedFraction,
         get overlayMode() { return currentMode; },
     };
 }

@@ -30,6 +30,7 @@ import { createOutposts } from './outposts.js';
 import { createChargepads } from './chargepad.js';
 import { createComms } from './comms.js';
 import { createMarsClock } from './mars-clock.js';
+import { createLabHologram } from './hologram.js';
 
 // Lift-drone logistics interaction envelope (see lab.js):
 const SLING_ALT = 8;      // m AGL — hover this low (or sit landed: alt 0
@@ -263,6 +264,10 @@ async function startGame(site) {
     const waypoint = createWaypoint(scene, terrain);
     const sound = createSound();
 
+    // Wave 9.5: Ariana hologram at the FIELD LAB — an AI-character
+    // projection that plays a scripted dialog on first approach.
+    const hologram = createLabHologram(scene, lab.stationPos);
+
     // Per-site objective chains (missions.js): the guided tutorial ships
     // as mission 'tutorial' (autostart, first-visit-only via its own
     // mc-mission-tutorial-done flag), re-runnable anytime from the menu
@@ -379,6 +384,7 @@ async function startGame(site) {
             if (cur) missions.skip(cur.missionId);
         },
         onReplayIntro: () => startIntro(),
+        onReplayHologram: () => hologram.replay(),
         onStartMission: (id) => startMission(id),
         missions: missions.menuEntries(),
         onSetOverlayMode: (mode) => fog.setOverlayMode(mode),
@@ -472,7 +478,7 @@ async function startGame(site) {
     // Debug/E2E handle (also used by the sampleHeight ground-truth check;
     // renderer/scene/camera exposed so tests on software-GL boxes can pause
     // the loop and capture canvas pixels via a same-task render+toDataURL).
-    window.__mc = { site, terrain, rover, drone: recon, recon, lift, humanoid, samples, renderer, scene, camera, camRig, units, env, effects, waypoint, sound, rocks, lab, sling, analysis, outposts, fog, colliders, missions, hazardZones, weather, dustDevils, wind, chargepads, comms, baseList, marsClock, setNightVision, get nightVision() { return nightVision; }, get intro() { return intro; } };
+    window.__mc = { site, terrain, rover, drone: recon, recon, lift, humanoid, samples, renderer, scene, camera, camRig, units, env, effects, waypoint, sound, rocks, lab, sling, analysis, outposts, fog, colliders, missions, hazardZones, weather, dustDevils, wind, chargepads, comms, baseList, marsClock, setNightVision, get nightVision() { return nightVision; }, get intro() { return intro; }, hologram };
 
     function applyUnitMode() {
         const active = units[activeIndex];
@@ -487,6 +493,7 @@ async function startGame(site) {
         applyUnitMode();
         sound.switchUnit();
         if (units[activeIndex].unit === lift) missions.advance('switch');
+        if (units[activeIndex].unit === recon) missions.advance('switch-recon');
     }
 
     function toggleLanding() {
@@ -718,6 +725,18 @@ async function startGame(site) {
         fog.reveal(lift.position.x, lift.position.z);
         if (active.kind === 'ground') fog.reveal(active.unit.position.x, active.unit.position.z);
 
+        // Wave 9.5: recon scan mission progress — the fraction of the
+        // survey zone that has been fog-revealed by the recon drone.
+        if (missions.currentAny()?.missionId === 'survey') {
+            const sz = site.surveyZone;
+            const frac = fog.revealedFraction(sz.x, sz.z, sz.radius);
+            missions.advance('scan-zone', frac);
+            // Step 3: return to base — advance when the recon docks
+            if (units[activeIndex].unit === recon && chargepads.padAt(recon.position)) {
+                missions.advance('return-base');
+            }
+        }
+
         // TGT: ground units chase uncollected samples; the lift drone's
         // objective is logistics — nearest field cache, or the LAB when loaded.
         let targetInfo = samples.nearestInfo(active.unit.position);
@@ -732,6 +751,7 @@ async function startGame(site) {
 
         // minimap: unit dots (active gets a heading tick), lab square, TGT
         // ring (a cache target rings its source sample's marker).
+        const surveyActive = missions.currentAny()?.missionId === 'survey';
         fog.render(samples.markers, units.map((u, i) => ({
             x: u.unit.position.x, z: u.unit.position.z,
             heading: u.unit.heading, active: i === activeIndex,
@@ -747,6 +767,10 @@ async function startGame(site) {
             // Wave 11: static soft-sand zones — visible on the map so
             // "BOGGED DOWN" never feels random.
             sand: hazardZones.zones,
+            // Wave 9.5: survey zone ring (visible while survey mission active)
+            surveyZone: surveyActive ? site.surveyZone : null,
+            // Wave 9.5: repair bays alongside every chargepad
+            repairShops: chargepads.repairPositions,
         });
         waypoint.update(dt, targetInfo);
         sling.update(dt, lift.position);
@@ -755,6 +779,35 @@ async function startGame(site) {
         comms.update(dt);
         analysis.update(dt);
         dustDevils.update(dt);
+        // Wave 9.5: Ariana hologram dialog tick — proximity-triggered,
+        // auto-advances through the script lines at ~3.5s intervals.
+        hologram.update(dt, active.unit.position,
+            (text) => hud.setObjective(`▸ ${text}`),
+            () => hud.setObjective(null));
+        // Wave 9.5: humanoid EVA tether — anchor is the nearest chargepad
+        // or the rover, whichever is closer and within TETHER_LENGTH (80m).
+        // If no anchor found within range, the tether is detached.
+        const hu = humanoid;
+        let tetherAnchor = null;
+        const hp = hu.position;
+        // Check rover first (both move, so the rover is the more dynamic anchor)
+        const roverDist = rover.position.distanceTo(hp);
+        if (roverDist <= 80) tetherAnchor = rover.position;
+        // Then check nearest chargepad (static anchor — fallback)
+        const nearestPad = chargepads.nearestTo(hp.x, hp.z);
+        if (nearestPad) {
+            const padDist = Math.hypot(nearestPad.x - hp.x, nearestPad.z - hp.z);
+            if (!tetherAnchor || padDist < roverDist) {
+                if (padDist <= 80) tetherAnchor = new THREE.Vector3(nearestPad.x, terrain.sampleHeight(nearestPad.x, nearestPad.z), nearestPad.z);
+            }
+        }
+        hu.setTether(tetherAnchor);
+        if (tetherAnchor && active.unit === hu) {
+            effects.updateTether(hu.tetherPoint, tetherAnchor, hu.tetherTaut);
+        } else {
+            effects.updateTether(null, null);
+        }
+
         effects.update(dt, active, speedNow, env.daylight());
         const engineNorm = active.kind === 'fly'
             ? (active.unit.landed ? 0 : Math.max(0.35, speedNow / active.unit.maxSpeed))
@@ -801,6 +854,8 @@ async function startGame(site) {
             hud.setHazard({ type: 'rover-down', pct: recPct });
         } else if (active.unit === rover && rover.bogMeter > 0.3) {
             hud.setHazard({ type: 'sinking' });
+        } else if (active.unit === humanoid && humanoid.tetherTaut) {
+            hud.setHazard({ type: 'tether-taut' });
         } else {
             hud.setHazard(active.unit.inHazard
                 ?? (weather.intensity > 0.15 ? { type: 'dust-storm' } : null));
@@ -829,7 +884,10 @@ async function startGame(site) {
         if (menuOpen && !prevMenuOpen) hud.setBases(baseEntries(active.unit.position));
         prevMenuOpen = menuOpen;
         if (menuOpen) missions.advance('archive');
-        const objective = missions.currentAny();
+        // Wave 9.5: the Ariana hologram dialog preempts the mission
+        // objective banner while active (it uses the same display slot).
+        const hologramActive = hologram.active;
+        const objective = hologramActive ? null : missions.currentAny();
         hud.setObjective(objective
             ? `${objective.stepNum}/${objective.total} · ${objective.step.text}`
             : null);

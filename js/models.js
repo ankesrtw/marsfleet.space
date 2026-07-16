@@ -68,6 +68,14 @@ const STATIC_MODELS = {
     // axis), so it rides the STATIC_MODELS footprint-scaling path; footprint
     // ~0.8m keeps the old procedural box's read (0.56m + lid) at pickup scale.
     'sample-container': { url: 'assets/models/sample-container.glb', yaw: 0, footprint: 0.8, doubleSide: true },
+    // Wave 9.5: repair bay workshop beside every chargepad — a small
+    // open-fronted shelter with tools visible inside. Footprint ~6m
+    // wide so it reads as a workshop bay alongside the 7m pad disc.
+    'repair-bay': { url: 'assets/models/repair-bay.glb', yaw: 0, footprint: 6, doubleSide: true },
+    // Wave 9.5: Ariana hologram character at the FIELD LAB. Person-scale
+    // static figure (~1.2m footprint) with a custom holographic shader
+    // applied in hologram.js after the standard model swap.
+    'ariana-hologram': { url: 'assets/models/ariana.glb', yaw: 0, footprint: 1.2, doubleSide: false },
 };
 
 // SIGNAL brand accent (cyan-teal — distinct from the amber logo mark) and

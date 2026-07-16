@@ -46,6 +46,15 @@ const MISSIONS = {
             { type: 'action', id: 'archive', text: 'OPEN THE MENU AND CHECK THE SCIENCE ARCHIVE' },
         ],
     },
+    survey: {
+        id: 'survey',
+        title: 'SURVEY — AERIAL RECONNAISSANCE',
+        steps: [
+            { type: 'action', id: 'switch-recon', text: 'SWITCH TO THE RECON DRONE (TAB)' },
+            { type: 'survey', id: 'scan-zone', text: 'SCAN THE DESIGNATED ZONE', target: 0.65 },
+            { type: 'action', id: 'return-base', text: 'RETURN TO BASE' },
+        ],
+    },
 };
 
 const doneKey = (id) => `mc-mission-${id}-done`;

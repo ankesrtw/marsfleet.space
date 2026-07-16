@@ -54,7 +54,11 @@ export const SITES = {
         spawn: { x: 2127, z: 615, heading: Math.PI / 4 },
         // Objective chains offered here (missions.js keys). Sites without
         // the field simply have none — Wave 4 pattern, Jezero-first.
-        missions: ['tutorial'],
+        // Survey zone center/radius for the recon scan mission (wave 9.5).
+        // Positioned over the Séítah dune margin — a large, interesting area
+        // that rewards aerial survey.
+        surveyZone: { x: 1350, z: 480, radius: 200 },
+        missions: ['tutorial', 'survey'],
         // Wave 7 base-building: once ALL missions above are complete, the
         // Signal Headquarters structure builds near the FIELD LAB
         // (outposts.js resolves the actual world position at runtime —
