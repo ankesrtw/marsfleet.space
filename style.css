@@ -1181,6 +1181,49 @@ html, body {
     }
 }
 
+/* ---- Wave 10 desktop reshuffle (#14/#15) ----
+   The map column moves LEFT (minimap -> compass -> GPS, today's right
+   stack mirrored, clock strip rides inside the minimap), telemetry takes
+   the vacated top-right, GEAR drops into the freed bottom-right corner,
+   and the drone board docks bottom-left above the inventory — clearing
+   bottom-center, where the chase cam frames the unit. Mobile keeps its
+   right-rail layout from the coarse media block above; must stay LAST in
+   the HUD cascade so it outranks every base dock. */
+@media (min-width: 900px) and (pointer: fine) {
+    .mars-hud__minimap {
+        right: auto;
+        left: 12px;
+    }
+
+    .mars-hud__compass {
+        right: auto;
+        left: 12px;
+    }
+
+    .mars-hud__gps {
+        right: auto;
+        left: 12px;
+    }
+
+    .mars-hud__telemetry {
+        bottom: auto;
+        top: max(70px, calc(env(safe-area-inset-top) + 60px));
+    }
+
+    .mars-hud__gear {
+        bottom: max(12px, env(safe-area-inset-bottom));
+    }
+
+    /* GEAR is rover-only and the drone board drone-only, so the two
+       docks never show together — but the board still avoids the
+       bottom-right corner so it can't shadow the gear's muscle memory. */
+    .mars-hud__dronectl {
+        left: 12px;
+        transform: none;
+        bottom: max(148px, calc(env(safe-area-inset-bottom) + 136px));
+    }
+}
+
 /* ---- Touch controls ---- */
 
 .mars-touch-zone {
