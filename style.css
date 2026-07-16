@@ -100,6 +100,70 @@ html, body {
     }
 }
 
+/* Wave 10.4: top-bar OVERLAYS dropdown — desktop-only fast path to the
+   menu's SCIENCE OVERLAYS plus a live sample tally (the menu section
+   stays; redundant access is deliberate, same as GEAR/dronectl). Hidden
+   on phones: the 390px bar is already full (see the NV note above). */
+.mars-hud__drop {
+    position: relative;
+    display: none;
+}
+
+@media (min-width: 900px) {
+    .mars-hud--desktop .mars-hud__drop {
+        display: block;
+    }
+}
+
+.mars-hud__drop-panel {
+    display: none;
+    position: absolute;
+    top: calc(100% + 6px);
+    left: 0;
+    min-width: 200px;
+    background: rgba(20, 12, 8, 0.92);
+    border: 1px solid #7a4f30;
+    border-radius: 8px;
+    padding: 10px 12px;
+    pointer-events: auto;
+    z-index: 25;
+}
+
+.mars-hud__drop-panel[data-open="true"] {
+    display: block;
+}
+
+.mars-hud__drop-title {
+    font-size: 0.58rem;
+    letter-spacing: 0.14em;
+    opacity: 0.6;
+    margin-bottom: 6px;
+}
+
+.mars-hud__drop-modes {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+}
+
+.mars-hud__drop-modes .mars-btn {
+    padding: 6px 10px;
+    font-size: 0.7rem;
+}
+
+.mars-hud__drop-modes .mars-btn.is-active {
+    border-color: #e0b95e;
+    color: #e0b95e;
+}
+
+.mars-hud__drop-samples {
+    margin-top: 8px;
+    font-size: 0.62rem;
+    letter-spacing: 0.08em;
+    color: #e0b95e;
+    opacity: 0.9;
+}
+
 /* top-bar NV button lights up in its own phosphor while the mode is live */
 .mars-btn--nv[data-on="true"] {
     border-color: #5ee08a;

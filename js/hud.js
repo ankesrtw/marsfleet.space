@@ -27,6 +27,19 @@ export function createHud(rootEl, { site, onSwitchUnit, onCollect, onToggleSfx, 
                 <button class="mars-btn mars-btn--switch" id="mc-switch">SWITCH UNIT<span class="mars-btn__hint">[TAB]</span></button>
                 <div class="mars-hud__unit" id="mc-active-unit">ROVER</div>
                 <button class="mars-btn mars-btn--nv" id="mc-nv">NV<span class="mars-btn__hint">[N]</span></button>
+                <div class="mars-hud__drop" id="mc-drop">
+                    <button class="mars-btn mars-btn--drop" id="mc-drop-btn">OVERLAYS ▾</button>
+                    <div class="mars-hud__drop-panel" id="mc-drop-panel" data-open="false">
+                        <div class="mars-hud__drop-title">MINIMAP BASE</div>
+                        <div class="mars-hud__drop-modes" id="mc-drop-modes">
+                            <button class="mars-btn" data-mode="photo">PHOTO</button>
+                            <button class="mars-btn" data-mode="elevation">ELEVATION</button>
+                            <button class="mars-btn" data-mode="slope">SLOPE</button>
+                            <button class="mars-btn" data-mode="path">PATH</button>
+                        </div>
+                        <div class="mars-hud__drop-samples" id="mc-drop-samples">SAMPLES —</div>
+                    </div>
+                </div>
                 <button class="mars-btn mars-btn--menu" id="mc-menu-btn">MENU<span class="mars-btn__hint">[M]</span></button>
                 <button class="mars-btn mars-btn--sfx" id="mc-sfx">SFX ${sfxEnabled ? 'ON' : 'OFF'}</button>
             </div>
@@ -473,7 +486,9 @@ export function createHud(rootEl, { site, onSwitchUnit, onCollect, onToggleSfx, 
     // SCIENCE OVERLAYS mode buttons: hud only tracks the active chip;
     // fog.js owns the mode + its persistence. main.js re-syncs the chip
     // from the persisted mode right after boot via setOverlayMode().
-    const overlayBtns = [...rootEl.querySelectorAll('#mc-overlay-modes button')];
+    // Wave 10.4: the top-bar dropdown mirrors the menu section — SAME
+    // handler + active-state list, just a faster second entry point.
+    const overlayBtns = [...rootEl.querySelectorAll('#mc-overlay-modes button, #mc-drop-modes button')];
     function setOverlayMode(mode) {
         for (const b of overlayBtns) b.classList.toggle('is-active', b.dataset.mode === mode);
     }
@@ -484,6 +499,20 @@ export function createHud(rootEl, { site, onSwitchUnit, onCollect, onToggleSfx, 
         });
     }
     setOverlayMode('photo');
+
+    // Dropdown open/close — closes on any press outside it. The panel's
+    // contents are static buttons (never rebuilt per frame), so clicks
+    // land reliably (the Wave 9 rebuild-breaks-clicks lesson).
+    const dropWrap = rootEl.querySelector('#mc-drop');
+    const dropPanel = rootEl.querySelector('#mc-drop-panel');
+    rootEl.querySelector('#mc-drop-btn').addEventListener('click', () => {
+        dropPanel.dataset.open = String(dropPanel.dataset.open !== 'true');
+    });
+    document.addEventListener('pointerdown', (e) => {
+        if (dropPanel.dataset.open === 'true' && !dropWrap.contains(e.target)) {
+            dropPanel.dataset.open = 'false';
+        }
+    });
 
     /** Gear readout follows the active unit; null hides (humanoid). */
     function setGear(label) {
@@ -602,8 +631,12 @@ export function createHud(rootEl, { site, onSwitchUnit, onCollect, onToggleSfx, 
         labCount.textContent = `${delivered}/${total}`;
     }
 
+    const dropSamples = rootEl.querySelector('#mc-drop-samples');
     function setInventory(items, deliveredIds, analyzedIds) {
         invCount.textContent = items.length;
+        // Wave 10.4 dropdown tally — same data, glanceable from the top bar
+        dropSamples.textContent =
+            `SAMPLES ${items.length}/${site.samples?.length ?? 0} · ANALYZED ${analyzedIds?.size ?? 0}`;
         invList.replaceChildren(...items.map((i) => {
             const li = document.createElement('li');
             li.textContent = analyzedIds?.has(i.id) ? `${i.name} ✦`
