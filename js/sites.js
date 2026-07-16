@@ -55,11 +55,11 @@ export const SITES = {
         // Objective chains offered here (missions.js keys). Sites without
         // the field simply have none — Wave 4 pattern, Jezero-first.
         missions: ['tutorial'],
-        // Wave 7 base-building: once ALL missions above are complete, a
-        // Marsapiens Headquarters structure builds near the FIELD LAB
+        // Wave 7 base-building: once ALL missions above are complete, the
+        // Signal Headquarters structure builds near the FIELD LAB
         // (outposts.js resolves the actual world position at runtime —
         // it needs the lab's placed padPos, not known at config time).
-        hq: { name: 'Marsapiens Headquarters' },
+        hq: { name: 'Signal Headquarters' },
         // Wave 4 hazards (hazardZones.js / weather.js) — additive, sites
         // without the field have none. softSand circles sit on real
         // aeolian ground: the Séítah dune margins (the rippled sand that

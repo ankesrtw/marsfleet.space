@@ -151,7 +151,7 @@ export function createHud(rootEl, { site, onSwitchUnit, onCollect, onToggleSfx, 
                         <li class="mars-menu__lab-empty">No base-building charted for this site yet.</li>
                     </ul>
                     <p class="mars-menu__note">Analyzing a flagged sample establishes a checkpost at its
-                    site. Complete every mission to raise the Marsapiens Headquarters beside the FIELD LAB.
+                    site. Complete every mission to raise the Signal Headquarters beside the FIELD LAB.
                     Structures are earned from the archive and mission record, so they survive RESET MISSION.</p>
                 </div>
                 <div class="mars-menu__section">
