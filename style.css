@@ -100,6 +100,15 @@ html, body {
     }
 }
 
+/* Wave 10 carry-over: landscape phones have bar room the 390px portrait
+   bar never did — NV gets its mobile home there. Portrait keeps the
+   menu-only path (and the rotate prompt pushes landscape anyway). */
+@media (orientation: landscape) and (pointer: coarse) and (min-width: 700px) {
+    .mars-hud__top .mars-btn--nv {
+        display: flex;
+    }
+}
+
 /* Wave 10.1 (#13): phones play landscape. screen.orientation.lock() is
    unsupported on iOS Safari and fullscreen-gated elsewhere, so the
    dependable path is this CSS-only prompt: portrait touch viewports get
@@ -426,6 +435,17 @@ html, body {
 @media (min-width: 900px) and (pointer: fine) {
     .mars-hud__gps {
         display: block;
+    }
+}
+
+/* Wave 10 carry-over: landscape phones dock the GPS card BESIDE the
+   right-rail minimap — landscape has horizontal room where the vertical
+   rails are full. Portrait keeps the compass ticks as the only carrier. */
+@media (orientation: landscape) and (pointer: coarse) and (min-width: 700px) {
+    .mars-hud__gps {
+        display: block;
+        right: 160px;
+        top: max(70px, calc(env(safe-area-inset-top) + 60px));
     }
 }
 

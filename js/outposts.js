@@ -49,6 +49,48 @@ const LABEL_REF = 55;     // m — reference camera distance
 const LABEL_MIN = 0.7;
 const LABEL_MAX = 3;
 
+/** Camera-distance scale factor for a name plate (see LABEL_* above). */
+export function plateScale(dist) {
+    return Math.min(LABEL_MAX, Math.max(LABEL_MIN, dist / LABEL_REF));
+}
+
+/** Canvas-textured billboard plate: base name over a dark chip with the
+    brand-cyan rule under it, matching the HUD's card language. Sprites
+    always face the camera, so no per-frame orientation work. Exported
+    (Wave 10) so the FIELD LAB wears the same plate language. */
+export function makeLabel(text) {
+    const canvas = document.createElement('canvas');
+    const ctx = canvas.getContext('2d');
+    const font = '600 44px ui-monospace, SFMono-Regular, Menlo, monospace';
+    ctx.font = font;
+    const padX = 26, padY = 16;
+    canvas.width = Math.ceil(ctx.measureText(text).width) + padX * 2;
+    canvas.height = 44 + padY * 2;
+
+    // sizing the canvas resets its 2D state — restyle after the resize
+    ctx.font = font;
+    ctx.textBaseline = 'middle';
+    ctx.fillStyle = 'rgba(20, 12, 8, 0.78)';
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    ctx.fillStyle = '#2ec4d6';
+    ctx.fillRect(0, canvas.height - 5, canvas.width, 5);
+    ctx.fillStyle = '#f2ece3';
+    ctx.fillText(text, padX, canvas.height / 2 - 2);
+
+    const tex = new THREE.CanvasTexture(canvas);
+    tex.colorSpace = THREE.SRGBColorSpace;
+    const sprite = new THREE.Sprite(new THREE.SpriteMaterial({
+        map: tex, transparent: true, depthWrite: false,
+        // fog on: a plate 3km away must not float out of the haze as a
+        // crisp readable chip — it fades with the structure it names
+        fog: true,
+    }));
+    const h = LABEL_H;
+    const w = h * (canvas.width / canvas.height);
+    sprite.scale.set(w, h, 1);
+    return { sprite, w, h };
+}
+
 export function createOutposts(scene, site, terrain, rocks, colliders, labPos, onBuilt, blockedAt) {
     const defs = (site.samples ?? []).filter((s) => s.outpost);
     const built = new Map();  // id -> { id, name, kind, x, z, group }
@@ -102,42 +144,6 @@ export function createOutposts(scene, site, terrain, rocks, colliders, labPos, o
             g.add(cabin, roof, mast);
         }
         return g;
-    }
-
-    /** Canvas-textured billboard plate: base name over a dark chip with the
-        brand-cyan rule under it, matching the HUD's card language. Sprites
-        always face the camera, so no per-frame orientation work. */
-    function makeLabel(text) {
-        const canvas = document.createElement('canvas');
-        const ctx = canvas.getContext('2d');
-        const font = '600 44px ui-monospace, SFMono-Regular, Menlo, monospace';
-        ctx.font = font;
-        const padX = 26, padY = 16;
-        canvas.width = Math.ceil(ctx.measureText(text).width) + padX * 2;
-        canvas.height = 44 + padY * 2;
-
-        // sizing the canvas resets its 2D state — restyle after the resize
-        ctx.font = font;
-        ctx.textBaseline = 'middle';
-        ctx.fillStyle = 'rgba(20, 12, 8, 0.78)';
-        ctx.fillRect(0, 0, canvas.width, canvas.height);
-        ctx.fillStyle = '#2ec4d6';
-        ctx.fillRect(0, canvas.height - 5, canvas.width, 5);
-        ctx.fillStyle = '#f2ece3';
-        ctx.fillText(text, padX, canvas.height / 2 - 2);
-
-        const tex = new THREE.CanvasTexture(canvas);
-        tex.colorSpace = THREE.SRGBColorSpace;
-        const sprite = new THREE.Sprite(new THREE.SpriteMaterial({
-            map: tex, transparent: true, depthWrite: false,
-            // fog on: a plate 3km away must not float out of the haze as a
-            // crisp readable chip — it fades with the structure it names
-            fog: true,
-        }));
-        const h = LABEL_H;
-        const w = h * (canvas.width / canvas.height);
-        sprite.scale.set(w, h, 1);
-        return { sprite, w, h };
     }
 
     function construct({ id, name, kind, x, z, animate }) {
@@ -262,8 +268,7 @@ export function createOutposts(scene, site, terrain, rocks, colliders, labPos, o
         if (camera && labels.length) {
             camera.getWorldPosition(_camPos);
             for (const l of labels) {
-                const d = _camPos.distanceTo(l.sprite.getWorldPosition(_v));
-                const s = Math.min(LABEL_MAX, Math.max(LABEL_MIN, d / LABEL_REF));
+                const s = plateScale(_camPos.distanceTo(l.sprite.getWorldPosition(_v)));
                 l.sprite.scale.set(l.w * s, l.h * s, 1);
             }
         }

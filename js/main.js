@@ -750,7 +750,7 @@ async function startGame(site) {
         });
         waypoint.update(dt, targetInfo);
         sling.update(dt, lift.position);
-        lab.update(dt);
+        lab.update(dt, camera);
         outposts.update(dt, camera);   // camera: name plates scale with range
         comms.update(dt);
         analysis.update(dt);

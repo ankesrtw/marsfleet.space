@@ -18,6 +18,7 @@
 
 import * as THREE from 'three';
 import { attachStaticModel } from './models.js';
+import { makeLabel, plateScale } from './outposts.js';
 
 const PAD_RADIUS = 5.5;
 const DELIVER_RADIUS = 7.5;   // horizontal "over the pad" test
@@ -104,6 +105,12 @@ export function createLab(scene, site, terrain, rocks) {
     beacon.position.y = 30;
     group.add(beacon);
 
+    // Wave 10 carry-over: the origin base finally wears a name plate —
+    // same canvas-chip language as the outposts', above the station dock.
+    const plate = makeLabel('FIELD LAB');
+    plate.sprite.position.set(-STATION_OFFSET, 10.5, 0);
+    group.add(plate.sprite);
+
     scene.add(group);
 
     const delivered = [];
@@ -131,9 +138,17 @@ export function createLab(scene, site, terrain, rocks) {
     }
 
     let t = 0;
-    function update(dt) {
+    const _camPos = new THREE.Vector3();
+    const _v = new THREE.Vector3();
+    function update(dt, camera) {
         t += dt;
         beaconMat.opacity = 0.16 + 0.08 * (0.5 + 0.5 * Math.sin(t * 1.6));
+        // plate holds a constant on-screen size, same rule as outposts.js
+        if (camera) {
+            camera.getWorldPosition(_camPos);
+            const s = plateScale(_camPos.distanceTo(plate.sprite.getWorldPosition(_v)));
+            plate.sprite.scale.set(plate.w * s, plate.h * s, 1);
+        }
     }
 
     // Solid-structure footprints for the collision registry (colliders.js):
