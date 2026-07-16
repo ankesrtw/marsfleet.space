@@ -42,10 +42,12 @@ const BUILD_SECS = 3.2;
 // is therefore stretched with camera distance, clamped so it neither shrinks
 // away nor swallows the structure up close. LABEL_REF is the distance at
 // which a plate renders at its true LABEL_H metres.
-const LABEL_H = 3.0;      // m tall at LABEL_REF
+// Wave 11 (playtest): 3.0m plates scaling to 7x read as billboards —
+// smaller base size and a tighter far-clamp keep them as name TAGS.
+const LABEL_H = 1.8;      // m tall at LABEL_REF
 const LABEL_REF = 55;     // m — reference camera distance
-const LABEL_MIN = 0.85;
-const LABEL_MAX = 7;
+const LABEL_MIN = 0.7;
+const LABEL_MAX = 3;
 
 export function createOutposts(scene, site, terrain, rocks, colliders, labPos, onBuilt, blockedAt) {
     const defs = (site.samples ?? []).filter((s) => s.outpost);
