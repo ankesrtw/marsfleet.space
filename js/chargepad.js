@@ -66,14 +66,18 @@ export function createChargepads(scene, terrain, rocks) {
         g.add(inner);
         attachStaticModel(inner, 'chargepad');
 
-        // Status ring — dim idle, bright + pulsing while something charges
+        // Status ring — dim idle, bright + pulsing while something charges.
+        // Wave 11: sits OUTSIDE the deck at the DOCK_R trigger perimeter, on
+        // the dark terrain — an additive glow is invisible on the bright GLB
+        // deck (it washed out the moment chargepad.glb landed), and out here
+        // it doubles as the "land inside this circle to dock" marker.
         const ringMat = new THREE.MeshBasicMaterial({
             color: 0x2ec4d6, transparent: true, opacity: 0.35,
             blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide,
         });
-        const ring = new THREE.Mesh(new THREE.RingGeometry(PAD_R * 0.62, PAD_R * 0.82, 28), ringMat);
+        const ring = new THREE.Mesh(new THREE.RingGeometry(DOCK_R - 0.1, DOCK_R + 0.55, 36), ringMat);
         ring.rotation.x = -Math.PI / 2;
-        ring.position.y = 0.14;
+        ring.position.y = 0.22;
         g.add(ring);
 
         group.add(g);
