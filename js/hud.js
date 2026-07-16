@@ -639,6 +639,8 @@ export function createHud(rootEl, { site, onSwitchUnit, onCollect, onToggleSfx, 
     }
 
     const dropSamples = rootEl.querySelector('#mc-drop-samples');
+    // boot state — setInventory only runs on the first inventory CHANGE
+    dropSamples.textContent = `SAMPLES 0/${site.samples?.length ?? 0} · ANALYZED 0`;
     function setInventory(items, deliveredIds, analyzedIds) {
         invCount.textContent = items.length;
         // Wave 10.4 dropdown tally — same data, glanceable from the top bar

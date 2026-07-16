@@ -1308,6 +1308,19 @@ html, body {
     }
 }
 
+/* Landscape phones: the portrait lift (45vw above the stick zone) puts
+   the chip ON the telemetry card when the viewport is wider than tall —
+   dock it beside the telemetry instead, above the stick zones' reach. */
+@media (orientation: landscape) and (pointer: coarse) and (min-width: 700px) {
+    .mars-hud__inventory {
+        bottom: auto;
+        top: max(70px, calc(env(safe-area-inset-top) + 60px));
+        /* the telemetry card renders 208px wide (186 max-width is
+           content-box + 20 padding + 2 border) — clear its real edge */
+        left: 228px;
+    }
+}
+
 /* ---- Wave 10 desktop reshuffle (#14/#15) ----
    The map column moves LEFT (minimap -> compass -> GPS, today's right
    stack mirrored, clock strip rides inside the minimap), telemetry takes
