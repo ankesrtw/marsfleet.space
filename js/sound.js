@@ -173,6 +173,8 @@ export function createSound() {
         },
         get enabled() { return enabled; },
         collect: () => blip([660, 990], 0.14, 0.2),
+        // Wave 12.13: camera shutter — two tight clicks, no melodic tail.
+        shutter: () => blip([1250, 1850], 0.05, 0.16, 'triangle'),
         sling: () => blip([520, 780], 0.12, 0.18),
         deliver: () => blip([660, 990, 1320], 0.13, 0.2),
         analysisDone: () => blip([880, 1175, 1568, 1175], 0.15, 0.18),

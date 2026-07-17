@@ -813,6 +813,41 @@ html, body {
     letter-spacing: 0.06em;
 }
 
+/* Wave 12.13: SURVEY IMAGING album — captured-frame thumbnails grid */
+.mars-menu__photos {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+    gap: 10px;
+}
+
+.mars-menu__photos figure {
+    margin: 0;
+}
+
+.mars-menu__photos img {
+    display: block;
+    width: 100%;
+    border: 1px solid rgba(46, 196, 214, 0.35);
+    border-radius: 4px;
+}
+
+.mars-menu__photos figcaption {
+    display: flex;
+    flex-direction: column;
+    margin-top: 4px;
+}
+
+.mars-menu__photos figcaption b {
+    font-size: 0.72rem;
+    letter-spacing: 0.08em;
+}
+
+.mars-menu__photos figcaption span {
+    font-size: 0.62rem;
+    opacity: 0.5;
+    letter-spacing: 0.06em;
+}
+
 .mars-menu__controls {
     list-style: none;
     margin: 0;
@@ -1155,6 +1190,17 @@ html, body {
     justify-content: center;
 }
 
+/* Wave 12.13: recon survey-imaging button (dronectl cluster). Hidden for
+   every unit but the recon; the label carries the in-range target name. */
+.mars-btn--photo {
+    min-width: 110px;
+    justify-content: center;
+}
+
+.mars-btn--photo[data-visible="false"] {
+    display: none;
+}
+
 /* board fold toggle: mobile-only affordance (desktop has room) */
 .mars-dronectl__toggle {
     display: none;
@@ -1247,7 +1293,8 @@ html, body {
 
     .mars-hud__dronectl[data-collapsed="true"] .mars-dronectl__alt,
     .mars-hud__dronectl[data-collapsed="true"] .mars-dronectl__stat,
-    .mars-hud__dronectl[data-collapsed="true"] .mars-btn--land {
+    .mars-hud__dronectl[data-collapsed="true"] .mars-btn--land,
+    .mars-hud__dronectl[data-collapsed="true"] .mars-btn--photo {
         display: none;
     }
 }

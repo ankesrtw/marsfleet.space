@@ -32,6 +32,7 @@ import { createChargepads } from './chargepad.js';
 import { createComms } from './comms.js';
 import { createMarsClock } from './mars-clock.js';
 import { createLabHologram } from './hologram.js';
+import { createPhotos, MIN_ALT as PHOTO_MIN_ALT } from './photos.js';
 
 // Lift-drone logistics interaction envelope (see lab.js):
 const SLING_ALT = 8;      // m AGL — hover this low (or sit landed: alt 0
@@ -291,6 +292,10 @@ async function startGame(site) {
     holoSpot.y = terrain.sampleHeight(holoSpot.x, holoSpot.z);
     const hologram = createLabHologram(scene, holoSpot);
 
+    // Wave 12.13: recon survey imaging — named photo targets, captured
+    // frames filed in the menu album (photos.js).
+    const photos = createPhotos(site);
+
     // Per-site objective chains (missions.js): the guided tutorial ships
     // as mission 'tutorial' (autostart, first-visit-only via its own
     // mc-mission-tutorial-done flag), re-runnable anytime from the menu
@@ -391,6 +396,7 @@ async function startGame(site) {
         site,
         onSwitchUnit: () => switchUnit(),
         onCollect: () => tryCollect(),
+        onPhoto: () => tryPhoto(),
         onToggleSfx: () => sound.toggle(),
         sfxEnabled: sound.enabled,
         onCycleGear: () => units[activeIndex].unit.cycleGear?.() ?? null,
@@ -469,6 +475,7 @@ async function startGame(site) {
 
     hud.setLab(0, site.samples.length);
     hud.setArchive(analysis.archive); // persisted results from past sessions
+    hud.setPhotoAlbum(photos.album);  // persisted survey images (Wave 12.13)
     hud.setOutposts(outposts.list()); // built + still-locked structures
     hud.setBases(baseEntries(rover.position)); // travel list (re-ranged on menu open)
 
@@ -521,7 +528,7 @@ async function startGame(site) {
     // Debug/E2E handle (also used by the sampleHeight ground-truth check;
     // renderer/scene/camera exposed so tests on software-GL boxes can pause
     // the loop and capture canvas pixels via a same-task render+toDataURL).
-    window.__mc = { site, terrain, rover, drone: recon, recon, lift, humanoid, van, samples, renderer, scene, camera, camRig, units, env, effects, waypoint, sound, rocks, lab, sling, analysis, outposts, fog, colliders, missions, hazardZones, weather, dustDevils, wind, chargepads, comms, baseList, marsClock, setNightVision, get nightVision() { return nightVision; }, get intro() { return intro; }, hologram };
+    window.__mc = { site, terrain, rover, drone: recon, recon, lift, humanoid, van, samples, renderer, scene, camera, camRig, units, env, effects, waypoint, sound, rocks, lab, sling, analysis, outposts, fog, colliders, missions, hazardZones, weather, dustDevils, wind, chargepads, comms, baseList, marsClock, setNightVision, get nightVision() { return nightVision; }, get intro() { return intro; }, hologram, photos, tryPhoto };
 
     function applyUnitMode() {
         const active = units[activeIndex];
@@ -597,6 +604,28 @@ async function startGame(site) {
         camRig.update(active.unit.position, active.unit.heading, active.kind, true); // snap, no fly-through
         hud.toast(`▸ ARRIVED — ${base.name.toUpperCase()}`);
         sound.switchUnit();
+    }
+
+    // Wave 12.13: recon survey imaging — P / HUD PHOTO button. A capture
+    // is a real frame grab (photos.js); only the FIRST capture of a spot
+    // per session advances the photo mission's counter.
+    function tryPhoto() {
+        const active = units[activeIndex];
+        if (active.unit !== recon || active.dead) return;
+        if (recon.landed || recon.alt < PHOTO_MIN_ALT) {
+            hud.toast(`▸ AERIAL IMAGING ONLY — CLIMB ABOVE ${PHOTO_MIN_ALT}M`);
+            return;
+        }
+        const spot = photos.inRange(recon.position);
+        if (!spot) {
+            hud.toast('▸ NO SURVEY TARGET IN RANGE');
+            return;
+        }
+        const { first } = photos.capture(renderer, scene, camera, spot, marsClock.read());
+        sound.shutter();
+        hud.setPhotoAlbum(photos.album);
+        hud.toast(`▸ IMAGE CAPTURED: ${spot.name.toUpperCase()} (${photos.capturedCount}/${photos.total})`);
+        if (first) missions.advance('photo:' + spot.id);
     }
 
     function tryCollect() {
@@ -873,13 +902,18 @@ async function startGame(site) {
                 if (fog.revealedFraction(sz.x, sz.z, sz.radius) >= 0.65) zonesScanned++;
             }
             missions.advance('scan-zone', zonesScanned);
-            // "Base" includes the deployed van — it IS the base out there.
-            const atVanDock = van.deployed && van.padPos
-                && Math.hypot(van.position.x - recon.position.x,
-                    van.position.z - recon.position.z) <= van.dockRadius;
-            if (recon.landed && (chargepads.padAt(recon.position) || atVanDock)) {
-                missions.advance('return-base');
-            }
+        }
+        // Wave 12.13: photo mission active — drives TGT, minimap glyphs and
+        // the (n/total) tally below.
+        const photoOn = site.photoSpots?.length && missions.activeMissions.includes('photo');
+        // 'return-base' ends BOTH recon chains (survey + photo), so it fires
+        // outside their gates — advance() is a no-op unless a chain waits.
+        // "Base" includes the deployed van — it IS the base out there.
+        const atVanDock = van.deployed && van.padPos
+            && Math.hypot(van.position.x - recon.position.x,
+                van.position.z - recon.position.z) <= van.dockRadius;
+        if (recon.landed && (chargepads.padAt(recon.position) || atVanDock)) {
+            missions.advance('return-base');
         }
 
         // TGT: ground units chase uncollected samples; the lift drone's
@@ -892,6 +926,11 @@ async function startGame(site) {
                 const c = samples.nearestContainer(active.unit.position, Infinity);
                 if (c) targetInfo = pseudoTarget(`${c.id}-cache`, `${c.name} CACHE`, c.mesh.position.x, c.mesh.position.z, active.unit.position);
             }
+        } else if (active.unit === recon && photoOn) {
+            // Wave 12.13: on the imaging sortie the recon's TGT chases the
+            // nearest unimaged photo target, not samples it can't collect.
+            const ps = photos.nearestPending(recon.position);
+            if (ps) targetInfo = pseudoTarget(`photo-${ps.id}`, `${ps.name} [PHOTO]`, ps.x, ps.z, recon.position);
         }
 
         // minimap: unit dots (active gets a heading tick), lab square, TGT
@@ -916,6 +955,8 @@ async function startGame(site) {
             surveyZones: surveyOn ? site.surveyZones : null,
             // Wave 9.5: repair bays alongside every chargepad
             repairShops: chargepads.repairPositions,
+            // Wave 12.13: photo targets (camera glyphs, dim once imaged)
+            photoSpots: photoOn ? photos.spots : null,
         });
         waypoint.update(dt, targetInfo);
         sling.update(dt, lift.position);
@@ -1086,7 +1127,9 @@ async function startGame(site) {
             // Wave 12: the multi-zone scan step gets a live x/y tally —
             // "SCAN ALL SCOUT ZONES" alone reads as one zone forever.
             const tally = objective?.step.id === 'scan-zone' && surveyOn
-                ? ` (${zonesScanned}/${site.surveyZones.length})` : '';
+                ? ` (${zonesScanned}/${site.surveyZones.length})`
+                : objective?.step.id === 'photo-count' && photoOn
+                    ? ` (${photos.capturedCount}/${photos.total})` : '';
             hud.setObjective(objective
                 ? `${objective.stepNum}/${objective.total} · ${objective.step.text}${tally}`
                 : null);
@@ -1127,6 +1170,16 @@ async function startGame(site) {
         } else {
             hud.setPrompt(null);
         }
+
+        // Wave 12.13: PHOTO button (dronectl cluster) rides with the recon —
+        // labeled with the in-range target when a capture would succeed.
+        let photoLabel = null;
+        if (active.unit === recon && !active.dead) {
+            const ps = !recon.landed && recon.alt >= PHOTO_MIN_ALT
+                ? photos.inRange(recon.position) : null;
+            photoLabel = ps ? `PHOTO ▸ ${ps.name}` : 'PHOTO';
+        }
+        hud.setPhotoButton(photoLabel);
 
         // Telemetry at ~10Hz: speed from position delta (uniform across all
         // unit types), slope from the shared terrain normal, real lat/lon
@@ -1225,6 +1278,7 @@ function setupKeyboard() {
         if (e.code === 'KeyN') document.dispatchEvent(new CustomEvent('mc-night-vision'));
         if (e.code === 'KeyM' || e.code === 'Escape') document.dispatchEvent(new CustomEvent('mc-menu'));
         if (e.code === 'KeyV') document.dispatchEvent(new CustomEvent('mc-van-deploy'));
+        if (e.code === 'KeyP') document.dispatchEvent(new CustomEvent('mc-photo'));
     });
     return keys;
 }
@@ -1307,5 +1361,6 @@ document.addEventListener('mc-menu', () => {
 // handler lives inside startGame's scope. (A direct handler here can't see
 // `units`/`van` — they are startGame locals.)
 document.addEventListener('mc-van-deploy', () => document.getElementById('mc-van')?.click());
+document.addEventListener('mc-photo', () => document.getElementById('mc-photo')?.click());
 
 boot();

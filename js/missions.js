@@ -61,6 +61,19 @@ const MISSIONS = {
             { type: 'action', id: 'return-base', text: 'RETURN TO BASE' },
         ],
     },
+    photo: {
+        id: 'photo',
+        title: 'PHOTO RECON — SURVEY IMAGING',
+        steps: [
+            // Wave 12.13: count must match the site's photoSpots length
+            // (Jezero: 4). Captures broadcast as advance('photo:<spotId>')
+            // from main.js on FIRST capture per spot this session, so the
+            // collect counter can't be farmed off one butte.
+            { type: 'action', id: 'switch-recon', text: 'SWITCH TO THE RECON DRONE (TAB)' },
+            { type: 'collect', id: 'photo-count', match: 'photo:', count: 4, text: 'IMAGE ALL FOUR TARGETS FROM THE AIR (P)' },
+            { type: 'action', id: 'return-base', text: 'RETURN TO BASE' },
+        ],
+    },
 };
 
 const doneKey = (id) => `mc-mission-${id}-done`;

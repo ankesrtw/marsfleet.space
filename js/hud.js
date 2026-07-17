@@ -20,7 +20,7 @@
 import { isTouchDevice } from './touch.js';
 import { SITES, M_PER_DEG, SOL_MS } from './sites.js';
 
-export function createHud(rootEl, { site, onSwitchUnit, onCollect, onToggleSfx, sfxEnabled = true, onCycleGear, gear = 'G2', onToggleSol, solOn = true, onToggleLanding, onCommandAlt, onReset, onSkipIntro, onSkipMission, onReplayIntro, onStartMission, missions = [], onSetOverlayMode, onTravel, onToggleNv, onReplayHologram, onVanDeploy }) {
+export function createHud(rootEl, { site, onSwitchUnit, onCollect, onToggleSfx, sfxEnabled = true, onCycleGear, gear = 'G2', onToggleSol, solOn = true, onToggleLanding, onCommandAlt, onReset, onSkipIntro, onSkipMission, onReplayIntro, onStartMission, missions = [], onSetOverlayMode, onTravel, onToggleNv, onReplayHologram, onVanDeploy, onPhoto }) {
     rootEl.innerHTML = `
         <div class="mars-hud">
             <div class="mars-hud__top">
@@ -116,6 +116,7 @@ export function createHud(rootEl, { site, onSwitchUnit, onCollect, onToggleSfx, 
                     <span id="mc-drone-alt">ALT 0.0 m</span>
                 </div>
                 <button class="mars-btn mars-btn--land" id="mc-land">TAKE OFF<span class="mars-btn__hint">[L]</span></button>
+                <button class="mars-btn mars-btn--photo" id="mc-photo" data-visible="false">PHOTO<span class="mars-btn__hint">[P]</span></button>
             </div>
             <div class="mars-hud__inventory" id="mc-inventory">
                 <div class="mars-hud__inventory-title">SAMPLES <span id="mc-inv-count">0</span></div>
@@ -199,6 +200,16 @@ export function createHud(rootEl, { site, onSwitchUnit, onCollect, onToggleSfx, 
                     onboard edge node (Jetson-class, simulated). Analysis reveals the sample's real published
                     mission finding and files it here — the archive persists in your browser across visits
                     and sites.</p>
+                </div>
+                <div class="mars-menu__section">
+                    <h3>SURVEY IMAGING</h3>
+                    <div class="mars-menu__photos" id="mc-photo-album">
+                        <p class="mars-menu__lab-empty">No survey images yet — fly the recon drone over a
+                        photo target and press P.</p>
+                    </div>
+                    <p class="mars-menu__note">Real frames captured by the recon drone's survey camera
+                    (Wave 12.13). Re-imaging a target replaces its frame. The album persists in your
+                    browser like the science archive.</p>
                 </div>
                 <div class="mars-menu__section">
                     <h3>SCIENCE OVERLAYS</h3>
@@ -319,6 +330,41 @@ export function createHud(rootEl, { site, onSwitchUnit, onCollect, onToggleSfx, 
         vanBtn.dataset.visible = String(state != null);
         if (state) vanBtn.firstChild.textContent =
             state === 'packup' ? 'PACK UP BASE' : 'DEPLOY BASE';
+    }
+
+    // Wave 12.13: recon survey imaging — PHOTO button in the dronectl
+    // cluster (P routes here; also the touch path). Fed per frame, so the
+    // last-label guard keeps the DOM writes to actual changes.
+    const photoBtn = rootEl.querySelector('#mc-photo');
+    photoBtn.addEventListener('click', () => onPhoto?.());
+    let lastPhotoLabel = null;
+    /** label: null hides; a string shows the button with that label. */
+    function setPhotoButton(label) {
+        if (label === lastPhotoLabel) return;
+        lastPhotoLabel = label;
+        photoBtn.dataset.visible = String(label != null);
+        if (label != null) photoBtn.firstChild.textContent = label;
+    }
+
+    // SURVEY IMAGING album (menu): captured-frame thumbnails, newest last.
+    const photoAlbumEl = rootEl.querySelector('#mc-photo-album');
+    function setPhotoAlbum(entries) {
+        if (!entries?.length) return; // keep the empty-state hint
+        photoAlbumEl.replaceChildren(...entries.map((e) => {
+            const fig = document.createElement('figure');
+            const img = document.createElement('img');
+            img.src = e.dataUrl;
+            img.alt = e.name;
+            img.loading = 'lazy';
+            const cap = document.createElement('figcaption');
+            const name = document.createElement('b');
+            name.textContent = e.name;
+            const meta = document.createElement('span');
+            meta.textContent = `${e.siteName ?? e.site}${e.sol != null ? ` · SOL ${e.sol}` : ''}`;
+            cap.append(name, meta);
+            fig.append(img, cap);
+            return fig;
+        }));
     }
     const solBtn = rootEl.querySelector('#mc-sol');
     solBtn.addEventListener('click', () => {
@@ -953,6 +999,6 @@ export function createHud(rootEl, { site, onSwitchUnit, onCollect, onToggleSfx, 
         setNode, setArchive, setBoundary, setHazard, setObjective, setIntroActive, setTutorialOverview,
         setMissions, setOverlayMode, setTelemetry, setMenuOpen, isMenuOpen, toast, guide, setOutposts,
         setDronePanel, setDroneState, setGear, setBases, setGps, setMarsClock, setNightVision,
-        setVanButton,
+        setVanButton, setPhotoButton, setPhotoAlbum,
     };
 }

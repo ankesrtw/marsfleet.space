@@ -61,7 +61,16 @@ export const SITES = {
             { x: 1800, z: 2300, radius: 180 },  // Dust Devil Flats
             { x: -2380, z: -2450, radius: 200 }, // Neretva Vallis
         ],
-        missions: ['tutorial', 'survey'],
+        // Wave 12.13 photo-recon targets: real landforms worth an aerial
+        // frame, spread across all quadrants so the imaging run is a real
+        // sortie (photos.js; the photo mission's count must match length).
+        photoSpots: [
+            { id: 'kodiak', name: 'Kodiak Butte', x: -889, z: 2075, note: 'Delta remnant — Gilbert foreset beds in the scarp face' },
+            { id: 'belva', name: 'Belva Crater', x: -2074, z: -296, note: 'Impact window into the buried river system' },
+            { id: 'three-forks', name: 'Three Forks Depot', x: -2015, z: 1600, note: 'Humanity’s first sample depot on another world' },
+            { id: 'seitah-ridge', name: 'Séítah Ridge', x: 1008, z: 415, note: 'Ridge-forming igneous outcrop over the dune field' },
+        ],
+        missions: ['tutorial', 'survey', 'photo'],
         // Wave 7 base-building: once ALL missions above are complete, the
         // Signal Headquarters structure builds near the FIELD LAB
         // (outposts.js resolves the actual world position at runtime —

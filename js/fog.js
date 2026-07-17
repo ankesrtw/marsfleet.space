@@ -421,6 +421,25 @@ export function createFog(site, minimapEl, terrain) {
             }
         }
 
+        // Photo targets (Wave 12.13): camera glyph — body + lens dot.
+        // Bright teal while pending, dim green once imaged this session.
+        if (extras?.photoSpots) {
+            for (const s of extras.photoSpots) {
+                const { px, py } = worldToPx(s.x, s.z);
+                displayCtx.fillStyle = s.captured ? 'rgba(94,224,138,0.55)' : 'rgba(46,196,214,0.95)';
+                displayCtx.strokeStyle = 'rgba(0,0,0,0.7)';
+                displayCtx.lineWidth = 1.2;
+                displayCtx.fillRect(px - 4.5, py - 3, 9, 6.5);
+                displayCtx.strokeRect(px - 4.5, py - 3, 9, 6.5);
+                // viewfinder hump + lens
+                displayCtx.fillRect(px - 1.5, py - 4.5, 3, 2);
+                displayCtx.fillStyle = 'rgba(0,0,0,0.75)';
+                displayCtx.beginPath();
+                displayCtx.arc(px, py + 0.2, 1.7, 0, Math.PI * 2);
+                displayCtx.fill();
+            }
+        }
+
         // Dust devils (Wave 6): live weather, so above the fog. Rotating
         // dashed ring reads as "swirl" at map scale without an icon.
         if (extras?.devils) {
