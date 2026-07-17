@@ -46,10 +46,17 @@ const FADE_S = 6;              // spawn/death dust fade
 const PARTICLES_PER = 340;
 const EDGE_MARGIN = 60;        // keep cores inside the mission boundary
 
+// Wave 12.5 hazard early-warning: devils only appear on the minimap
+// once the recon drone has flown within SCAN_R of them.
+const SCAN_R = 200;            // m — recon must fly this close to scout a devil
+const FADE_SOLS = 3;           // scouted devils stay visible for this many sols
+
 export function createDustDevils(site, terrain, env, scene) {
     const enabled = !!site.hazards?.dustStorm;
     const bound = site.worldSize / 2 - EDGE_MARGIN;
     const devils = [];
+    let devilIdSeq = 0;                        // auto-increment for scout tracking
+    const scoutedDevils = new Map();           // id → { x, z, sol }
     let wait = nextWait();
     let t = 0;
 
@@ -98,6 +105,7 @@ export function createDustDevils(site, terrain, env, scene) {
     function spawn(x, z) {
         if (devils.length >= MAX_DEVILS) return null;
         const d = {
+            id: ++devilIdSeq,
             x: x ?? (Math.random() * 2 - 1) * bound,
             z: z ?? (Math.random() * 2 - 1) * bound,
             r: RADIUS_MIN + Math.random() * (RADIUS_MAX - RADIUS_MIN),
@@ -199,8 +207,30 @@ export function createDustDevils(site, terrain, env, scene) {
         return spawn(x, z);
     }
 
+    /** Wave 12.5: recon drone scouts devils within range, marking them
+        visible on the minimap for FADE_SOLS. */
+    function scout(reconX, reconZ, sol) {
+        for (const d of devils) {
+            const dist = Math.hypot(d.x - reconX, d.z - reconZ);
+            if (dist <= SCAN_R) {
+                scoutedDevils.set(d.id, { x: d.x, z: d.z, r: d.r, sol });
+            }
+        }
+    }
+
+    /** Returns scouted devils still within the sol-based visibility window. */
+    function getScoutedDevils(sol) {
+        const result = [];
+        for (const [id, entry] of scoutedDevils) {
+            if (sol - entry.sol <= FADE_SOLS) {
+                result.push({ x: entry.x, z: entry.z, r: entry.r });
+            }
+        }
+        return result;
+    }
+
     return {
-        update, sampleWind, force,
+        update, sampleWind, force, scout, getScoutedDevils,
         get devils() { return devils; },
     };
 }

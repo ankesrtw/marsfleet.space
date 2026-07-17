@@ -744,6 +744,7 @@ async function startGame(site) {
         const speedNow = dt > 0 ? movedDist / dt : 0;
 
         fog.reveal(recon.position.x, recon.position.z);
+        dustDevils.scout(recon.position.x, recon.position.z, marsClock.read().sol);
         fog.reveal(lift.position.x, lift.position.z);
         if (active.kind === 'ground') fog.reveal(active.unit.position.x, active.unit.position.z);
 
@@ -789,7 +790,7 @@ async function startGame(site) {
                 .map((c) => ({ x: c.mesh.position.x, z: c.mesh.position.z })),
             outposts: outposts.builtPositions(),
             path: pathTrail,
-            devils: dustDevils.devils.map((d) => ({ x: d.x, z: d.z, r: d.r })),
+            devils: dustDevils.getScoutedDevils(marsClock.read().sol),
             // Wave 11: static soft-sand zones — visible on the map so
             // "BOGGED DOWN" never feels random.
             sand: hazardZones.zones,
