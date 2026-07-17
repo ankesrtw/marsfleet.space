@@ -428,7 +428,9 @@ export function createFog(site, minimapEl, terrain) {
             for (const d of extras.devils) {
                 const { px, py } = worldToPx(d.x, d.z);
                 const r = Math.max(6, (d.r / worldSize) * MAP_RES * 2);
-                displayCtx.strokeStyle = 'rgba(224, 178, 120, 0.9)';
+                // Wave 12: scouted intel fades as it goes stale (age 0→1)
+                const alpha = 0.9 * (1 - 0.65 * (d.age ?? 0));
+                displayCtx.strokeStyle = `rgba(224, 178, 120, ${alpha.toFixed(2)})`;
                 displayCtx.lineWidth = 2.5;
                 displayCtx.setLineDash([5, 5]);
                 displayCtx.lineDashOffset = -spin * r;

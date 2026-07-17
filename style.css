@@ -1080,11 +1080,25 @@ html, body {
     display: none;
 }
 
+/* Wave 12: van DEPLOY/PACK UP button — same slot as the gear button (the
+   van has no gears, so the two are never visible at the same time). */
+.mars-hud__van {
+    position: absolute;
+    right: 12px;
+    bottom: 285px;
+    z-index: 15;
+}
+
+.mars-hud__van[data-visible="false"] {
+    display: none;
+}
+
 @media (max-width: 899px), (pointer: coarse) {
     /* Right rail, stacked under the minimap (70-212) and compass (218-264):
        gear 272-302, then the drone board below it. The old 222px offset
        landed the gear on top of the compass. */
-    .mars-hud__gear {
+    .mars-hud__gear,
+    .mars-hud__van {
         bottom: auto;
         top: max(272px, calc(env(safe-area-inset-top) + 262px));
     }

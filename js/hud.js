@@ -20,7 +20,7 @@
 import { isTouchDevice } from './touch.js';
 import { SITES, M_PER_DEG, SOL_MS } from './sites.js';
 
-export function createHud(rootEl, { site, onSwitchUnit, onCollect, onToggleSfx, sfxEnabled = true, onCycleGear, gear = 'G2', onToggleSol, solOn = true, onToggleLanding, onCommandAlt, onReset, onSkipIntro, onSkipMission, onReplayIntro, onStartMission, missions = [], onSetOverlayMode, onTravel, onToggleNv, onReplayHologram }) {
+export function createHud(rootEl, { site, onSwitchUnit, onCollect, onToggleSfx, sfxEnabled = true, onCycleGear, gear = 'G2', onToggleSol, solOn = true, onToggleLanding, onCommandAlt, onReset, onSkipIntro, onSkipMission, onReplayIntro, onStartMission, missions = [], onSetOverlayMode, onTravel, onToggleNv, onReplayHologram, onVanDeploy }) {
     rootEl.innerHTML = `
         <div class="mars-hud">
             <div class="mars-hud__top">
@@ -103,6 +103,7 @@ export function createHud(rootEl, { site, onSwitchUnit, onCollect, onToggleSfx, 
             </div>
             <button class="mars-btn mars-hud__skip-intro" id="mc-skip-intro" data-visible="false">SKIP INTRO</button>
             <button class="mars-btn mars-hud__gear" id="mc-gear" data-visible="true">GEAR ${gear}<span class="mars-btn__hint">[G]</span></button>
+            <button class="mars-btn mars-hud__van" id="mc-van" data-visible="false">DEPLOY BASE<span class="mars-btn__hint">[V]</span></button>
             <div class="mars-hud__dronectl" id="mc-dronectl" data-visible="false" data-collapsed="false">
                 <button class="mars-dronectl__toggle" id="mc-drone-collapse" aria-label="Toggle drone controls">▾</button>
                 <div class="mars-dronectl__alt">
@@ -221,6 +222,9 @@ export function createHud(rootEl, { site, onSwitchUnit, onCollect, onToggleSfx, 
                         <li>Drone touch (RC Mode 2) — left stick throttle+yaw, right stick pitch+roll</li>
                         <li>Take off / land — L or the drone panel button</li>
                         <li>Switch unit — TAB · Collect — E · Menu — M</li>
+                        <li>Humanoid + outpost-flagged sample — E starts a timed core drill (~4.5 s). Moving cancels it; the rover's arm still collects instantly</li>
+                        <li>Van — walk the humanoid within 4 m, E to board (only the humanoid can drive it) · E again to dismount</li>
+                        <li>Van deploy — V (or the DEPLOY BASE button): panels out, the van becomes a field chargepad + tether anchor. V again packs up</li>
                         <li>Night vision — N (or the NV button): an image intensifier for driving after dark, when the terrain is otherwise nearly black. The HUD stays in its own colours</li>
                         <li>Lift drone — hover low over a cache container, E to sling it, fly to the FIELD LAB pad, E to deliver</li>
                         <li>Delivered caches auto-analyze on the lab edge node — findings land in the SCIENCE ARCHIVE</li>
@@ -302,6 +306,20 @@ export function createHud(rootEl, { site, onSwitchUnit, onCollect, onToggleSfx, 
         const g = onCycleGear ? onCycleGear() : null;
         if (g) gearBtn.firstChild.textContent = `GEAR ${g}`;
     });
+    // Wave 12: van deploy — visible only while the van is driven (it takes
+    // the gear button's slot; the van has no gears). The V key routes here.
+    const vanBtn = rootEl.querySelector('#mc-van');
+    vanBtn.addEventListener('click', () => {
+        const deploying = onVanDeploy ? onVanDeploy() : null;
+        if (deploying != null) setVanButton(deploying ? 'packup' : 'deploy');
+    });
+
+    /** state: null hides the button; 'deploy' | 'packup' set the label. */
+    function setVanButton(state) {
+        vanBtn.dataset.visible = String(state != null);
+        if (state) vanBtn.firstChild.textContent =
+            state === 'packup' ? 'PACK UP BASE' : 'DEPLOY BASE';
+    }
     const solBtn = rootEl.querySelector('#mc-sol');
     solBtn.addEventListener('click', () => {
         const on = onToggleSol ? onToggleSol() : true;
@@ -935,5 +953,6 @@ export function createHud(rootEl, { site, onSwitchUnit, onCollect, onToggleSfx, 
         setNode, setArchive, setBoundary, setHazard, setObjective, setIntroActive, setTutorialOverview,
         setMissions, setOverlayMode, setTelemetry, setMenuOpen, isMenuOpen, toast, guide, setOutposts,
         setDronePanel, setDroneState, setGear, setBases, setGps, setMarsClock, setNightVision,
+        setVanButton,
     };
 }

@@ -55,8 +55,11 @@ export function createColliders(rocks) {
         return h;
     }
 
-    /** entry = { position: live Vector3, radius: m, alt: () => m AGL }.
-        Ground units register alt: () => 0. */
+    /** entry = { position: live Vector3, radius: m, alt: () => m AGL,
+        enabled?: () => bool }. Ground units register alt: () => 0.
+        `enabled` lets a unit drop out of the world temporarily — Wave 12's
+        stowed humanoid rides inside the van and must not leave an
+        invisible obstacle standing at the mount point. */
     function register(name, entry) {
         units.set(name, entry);
     }
@@ -70,6 +73,7 @@ export function createColliders(rocks) {
         }
         for (const [name, u] of units) {
             if (name === selfName) continue;
+            if (u.enabled && !u.enabled()) continue;
             if (Math.abs(selfAlt - u.alt()) >= VERTICAL_CLEAR) continue;
             if (Math.hypot(x - u.position.x, z - u.position.z) < u.radius + radius) return true;
         }

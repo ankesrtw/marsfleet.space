@@ -239,7 +239,9 @@ export function createEffects(scene, terrain) {
         }
     }
 
-    return { addShadow, update, updateTether, _dust: dust, _tracks: tracks };
+    // spawnDust exported for one-off emitters (Wave 12 core drill) — the
+    // wheel/boot dust keeps flowing through update() as before.
+    return { addShadow, update, updateTether, spawnDust, _dust: dust, _tracks: tracks };
 }
 
 /** Soft radial falloff canvas — shared by blob shadows and dust sprites. */

@@ -208,7 +208,9 @@ export function createDustDevils(site, terrain, env, scene) {
     }
 
     /** Wave 12.5: recon drone scouts devils within range, marking them
-        visible on the minimap for FADE_SOLS. */
+        visible on the minimap for FADE_SOLS. Re-scouting refreshes both
+        the position and the clock; expired intel is pruned here so the
+        map never grows unbounded across a long session. */
     function scout(reconX, reconZ, sol) {
         for (const d of devils) {
             const dist = Math.hypot(d.x - reconX, d.z - reconZ);
@@ -216,14 +218,22 @@ export function createDustDevils(site, terrain, env, scene) {
                 scoutedDevils.set(d.id, { x: d.x, z: d.z, r: d.r, sol });
             }
         }
+        for (const [id, entry] of scoutedDevils) {
+            if (sol - entry.sol > FADE_SOLS) scoutedDevils.delete(id);
+        }
     }
 
-    /** Returns scouted devils still within the sol-based visibility window. */
+    /** Scouted devils still within the visibility window. `age` 0→1 over
+        FADE_SOLS lets the minimap fade stale intel — this is last-SEEN
+        position, not live tracking; the devil itself has long moved on. */
     function getScoutedDevils(sol) {
         const result = [];
-        for (const [id, entry] of scoutedDevils) {
+        for (const entry of scoutedDevils.values()) {
             if (sol - entry.sol <= FADE_SOLS) {
-                result.push({ x: entry.x, z: entry.z, r: entry.r });
+                result.push({
+                    x: entry.x, z: entry.z, r: entry.r,
+                    age: Math.max(0, (sol - entry.sol) / FADE_SOLS),
+                });
             }
         }
         return result;

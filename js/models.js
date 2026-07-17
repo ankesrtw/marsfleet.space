@@ -38,6 +38,11 @@ const MODELS = {
     // the real 2.7m-wide Perseverance), so a 1.1m-wide figure still read
     // toy-sized beside it. 2.6 makes the humanoid read person-scale.
     humanoid: { url: 'assets/models/humanoid.glb', yaw: Math.PI / 2, size: 2.6, axis: 'y' },
+    // Wave 12 mobile van — NASA SEV/MMSEV silhouette, ~5.5m 6-wheeler.
+    // Asset pending (Tripo, generated after code merge per the plan);
+    // the 404 keeps the procedural fallback, same as every other unit.
+    // Re-measure placement/collision constants when the GLB lands.
+    van: { url: 'assets/models/van.glb', yaw: 0, size: 5.5, axis: 'z' },
 };
 
 // Stationary structures (no heading, so no yaw-to-heading convention to

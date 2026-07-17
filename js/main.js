@@ -189,8 +189,11 @@ async function startGame(site) {
     scene.add(rover.mesh, recon.mesh, lift.mesh, humanoid.mesh, van.mesh);
     // Obstacle footprints (radius mirrors each unit's own BODY_RADIUS /
     // bodyRadius); alt() gates unit-vs-unit checks to overlapping bands.
+    // Wave 12: while the humanoid rides inside the van its collider is off
+    // (otherwise an invisible 0.35m obstacle stands at the mount point).
+    let humanoidStowed = false;
     colliders.register('rover', { position: rover.position, radius: 1.4, alt: () => 0 });
-    colliders.register('humanoid', { position: humanoid.position, radius: 0.35, alt: () => 0 });
+    colliders.register('humanoid', { position: humanoid.position, radius: 0.35, alt: () => 0, enabled: () => !humanoidStowed });
     colliders.register('van', { position: van.position, radius: 2.2, alt: () => 0 });
     colliders.register('recon', { position: recon.position, radius: 0.7, alt: () => recon.alt });
     colliders.register('lift', { position: lift.position, radius: 1.2, alt: () => lift.alt });
@@ -411,6 +414,20 @@ async function startGame(site) {
         onSetOverlayMode: (mode) => fog.setOverlayMode(mode),
         onTravel: (id) => travelTo(id),
         onToggleNv: () => setNightVision(!nightVision),
+        // Wave 12: V / HUD button — deploy the parked van as a field
+        // chargepad, or pack it back up. Only meaningful from the driver's
+        // seat; returns the new deploy state (null = ignored) so the HUD
+        // button label can track it.
+        onVanDeploy: () => {
+            const active = units[activeIndex];
+            if (active.unit !== van || !van.driver || active.dead) return null;
+            const deploying = van.toggleDeploy();
+            hud.toast(deploying
+                ? '▸ VAN DEPLOYED — FIELD CHARGE PAD ONLINE'
+                : '▸ VAN PACKED UP — CHARGE PAD OFFLINE');
+            sound.switchUnit();
+            return deploying;
+        },
     });
 
     // Night vision (Wave 9.7): main.js owns the state because the filter goes
@@ -465,6 +482,7 @@ async function startGame(site) {
     // (~-2500m at Jezero), which would leave the camera lerping down.
     rover.update(0, { throttle: 0, steer: 0 });
     humanoid.update(0, { throttle: 0, steer: 0 });
+    van.update(0, { throttle: 0, steer: 0 });
 
     // Orbit chase-cam (mouse drag / touch drag to orbit, wheel / pinch to
     // zoom, double-click to recenter); snapped to spawn.
@@ -506,10 +524,21 @@ async function startGame(site) {
         hud.setActiveUnit(active.name);
         hud.setDronePanel(active.kind === 'fly');
         hud.setGear(active.unit.gearLabel ?? null);
+        // Wave 12: DEPLOY/PACK UP button rides the gear button's slot —
+        // the van has no gears, so the two are never visible together.
+        hud.setVanButton(active.unit === van
+            ? (van.deployPlanned ? 'packup' : 'deploy') : null);
         touchZones.setMode(active.kind);
     }
 
     function switchUnit() {
+        // Wave 12: switching away mid-core aborts the drill (the humanoid
+        // can't keep drilling unattended — standing still is deliberate).
+        if (units[activeIndex].unit === humanoid && humanoid.digging) {
+            humanoid.cancelDig();
+            hud.setHazard(null);
+            sound.drill(0);
+        }
         // Wave 12: skip stowed units and unselectable units (driverless van)
         const startedAt = activeIndex;
         do {
@@ -568,34 +597,52 @@ async function startGame(site) {
 
     function tryCollect() {
         const active = units[activeIndex];
-        // Wave 12: van mount/dismount
+        // Wave 12: van mount/dismount. The plan's contract: mounting makes
+        // the VAN the active unit (the humanoid is stowed — hidden, collider
+        // off, sim skipped), dismounting hands control straight back.
         if (active.unit === humanoid && !humanoid.digging) {
             const vDist = Math.hypot(van.position.x - humanoid.position.x,
                 van.position.z - humanoid.position.z);
-            if (vDist <= 4 && !van.driver) {
-                // Mount: stow humanoid, become driver
+            if (vDist <= van.mountRadius && !van.driver) {
                 humanoid.mesh.visible = false;
                 active.stowed = true;
+                humanoidStowed = true;
                 van.setDriver(humanoid);
+                activeIndex = units.findIndex((u) => u.unit === van);
+                applyUnitMode();
+                sound.switchUnit();
                 hud.toast('▸ BOARDED THE VAN');
                 return;
             }
         }
         if (active.unit === van && van.driver) {
-            // Dismount: place humanoid beside the van
+            // Dismount: put the humanoid down beside the van on the first
+            // clear bearing (never inside a boulder or another unit).
             const hu = units.find(u => u.unit === humanoid);
             if (hu) {
+                const huCollider = colliders.forUnit('humanoid');
+                let dx = van.position.x + Math.sin(van.heading + 1.0) * 5;
+                let dz = van.position.z + Math.cos(van.heading + 1.0) * 5;
+                for (const a of [1.0, -1.0, 2.2, -2.2, Math.PI]) {
+                    const tx = van.position.x + Math.sin(van.heading + a) * 5;
+                    const tz = van.position.z + Math.cos(van.heading + a) * 5;
+                    if (!huCollider.collides(tx, tz, 0.35)) { dx = tx; dz = tz; break; }
+                }
                 hu.stowed = false;
+                humanoidStowed = false;
                 humanoid.mesh.visible = true;
-                const dx = van.position.x + Math.sin(van.heading + 1.0) * 5;
-                const dz = van.position.z + Math.cos(van.heading + 1.0) * 5;
                 humanoid.teleport(dx, dz);
                 van.setDriver(null);
+                activeIndex = units.findIndex((u) => u.unit === humanoid);
+                applyUnitMode();
+                sound.switchUnit();
                 hud.toast('▸ DISMOUNTED');
             }
             return;
         }
         if (active.kind === 'ground') {
+            // The van has no collection arm — its verbs are drive/deploy.
+            if (active.unit === van) return;
             const sample = samples.nearestUncollected(active.unit.position);
             if (!sample) return;
             // Wave 12: humanoid drills outpost-flagged samples (timed core);
@@ -737,10 +784,14 @@ async function startGame(site) {
             const load = airborne ? Math.max(0.4, activeLoad) : activeLoad;
             // Docking needs the unit settled ON the pad — a drone hovering
             // over one is still burning its rotors, so it must be landed.
-            const pad = airborne ? null
-                : (chargepads.padAt(u.unit.position)
-                    || (van.deployed && van.padPos && Math.hypot(van.position.x - u.unit.position.x,
-                        van.position.z - u.unit.position.z) <= 7 ? van.padPos : null));
+            // Wave 12: a deployed van is a pad too, and the stowed humanoid
+            // charges off the van's cabin dock while riding along.
+            const pad = (u.unit === humanoid && humanoidStowed)
+                ? { x: van.position.x, z: van.position.z }
+                : airborne ? null
+                    : (chargepads.padAt(u.unit.position)
+                        || (van.deployed && van.padPos && Math.hypot(van.position.x - u.unit.position.x,
+                            van.position.z - u.unit.position.z) <= van.dockRadius ? van.padPos : null));
             u.docked = !!pad;
             const rate = pad ? DOCK_RATE : solarNow;
             u.charge = load > 0
@@ -778,6 +829,10 @@ async function startGame(site) {
                 u.unit.update(dt, { forward: 0, strafe: 0, turn: 0, climb: 0 });
             }
         }
+        // Wave 12: the idle van also keeps simulating — it grounds itself
+        // on the terrain at boot and its deploy animation finishes even if
+        // the player switches away mid-fold.
+        if (active.unit !== van) van.update(dt, { throttle: 0, steer: 0 });
         const movedDist = Math.hypot(
             active.unit.position.x - beforeMove.x,
             active.unit.position.z - beforeMove.z
@@ -796,12 +851,12 @@ async function startGame(site) {
         // active chain (currentAny returned the tutorial while both ran,
         // silently freezing scan progress until the tutorial was done).
         const surveyOn = site.surveyZones?.length && missions.activeMissions.includes('survey');
+        let zonesScanned = 0;
         if (surveyOn) {
-            let done = 0;
             for (const sz of site.surveyZones) {
-                if (fog.revealedFraction(sz.x, sz.z, sz.radius) >= 0.65) done++;
+                if (fog.revealedFraction(sz.x, sz.z, sz.radius) >= 0.65) zonesScanned++;
             }
-            missions.advance('scan-zone', done);
+            missions.advance('scan-zone', zonesScanned);
             if (recon.landed && chargepads.padAt(recon.position)) {
                 missions.advance('return-base');
             }
@@ -820,10 +875,11 @@ async function startGame(site) {
         }
 
         // minimap: unit dots (active gets a heading tick), lab square, TGT
-        // ring (a cache target rings its source sample's marker).
-        fog.render(samples.markers, units.map((u, i) => ({
+        // ring (a cache target rings its source sample's marker). Stowed
+        // units ride inside another — no dot of their own.
+        fog.render(samples.markers, units.filter((u) => !u.stowed).map((u) => ({
             x: u.unit.position.x, z: u.unit.position.z,
-            heading: u.unit.heading, active: i === activeIndex,
+            heading: u.unit.heading, active: u === active,
         })), {
             lab: { x: lab.padPos.x, z: lab.padPos.z },
             targetId: targetInfo ? targetInfo.sample.id.replace('-cache', '') : null,
@@ -857,42 +913,49 @@ async function startGame(site) {
         // or the rover, whichever is closer and within TETHER_LENGTH (80m).
         // If no anchor found within range, the tether is detached.
         const hu = humanoid;
-        let tetherAnchor = null;
         const hp = hu.position;
-        // Check rover first (both move, so the rover is the more dynamic anchor)
-        const roverDist = rover.position.distanceTo(hp);
-        if (roverDist <= 80) tetherAnchor = rover.position;
-        // Then check nearest chargepad (static anchor — fallback)
-        const nearestPad = chargepads.nearestTo(hp.x, hp.z);
-        if (nearestPad) {
-            const padDist = Math.hypot(nearestPad.x - hp.x, nearestPad.z - hp.z);
-            if (!tetherAnchor || padDist < roverDist) {
-                if (padDist <= 80) tetherAnchor = new THREE.Vector3(
-                    nearestPad.x,
-                    terrain.sampleHeight(nearestPad.x, nearestPad.z)
-                        + colliders.deckHeight(nearestPad.x, nearestPad.z),
-                    nearestPad.z);
-            }
-        }
-        // Wave 12: deployed van is a mobile tether anchor
-        if (van.deployed && van.padPos) {
-            const vanDist = Math.hypot(van.position.x - hp.x, van.position.z - hp.z);
-            if (vanDist <= 80 && (!tetherAnchor || vanDist < roverDist
-                && (!nearestPad || vanDist < Math.hypot(nearestPad.x - hp.x, nearestPad.z - hp.z)))) {
-                tetherAnchor = van.position.clone();
-            }
-        }
-        hu.setTether(tetherAnchor);
-        if (tetherAnchor && active.unit === hu) {
-            effects.updateTether(hu.tetherPoint, tetherAnchor, hu.tetherTaut);
-        } else {
+        if (humanoidStowed) {
+            // Riding in the van: no EVA, no tether.
+            hu.setTether(null);
             effects.updateTether(null, null);
+        } else {
+            let tetherAnchor = null;
+            // Check rover first (both move, so the rover is the more dynamic anchor)
+            const roverDist = rover.position.distanceTo(hp);
+            if (roverDist <= 80) tetherAnchor = rover.position;
+            // Then check nearest chargepad (static anchor — fallback)
+            const nearestPad = chargepads.nearestTo(hp.x, hp.z);
+            if (nearestPad) {
+                const padDist = Math.hypot(nearestPad.x - hp.x, nearestPad.z - hp.z);
+                if (!tetherAnchor || padDist < roverDist) {
+                    if (padDist <= 80) tetherAnchor = new THREE.Vector3(
+                        nearestPad.x,
+                        terrain.sampleHeight(nearestPad.x, nearestPad.z)
+                            + colliders.deckHeight(nearestPad.x, nearestPad.z),
+                        nearestPad.z);
+                }
+            }
+            // Wave 12: deployed van is a mobile tether anchor
+            if (van.deployed && van.padPos) {
+                const vanDist = Math.hypot(van.position.x - hp.x, van.position.z - hp.z);
+                if (vanDist <= 80 && (!tetherAnchor || vanDist < roverDist
+                    && (!nearestPad || vanDist < Math.hypot(nearestPad.x - hp.x, nearestPad.z - hp.z)))) {
+                    tetherAnchor = van.position.clone();
+                }
+            }
+            hu.setTether(tetherAnchor);
+            if (tetherAnchor && active.unit === hu) {
+                effects.updateTether(hu.tetherPoint, tetherAnchor, hu.tetherTaut);
+            } else {
+                effects.updateTether(null, null);
+            }
         }
 
         effects.update(dt, active, speedNow, env.daylight());
         const engineNorm = active.kind === 'fly'
             ? (active.unit.landed ? 0 : Math.max(0.35, speedNow / active.unit.maxSpeed))
-            : speedNow / (active.name === 'Humanoid' ? 1.4 : Math.max(0.042, rover.maxSpeed));
+            : speedNow / (active.name === 'Humanoid' ? 1.4
+                : Math.max(0.042, active.unit.maxSpeed ?? rover.maxSpeed));
         const windHere = wind.sample(active.unit.position.x, active.unit.position.z);
         sound.update(active.name, Math.min(1, engineNorm),
             Math.hypot(windHere.vx, windHere.vz) / 20); // /WIND_PEAK — 1.0 at storm max
@@ -904,8 +967,9 @@ async function startGame(site) {
             hud.setHazard({ type: 'dig', pct });
             sound.drill(dp);
             const ds = humanoid.digTarget;
+            // 1 particle/frame — same budget the rover's wheel dust runs at.
             if (ds) effects.spawnDust(ds.x,
-                terrain.sampleHeight(ds.x, ds.z) + 0.3, ds.z, 2);
+                terrain.sampleHeight(ds.x, ds.z) + 0.3, ds.z, 1);
         } else if (active.unit === humanoid) {
             sound.drill(0);
         }
@@ -999,14 +1063,32 @@ async function startGame(site) {
         // every line the instant it appeared (dialog never displayed).
         if (!hologram.active) {
             const objective = missions.currentAny();
+            // Wave 12: the multi-zone scan step gets a live x/y tally —
+            // "SCAN ALL SCOUT ZONES" alone reads as one zone forever.
+            const tally = objective?.step.id === 'scan-zone' && surveyOn
+                ? ` (${zonesScanned}/${site.surveyZones.length})` : '';
             hud.setObjective(objective
-                ? `${objective.stepNum}/${objective.total} · ${objective.step.text}`
+                ? `${objective.stepNum}/${objective.total} · ${objective.step.text}${tally}`
                 : null);
         }
 
         if (active.kind === 'ground') {
             const nearest = samples.nearestUncollected(active.unit.position);
-            hud.setPrompt(nearest ? `COLLECT: ${nearest.name}` : null);
+            // Wave 12: the prompt mirrors what E will actually DO (tryCollect
+            // priority order): board > dismount > drill/collect.
+            if (active.unit === van) {
+                hud.setPrompt(van.driver ? 'LEAVE THE VAN' : null);
+            } else if (active.unit === humanoid && humanoid.digging) {
+                hud.setPrompt(null); // banner owns the feedback mid-core
+            } else if (active.unit === humanoid && !van.driver
+                && Math.hypot(van.position.x - humanoid.position.x,
+                    van.position.z - humanoid.position.z) <= van.mountRadius) {
+                hud.setPrompt('BOARD THE VAN');
+            } else if (nearest && active.unit === humanoid && nearest.outpost) {
+                hud.setPrompt(`DRILL CORE: ${nearest.name}`);
+            } else {
+                hud.setPrompt(nearest ? `COLLECT: ${nearest.name}` : null);
+            }
             // Piggyback on the same "close enough to collect" condition
             // that drives the COLLECT prompt above — no new distance
             // constant for the tutorial's first step.
@@ -1077,7 +1159,7 @@ async function startGame(site) {
             hud.setGps(comms.track(
                 pos,
                 active.unit.heading,
-                units.filter((u) => u !== active).map((u) => ({ name: u.name, position: u.unit.position })),
+                units.filter((u) => u !== active && !u.stowed).map((u) => ({ name: u.name, position: u.unit.position })),
                 baseList(),
             ));
             if (active.kind === 'fly') {
@@ -1201,11 +1283,9 @@ document.addEventListener('mc-menu', () => {
     const menu = document.getElementById('mc-menu');
     if (menu) menu.dataset.open = menu.dataset.open === 'true' ? 'false' : 'true';
 });
-document.addEventListener('mc-van-deploy', () => {
-    const active = units[activeIndex];
-    if (!active || active.unit !== van) return;
-    if (van.deployed || van.deploying) van.undeploy();
-    else van.deploy();
-});
+// Same pattern as every other key: the event clicks the HUD button, whose
+// handler lives inside startGame's scope. (A direct handler here can't see
+// `units`/`van` — they are startGame locals.)
+document.addEventListener('mc-van-deploy', () => document.getElementById('mc-van')?.click());
 
 boot();

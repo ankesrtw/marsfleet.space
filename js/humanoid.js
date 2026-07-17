@@ -97,6 +97,7 @@ export function createHumanoid(site, terrain, obstacles) {
     // Populated once the GLB lands: [{bone, bindQuat, amp, phase}]
     let rig = null;
     let postureRig = null;
+    let legs = null; // cached IK chain refs — no per-frame rig.find()
     attachUnitModel(mesh, 'humanoid', (model) => {
         rig = [];
         for (const cfg of WALK_BONES) {
@@ -110,6 +111,10 @@ export function createHumanoid(site, terrain, obstacles) {
             if (bone) postureRig.push({ bone, bind: bone.quaternion.clone(), ...cfg });
         }
         if (!postureRig.length) postureRig = null;
+        const find = (n) => rig?.find((j) => j.name === n);
+        const lT = find('L_Thigh'), lC = find('L_Calf');
+        const rT = find('R_Thigh'), rC = find('R_Calf');
+        legs = lT && lC && rT && rC ? { lT, lC, rT, rC } : null;
     });
 
     let heading = site.spawn.heading;
@@ -121,8 +126,10 @@ export function createHumanoid(site, terrain, obstacles) {
     let tetherAnchor = null;
     let tetherTaut = false;
     let currentPitch = 0;
+    let smoothPitch = 0;  // low-passed body pitch the spine/head lean against
     let digTimer = 0;
     let digTargetSample = null;
+    let digAmt = 0;       // 0→1 cross-fade into (and back out of) the dig crouch
     let lopeFactor = 0;   // 0→1 cross-fade into bounding lope
     let lopePhase = 0;    // accumulated phase for hop timing
     const _tetherVec = new THREE.Vector3();
@@ -151,22 +158,21 @@ export function createHumanoid(site, terrain, obstacles) {
     let rPlanted = false;
     let prevLStance = false;
     let prevRStance = false;
-    const _ikHip = new THREE.Vector3();
+    let ikWasActive = false; // restore bind pose once when IK switches off
     const _ikFoot = new THREE.Vector3();
-    const _ikH2F = new THREE.Vector3();
     const _ikParentInv = new THREE.Matrix4();
     const _ikThighQ = new THREE.Quaternion();
     const _ikCalfQ = new THREE.Quaternion();
 
     /** Two-bone analytic IK — law-of-cosines solve in the thigh bone's
-        parent-local space, returning the thigh and calf quaternion
-        rotations to apply on top of bind pose. Works in the forward/up
-        plane (parent-local Z-forward, Y-up). */
-    function solveIk(thighBone, calfBone, targetWorldX, targetWorldY, targetWorldZ) {
+        parent-local space, leaving the thigh and calf quaternion
+        rotations to apply on top of bind pose in _ikThighQ/_ikCalfQ.
+        Works in the forward/up plane (parent-local Z-forward, Y-up). */
+    function solveIk(thighBone, targetWorldX, targetWorldY, targetWorldZ) {
         const parent = thighBone.parent;
         parent.updateWorldMatrix(true, false);
         _ikParentInv.copy(parent.matrixWorld).invert();
-        const hipLocal = thighBone.position.clone();
+        const hipLocal = thighBone.position;
 
         _ikFoot.set(targetWorldX, targetWorldY, targetWorldZ);
         _ikFoot.applyMatrix4(_ikParentInv);
@@ -187,7 +193,49 @@ export function createHumanoid(site, terrain, obstacles) {
 
         _ikThighQ.setFromAxisAngle(_axis, hipAngle);
         _ikCalfQ.setFromAxisAngle(_axis, calfAngle);
-        return true;
+    }
+
+    function groundAt(x, z) {
+        return terrain.sampleGroundHeight(x, z) + (obstacles?.deckHeight?.(x, z) ?? 0);
+    }
+
+    /** Stance plant point: a FULL step-half ahead along travel (heel
+        strike at max forward reach). The lead must match the swing arc's
+        ±STEP_HALF endpoints: stance travel per half-cycle is
+        speed × π/STRIDE_RATE ≈ 0.73 m ≈ the 0.7 m plant-to-release span,
+        so the foot stays within leg reach for the whole stance — a short
+        lead ran out of reach mid-stance and the clamp dragged the boot. */
+    function plantFoot(out, lateral) {
+        out.set(
+            mesh.position.x + _fwd.x * (-STEP_HALF),
+            0,
+            mesh.position.z + _fwd.z * (-STEP_HALF)
+        ).addScaledVector(_right, lateral);
+        out.y = groundAt(out.x, out.z);
+    }
+
+    /** Idle plant: boot settles directly under its hip. */
+    function plantIdle(out, lateral) {
+        out.set(mesh.position.x, 0, mesh.position.z).addScaledVector(_right, lateral);
+        out.y = groundAt(out.x, out.z);
+    }
+
+    /** One leg per frame: planted feet re-sample their own ground height
+        (world-locked in x/z — the anti-skate guarantee); swing feet arc
+        between plant points over terrain-following base height. */
+    function solveLeg(thigh, calf, planted, plant, phase, lateral) {
+        if (planted) {
+            plant.y = groundAt(plant.x, plant.z);
+            solveIk(thigh.bone, plant.x, plant.y, plant.z);
+        } else {
+            const swingT = (Math.sin(stride + phase) + 1) / 2; // 0→1 over swing
+            const lift = SWING_LIFT * Math.sin(swingT * Math.PI);
+            const sx = mesh.position.x + _fwd.x * (STEP_HALF * Math.cos(stride + phase)) + _right.x * lateral;
+            const sz = mesh.position.z + _fwd.z * (STEP_HALF * Math.cos(stride + phase)) + _right.z * lateral;
+            solveIk(thigh.bone, sx, groundAt(sx, sz) + lift, sz);
+        }
+        thigh.bone.quaternion.copy(thigh.bind).multiply(_ikThighQ);
+        calf.bone.quaternion.copy(calf.bind).multiply(_ikCalfQ);
     }
 
     function update(dt, input) {
@@ -203,6 +251,12 @@ export function createHumanoid(site, terrain, obstacles) {
             }
         }
         const digging = digTimer > 0;
+        // Crouch cross-fade: ramps in over ~0.3s when the drill starts and
+        // — crucially — back OUT after it ends. (The old per-bone
+        // min(1, digTimer/…) ramps froze the crouch on the rig forever if
+        // the dig ended while standing still, because the posture loop
+        // stopped running the moment walkAmt hit 0.)
+        digAmt += ((digging ? 1 : 0) - digAmt) * Math.min(1, 5 * dt);
 
         // Mars jump (Wave 9). At 0.38 g the SAME impulse arcs ~2.6x higher and
         // hangs ~2.6x longer than on Earth, and that floatiness is the point —
@@ -280,12 +334,17 @@ export function createHumanoid(site, terrain, obstacles) {
         _right.set(-Math.cos(heading), 0, Math.sin(heading));
         let pitch = THREE.MathUtils.clamp(normal.dot(_fwd) * PITCH_GAIN, -MAX_TILT, MAX_TILT);
         let roll = THREE.MathUtils.clamp(normal.dot(_right) * ROLL_GAIN, -MAX_TILT, MAX_TILT);
-        currentPitch = pitch;
         if (airY > 0) {
             const decay = Math.exp(-3 * dt);
             pitch *= decay;
             roll *= decay;
         }
+        currentPitch = pitch;
+        // Low-passed copy the spine/head lean against. (The old inline
+        // `pitch * (1 - exp(-4dt))` had no state to accumulate into, so it
+        // ATTENUATED to ~6% instead of smoothing — the counter-lean was
+        // invisibly small.)
+        smoothPitch += (currentPitch - smoothPitch) * (1 - Math.exp(-4 * dt));
         _yawQ.setFromAxisAngle(_up, heading);
         _pitchQ.setFromAxisAngle(_right, -pitch);
         _rollQ.setFromAxisAngle(_fwd, -roll);
@@ -293,132 +352,89 @@ export function createHumanoid(site, terrain, obstacles) {
         mesh.quaternion.slerp(_tiltQ, 1 - Math.exp(-12 * dt));
         mesh.position.y += Math.abs(Math.sin(stride)) * 0.06 * walkAmt;
 
-        const ikActive = USE_IK && rig && (grounded || (lopeFactor > 0.3 && airY > 0))
-            && (moving || walkAmt > 0.01);
+        // ---- Rig animation, in dependency order: arm/leg swing first,
+        // then the posture chain (pelvis sway moves the hip sockets), then
+        // leg IK LAST so the solve sees this frame's final pelvis pose.
+        const ikActive = USE_IK && !!legs && grounded;
         const lStance = grounded && Math.sin(stride) < 0;
         const rStance = grounded && Math.sin(stride) > 0;
 
-        if (ikActive) {
-            if (!prevLStance && lStance) {
-                _lPlant.set(
-                    mesh.position.x + _fwd.x * (-STEP_HALF * 0.45),
-                    mesh.position.y,
-                    mesh.position.z + _fwd.z * (-STEP_HALF * 0.45)
-                ).addScaledVector(_right, -FOOT_SPACING);
-                _lPlant.y = terrain.sampleGroundHeight(_lPlant.x, _lPlant.z)
-                    + (obstacles?.deckHeight?.(_lPlant.x, _lPlant.z) ?? 0);
-                lPlanted = true;
-            }
-            if (!prevRStance && rStance) {
-                _rPlant.set(
-                    mesh.position.x + _fwd.x * (-STEP_HALF * 0.45),
-                    mesh.position.y,
-                    mesh.position.z + _fwd.z * (-STEP_HALF * 0.45)
-                ).addScaledVector(_right, FOOT_SPACING);
-                _rPlant.y = terrain.sampleGroundHeight(_rPlant.x, _rPlant.z)
-                    + (obstacles?.deckHeight?.(_rPlant.x, _rPlant.z) ?? 0);
-                rPlanted = true;
-            }
-            if (prevLStance && !lStance) lPlanted = false;
-            if (prevRStance && !rStance) rPlanted = false;
-
-            const lThigh = rig.find(j => j.name === 'L_Thigh');
-            const lCalf = rig.find(j => j.name === 'L_Calf');
-            if (lThigh && lCalf) {
-                lThigh.bone.getWorldPosition(_ikHip);
-                if (lPlanted) {
-                    _lPlant.y = terrain.sampleGroundHeight(_lPlant.x, _lPlant.z)
-                        + (obstacles?.deckHeight?.(_lPlant.x, _lPlant.z) ?? 0);
-                    solveIk(lThigh.bone, lCalf.bone, _lPlant.x, _lPlant.y, _lPlant.z);
-                } else {
-                    const swingT = (Math.sin(stride) + 1) / 2; // 0→1 over swing
-                    const lift = SWING_LIFT * Math.sin(swingT * Math.PI);
-                    const sx = mesh.position.x + _fwd.x * (STEP_HALF * Math.cos(stride)) + _right.x * (-FOOT_SPACING);
-                    const sz = mesh.position.z + _fwd.z * (STEP_HALF * Math.cos(stride)) + _right.z * (-FOOT_SPACING);
-                    const sy = mesh.position.y + lift;
-                    solveIk(lThigh.bone, lCalf.bone, sx, sy, sz);
-                }
-                lThigh.bone.quaternion.copy(lThigh.bind).multiply(_ikThighQ);
-                lCalf.bone.quaternion.copy(lCalf.bind).multiply(_ikCalfQ);
-            }
-
-            const rThigh = rig.find(j => j.name === 'R_Thigh');
-            const rCalf = rig.find(j => j.name === 'R_Calf');
-            if (rThigh && rCalf) {
-                rThigh.bone.getWorldPosition(_ikHip);
-                if (rPlanted) {
-                    _rPlant.y = terrain.sampleGroundHeight(_rPlant.x, _rPlant.z)
-                        + (obstacles?.deckHeight?.(_rPlant.x, _rPlant.z) ?? 0);
-                    solveIk(rThigh.bone, rCalf.bone, _rPlant.x, _rPlant.y, _rPlant.z);
-                } else {
-                    const swingT = (Math.sin(stride + Math.PI) + 1) / 2;
-                    const lift = SWING_LIFT * Math.sin(swingT * Math.PI);
-                    const sx = mesh.position.x + _fwd.x * (STEP_HALF * Math.cos(stride + Math.PI)) + _right.x * FOOT_SPACING;
-                    const sz = mesh.position.z + _fwd.z * (STEP_HALF * Math.cos(stride + Math.PI)) + _right.z * FOOT_SPACING;
-                    const sy = mesh.position.y + lift;
-                    solveIk(rThigh.bone, rCalf.bone, sx, sy, sz);
-                }
-                rThigh.bone.quaternion.copy(rThigh.bind).multiply(_ikThighQ);
-                rCalf.bone.quaternion.copy(rCalf.bind).multiply(_ikCalfQ);
-            }
-        }
-        prevLStance = lStance;
-        prevRStance = rStance;
-
         if (rig && walkAmt > 0.01) {
-            const armBoost = lopeFactor > 0.01 ? 1 + lopeFactor * LOPE_ARM_AMP / 0.35 : 1;
             for (const j of rig) {
                 if (ikActive && (j.name === 'L_Thigh' || j.name === 'R_Thigh'
                     || j.name === 'L_Calf' || j.name === 'R_Calf')) continue;
                 const baseAmp = (j.name === 'L_Upperarm' || j.name === 'R_Upperarm'
                     || j.name === 'L_Forearm' || j.name === 'R_Forearm')
-                    ? j.amp * (1 + lopeFactor * 0.6) : j.amp;
+                    ? j.amp * (1 + lopeFactor * LOPE_ARM_AMP / 0.35) : j.amp;
                 _swing.setFromAxisAngle(_axis, Math.sin(stride + j.phase) * baseAmp * walkAmt);
                 j.bone.quaternion.copy(j.bind).multiply(_swing);
             }
         }
 
-        if (postureRig && (walkAmt > 0.01 || digging)) {
+        // Posture chain: weight shift while walking, slope counter-lean
+        // (live even standing still on a grade), dig crouch cross-fade.
+        if (postureRig && (walkAmt > 0.005 || digAmt > 0.005
+            || Math.abs(smoothPitch) > 0.002)) {
             for (const p of postureRig) {
-                let angle = 0;
+                let walkAngle = 0, digAngle = 0;
                 if (p.name === 'Pelvis') {
-                    if (digging) {
-                        angle = -0.15 * Math.min(1, digTimer / (DIG_SECS * 0.3));
-                    } else {
-                        const drop = -PELVIS_DROP * Math.abs(Math.sin(stride)) * walkAmt;
-                        const sway = p.walkAmp * Math.sin(stride) * walkAmt;
-                        angle = drop + sway;
-                    }
+                    const drop = -PELVIS_DROP * Math.abs(Math.sin(stride)) * walkAmt;
+                    const sway = p.walkAmp * Math.sin(stride) * walkAmt;
+                    walkAngle = drop + sway;
+                    digAngle = -0.15;
                 } else if (p.name === 'Spine01') {
-                    if (digging) {
-                        angle = -0.45 * Math.min(1, digTimer / (DIG_SECS * 0.25));
-                    } else {
-                        const slerpPitch = currentPitch * (1 - Math.exp(-4 * dt));
-                        angle = -slerpPitch * SPINE_COUNTER;
-                    }
+                    walkAngle = -smoothPitch * SPINE_COUNTER;
+                    digAngle = -0.45;
                 } else if (p.name === 'Spine02') {
-                    if (digging) {
-                        angle = -0.15 * Math.min(1, digTimer / (DIG_SECS * 0.25));
-                    } else {
-                        const slerpPitch = currentPitch * (1 - Math.exp(-4 * dt));
-                        angle = -slerpPitch * SPINE_COUNTER * 0.6;
-                    }
+                    walkAngle = -smoothPitch * SPINE_COUNTER * 0.6;
+                    digAngle = -0.15;
                 } else if (p.name === 'Head') {
-                    if (digging) {
-                        angle = 0.35 * Math.min(1, digTimer / (DIG_SECS * 0.25));
-                    } else {
-                        const slerpPitch = currentPitch * (1 - Math.exp(-6 * dt));
-                        angle = -slerpPitch * HEAD_LEVEL;
-                    }
+                    walkAngle = -smoothPitch * HEAD_LEVEL;
+                    digAngle = 0.35;
                 } else if (p.name === 'L_Hand' || p.name === 'R_Hand') {
-                    if (digging) {
-                        angle = 0.7 * Math.min(1, digTimer / (DIG_SECS * 0.25));
-                    }
+                    digAngle = 0.7;
                 }
+                const angle = walkAngle * (1 - digAmt) + digAngle * digAmt;
                 _postureQ.setFromAxisAngle(_postureAxes[p.axisIdx], angle);
                 p.bone.quaternion.copy(p.bind).multiply(_postureQ);
             }
         }
+
+        if (ikActive) {
+            if (moving) {
+                // Heel-strike: world-lock the foot at its plant point for
+                // the whole stance phase — the mechanical anti-skate.
+                if (!prevLStance && lStance) { plantFoot(_lPlant, -FOOT_SPACING); lPlanted = true; }
+                if (!prevRStance && rStance) { plantFoot(_rPlant, FOOT_SPACING); rPlanted = true; }
+                if (prevLStance && !lStance) lPlanted = false;
+                if (prevRStance && !rStance) rPlanted = false;
+            } else {
+                // Idle (or pivoting in place): both boots settle flat onto
+                // their own patch of ground under the hips — no foot left
+                // frozen mid-swing when the walk stops.
+                const turning = Math.abs(input.steer) > 0.05;
+                if (!lPlanted || turning) { plantIdle(_lPlant, -FOOT_SPACING); lPlanted = true; }
+                if (!rPlanted || turning) { plantIdle(_rPlant, FOOT_SPACING); rPlanted = true; }
+            }
+            solveLeg(legs.lT, legs.lC, lPlanted, _lPlant, 0, -FOOT_SPACING);
+            solveLeg(legs.rT, legs.rC, rPlanted, _rPlant, Math.PI, FOOT_SPACING);
+            ikWasActive = true;
+        } else {
+            // Airborne / IK off: the legs return to the swing cycle. Restore
+            // bind once so a jump from standstill doesn't freeze the last
+            // solved pose on the rig for the whole flight.
+            if (ikWasActive && legs) {
+                legs.lT.bone.quaternion.copy(legs.lT.bind);
+                legs.lC.bone.quaternion.copy(legs.lC.bind);
+                legs.rT.bone.quaternion.copy(legs.rT.bind);
+                legs.rC.bone.quaternion.copy(legs.rC.bind);
+            }
+            ikWasActive = false;
+            lPlanted = false;
+            rPlanted = false;
+        }
+        prevLStance = lStance;
+        prevRStance = rStance;
     }
 
     /** Wave 9.3 base travel: boots down on the new ground, jump arc cleared. */
