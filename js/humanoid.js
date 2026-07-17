@@ -25,6 +25,10 @@ const PITCH_GAIN = 0.5;
 const ROLL_GAIN = 0.15;
 const MAX_TILT = 0.35;
 
+// Wave 12.1 foot skate: cadence scales with actual ground speed, so a slow
+// climb at 30% speedFactor doesn't pump legs at 100% cadence.
+const STRIDE_RATE = 6;
+
 // Wave 9.5: EVA safety tether. Beyond TETHER_LENGTH the humanoid's max
 // speed is clamped (the suit drags the line), simulating a taut tether
 // without actual physics constraint.
@@ -149,7 +153,7 @@ export function createHumanoid(site, terrain, obstacles) {
         // Airborne = no walk cycle (legs stop pumping mid-flight).
         const grounded = airY <= 0;
         const moving = grounded && Math.abs(input.throttle) > 0.05;
-        if (moving) stride += dt * 6;
+        if (moving) stride += dt * STRIDE_RATE * Math.abs(speed) / WALK_SPEED;
         walkAmt += ((moving ? 1 : 0) - walkAmt) * Math.min(1, 8 * dt);
         _fwd.set(Math.sin(heading), 0, Math.cos(heading));
         _right.set(-Math.cos(heading), 0, Math.sin(heading));
