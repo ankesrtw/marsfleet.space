@@ -71,6 +71,16 @@ const HEAD_LEVEL = 0.7;
 // Wave 12.3 digging
 const DIG_SECS = 4.5;
 
+// Wave 12.2 foot IK: two-bone analytic IK per leg (law of cosines).
+// Stance-phase feet are world-locked — the anti-skate guarantee.
+const FEMUR = 0.208;
+const TIBIA = 0.259;
+const FOOT_SPACING = 0.12; // m — lateral offset per foot from body center
+const STEP_HALF = 0.35;  // m — half-step reach in body-local space
+const SWING_LIFT = 0.25; // m — foot rises this high during swing arc
+const MAX_BEND = 2.3;    // rad — knee can't hyperextend past this
+const USE_IK = true;     // toggle flag per plan: easy fallback to swing-only
+
 // `obstacles` is a colliders.js facade (boulders + structures + other
 // units), shaped like the old rocks collider: collides(x, z, radius).
 export function createHumanoid(site, terrain, obstacles) {
@@ -125,6 +135,52 @@ export function createHumanoid(site, terrain, obstacles) {
     const _pitchQ = new THREE.Quaternion();
     const _rollQ = new THREE.Quaternion();
     const _tiltQ = new THREE.Quaternion();
+
+    // Foot IK state
+    const _lPlant = new THREE.Vector3();
+    const _rPlant = new THREE.Vector3();
+    let lPlanted = false;
+    let rPlanted = false;
+    let prevLStance = false;
+    let prevRStance = false;
+    const _ikHip = new THREE.Vector3();
+    const _ikFoot = new THREE.Vector3();
+    const _ikH2F = new THREE.Vector3();
+    const _ikParentInv = new THREE.Matrix4();
+    const _ikThighQ = new THREE.Quaternion();
+    const _ikCalfQ = new THREE.Quaternion();
+
+    /** Two-bone analytic IK — law-of-cosines solve in the thigh bone's
+        parent-local space, returning the thigh and calf quaternion
+        rotations to apply on top of bind pose. Works in the forward/up
+        plane (parent-local Z-forward, Y-up). */
+    function solveIk(thighBone, calfBone, targetWorldX, targetWorldY, targetWorldZ) {
+        const parent = thighBone.parent;
+        parent.updateWorldMatrix(true, false);
+        _ikParentInv.copy(parent.matrixWorld).invert();
+        const hipLocal = thighBone.position.clone();
+
+        _ikFoot.set(targetWorldX, targetWorldY, targetWorldZ);
+        _ikFoot.applyMatrix4(_ikParentInv);
+
+        const dz = _ikFoot.z - hipLocal.z;
+        const dy = hipLocal.y - _ikFoot.y; // positive = foot below hip
+        const R = Math.sqrt(dz * dz + dy * dy);
+        const maxR = FEMUR + TIBIA;
+        const minR = Math.abs(FEMUR - TIBIA);
+        const r = THREE.MathUtils.clamp(R, minR, maxR);
+
+        const a = FEMUR, b = TIBIA;
+        const cosKnee = (a * a + b * b - r * r) / (2 * a * b);
+        const knee = Math.acos(THREE.MathUtils.clamp(cosKnee, -1, 1));
+        const calfAngle = Math.max(-MAX_BEND, Math.min(MAX_BEND, -(Math.PI - knee)));
+        const hipAngle = Math.atan2(dz, dy)
+            - Math.atan2(b * Math.sin(knee), a + b * Math.cos(knee));
+
+        _ikThighQ.setFromAxisAngle(_axis, hipAngle);
+        _ikCalfQ.setFromAxisAngle(_axis, calfAngle);
+        return true;
+    }
 
     function update(dt, input) {
         heading += input.steer * TURN_RATE * dt;
@@ -215,8 +271,81 @@ export function createHumanoid(site, terrain, obstacles) {
         mesh.quaternion.slerp(_tiltQ, 1 - Math.exp(-12 * dt));
         mesh.position.y += Math.abs(Math.sin(stride)) * 0.06 * walkAmt;
 
+        const ikActive = USE_IK && rig && grounded && (moving || walkAmt > 0.01);
+        const lStance = grounded && Math.sin(stride) < 0;
+        const rStance = grounded && Math.sin(stride) > 0;
+
+        if (ikActive) {
+            if (!prevLStance && lStance) {
+                _lPlant.set(
+                    mesh.position.x + _fwd.x * (-STEP_HALF * 0.45),
+                    mesh.position.y,
+                    mesh.position.z + _fwd.z * (-STEP_HALF * 0.45)
+                ).addScaledVector(_right, -FOOT_SPACING);
+                _lPlant.y = terrain.sampleGroundHeight(_lPlant.x, _lPlant.z)
+                    + (obstacles?.deckHeight?.(_lPlant.x, _lPlant.z) ?? 0);
+                lPlanted = true;
+            }
+            if (!prevRStance && rStance) {
+                _rPlant.set(
+                    mesh.position.x + _fwd.x * (-STEP_HALF * 0.45),
+                    mesh.position.y,
+                    mesh.position.z + _fwd.z * (-STEP_HALF * 0.45)
+                ).addScaledVector(_right, FOOT_SPACING);
+                _rPlant.y = terrain.sampleGroundHeight(_rPlant.x, _rPlant.z)
+                    + (obstacles?.deckHeight?.(_rPlant.x, _rPlant.z) ?? 0);
+                rPlanted = true;
+            }
+            if (prevLStance && !lStance) lPlanted = false;
+            if (prevRStance && !rStance) rPlanted = false;
+
+            const lThigh = rig.find(j => j.name === 'L_Thigh');
+            const lCalf = rig.find(j => j.name === 'L_Calf');
+            if (lThigh && lCalf) {
+                lThigh.bone.getWorldPosition(_ikHip);
+                if (lPlanted) {
+                    _lPlant.y = terrain.sampleGroundHeight(_lPlant.x, _lPlant.z)
+                        + (obstacles?.deckHeight?.(_lPlant.x, _lPlant.z) ?? 0);
+                    solveIk(lThigh.bone, lCalf.bone, _lPlant.x, _lPlant.y, _lPlant.z);
+                } else {
+                    const swingT = (Math.sin(stride) + 1) / 2; // 0→1 over swing
+                    const lift = SWING_LIFT * Math.sin(swingT * Math.PI);
+                    const sx = mesh.position.x + _fwd.x * (STEP_HALF * Math.cos(stride)) + _right.x * (-FOOT_SPACING);
+                    const sz = mesh.position.z + _fwd.z * (STEP_HALF * Math.cos(stride)) + _right.z * (-FOOT_SPACING);
+                    const sy = mesh.position.y + lift;
+                    solveIk(lThigh.bone, lCalf.bone, sx, sy, sz);
+                }
+                lThigh.bone.quaternion.copy(lThigh.bind).multiply(_ikThighQ);
+                lCalf.bone.quaternion.copy(lCalf.bind).multiply(_ikCalfQ);
+            }
+
+            const rThigh = rig.find(j => j.name === 'R_Thigh');
+            const rCalf = rig.find(j => j.name === 'R_Calf');
+            if (rThigh && rCalf) {
+                rThigh.bone.getWorldPosition(_ikHip);
+                if (rPlanted) {
+                    _rPlant.y = terrain.sampleGroundHeight(_rPlant.x, _rPlant.z)
+                        + (obstacles?.deckHeight?.(_rPlant.x, _rPlant.z) ?? 0);
+                    solveIk(rThigh.bone, rCalf.bone, _rPlant.x, _rPlant.y, _rPlant.z);
+                } else {
+                    const swingT = (Math.sin(stride + Math.PI) + 1) / 2;
+                    const lift = SWING_LIFT * Math.sin(swingT * Math.PI);
+                    const sx = mesh.position.x + _fwd.x * (STEP_HALF * Math.cos(stride + Math.PI)) + _right.x * FOOT_SPACING;
+                    const sz = mesh.position.z + _fwd.z * (STEP_HALF * Math.cos(stride + Math.PI)) + _right.z * FOOT_SPACING;
+                    const sy = mesh.position.y + lift;
+                    solveIk(rThigh.bone, rCalf.bone, sx, sy, sz);
+                }
+                rThigh.bone.quaternion.copy(rThigh.bind).multiply(_ikThighQ);
+                rCalf.bone.quaternion.copy(rCalf.bind).multiply(_ikCalfQ);
+            }
+        }
+        prevLStance = lStance;
+        prevRStance = rStance;
+
         if (rig && walkAmt > 0.01) {
             for (const j of rig) {
+                if (ikActive && (j.name === 'L_Thigh' || j.name === 'R_Thigh'
+                    || j.name === 'L_Calf' || j.name === 'R_Calf')) continue;
                 _swing.setFromAxisAngle(_axis, Math.sin(stride + j.phase) * j.amp * walkAmt);
                 j.bone.quaternion.copy(j.bind).multiply(_swing);
             }
@@ -271,7 +400,9 @@ export function createHumanoid(site, terrain, obstacles) {
             + (obstacles?.deckHeight?.(x, z) ?? 0), z);
         airY = 0;
         jumpVel = 0;
-        tetherAnchor = null; // teleport detaches the tether
+        tetherAnchor = null;
+        lPlanted = false;
+        rPlanted = false;
     }
 
     /** Wave 9.5: set the EVA tether anchor position (a THREE.Vector3 at
