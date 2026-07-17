@@ -54,6 +54,18 @@ const WALK_BONES = [
     { name: 'R_Forearm', amp: 0.2, phase: Math.PI * 0.3 },
 ];
 
+// Wave 12.3 posture chain — bones that respond to slope + walk rhythm
+// rather than the pure swing cycle. axis: 0=X (pitch), 1=Y (yaw), 2=Z (roll).
+const POSTURE_BONES = [
+    { name: 'Pelvis', walkAmp: 0.04, axisIdx: 2 },
+    { name: 'Spine01', walkAmp: 0, axisIdx: 0 },
+    { name: 'Spine02', walkAmp: 0, axisIdx: 0 },
+    { name: 'Head', walkAmp: 0, axisIdx: 0 },
+];
+const PELVIS_DROP = 0.03;
+const SPINE_COUNTER = 0.4;
+const HEAD_LEVEL = 0.7;
+
 // `obstacles` is a colliders.js facade (boulders + structures + other
 // units), shaped like the old rocks collider: collides(x, z, radius).
 export function createHumanoid(site, terrain, obstacles) {
@@ -63,28 +75,42 @@ export function createHumanoid(site, terrain, obstacles) {
 
     // Populated once the GLB lands: [{bone, bindQuat, amp, phase}]
     let rig = null;
+    let postureRig = null;
     attachUnitModel(mesh, 'humanoid', (model) => {
         rig = [];
         for (const cfg of WALK_BONES) {
             const bone = model.getObjectByName(cfg.name);
             if (bone) rig.push({ bone, bind: bone.quaternion.clone(), ...cfg });
         }
-        if (!rig.length) rig = null; // unexpected rig — leave bind pose
+        if (!rig.length) rig = null;
+        postureRig = [];
+        for (const cfg of POSTURE_BONES) {
+            const bone = model.getObjectByName(cfg.name);
+            if (bone) postureRig.push({ bone, bind: bone.quaternion.clone(), ...cfg });
+        }
+        if (!postureRig.length) postureRig = null;
     });
 
     let heading = site.spawn.heading;
     let stride = 0;
-    let airY = 0;        // m above the ground clamp (0 = boots down)
-    let jumpVel = 0;     // m/s vertical, integrated against GRAVITY_MARS
-    let walkAmt = 0; // 0..1, eases the cycle in/out so stops don't snap
+    let airY = 0;
+    let jumpVel = 0;
+    let walkAmt = 0;
     let atBoundary = false;
-    let tetherAnchor = null;   // THREE.Vector3 | null (Wave 9.5)
+    let tetherAnchor = null;
     let tetherTaut = false;
+    let currentPitch = 0;
     const _tetherVec = new THREE.Vector3();
     const bound = site.worldSize / 2 - EDGE_MARGIN;
 
     const _swing = new THREE.Quaternion();
     const _axis = new THREE.Vector3(1, 0, 0);
+    const _postureQ = new THREE.Quaternion();
+    const _postureAxes = [
+        new THREE.Vector3(1, 0, 0),  // X — pitch (spine/head forward-back)
+        new THREE.Vector3(0, 1, 0),  // Y — yaw
+        new THREE.Vector3(0, 0, 1),  // Z — roll (pelvis lateral sway)
+    ];
     const _up = new THREE.Vector3(0, 1, 0);
     const _fwd = new THREE.Vector3();
     const _right = new THREE.Vector3();
@@ -159,6 +185,7 @@ export function createHumanoid(site, terrain, obstacles) {
         _right.set(-Math.cos(heading), 0, Math.sin(heading));
         let pitch = THREE.MathUtils.clamp(normal.dot(_fwd) * PITCH_GAIN, -MAX_TILT, MAX_TILT);
         let roll = THREE.MathUtils.clamp(normal.dot(_right) * ROLL_GAIN, -MAX_TILT, MAX_TILT);
+        currentPitch = pitch;
         if (airY > 0) {
             const decay = Math.exp(-3 * dt);
             pitch *= decay;
@@ -175,6 +202,25 @@ export function createHumanoid(site, terrain, obstacles) {
             for (const j of rig) {
                 _swing.setFromAxisAngle(_axis, Math.sin(stride + j.phase) * j.amp * walkAmt);
                 j.bone.quaternion.copy(j.bind).multiply(_swing);
+            }
+        }
+
+        if (postureRig && walkAmt > 0.01) {
+            for (const p of postureRig) {
+                let angle = 0;
+                if (p.name === 'Pelvis') {
+                    const drop = -PELVIS_DROP * Math.abs(Math.sin(stride)) * walkAmt;
+                    const sway = p.walkAmp * Math.sin(stride) * walkAmt;
+                    angle = drop + sway;
+                } else if (p.name === 'Spine01' || p.name === 'Spine02') {
+                    const slerpPitch = currentPitch * (1 - Math.exp(-4 * dt));
+                    angle = -slerpPitch * SPINE_COUNTER;
+                } else if (p.name === 'Head') {
+                    const slerpPitch = currentPitch * (1 - Math.exp(-6 * dt));
+                    angle = -slerpPitch * HEAD_LEVEL;
+                }
+                _postureQ.setFromAxisAngle(_postureAxes[p.axisIdx], angle);
+                p.bone.quaternion.copy(p.bind).multiply(_postureQ);
             }
         }
     }
