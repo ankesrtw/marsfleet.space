@@ -81,6 +81,12 @@ const SWING_LIFT = 0.25; // m — foot rises this high during swing arc
 const MAX_BEND = 2.3;    // rad — knee can't hyperextend past this
 const USE_IK = true;     // toggle flag per plan: easy fallback to swing-only
 
+// Wave 12.4 Apollo lope: above ~0.7 m/s a normal walk is unstable at
+// 0.38 g — the Apollo crews spontaneously switched to a bounding lope.
+const LOPE_THRESHOLD = 0.7;   // m/s — faster than this triggers the lope
+const LOPE_HOP = 0.75;        // m/s — periodic upward impulse at launch
+const LOPE_ARM_AMP = 0.25;    // extra arm-swing amplitude for balance
+
 // `obstacles` is a colliders.js facade (boulders + structures + other
 // units), shaped like the old rocks collider: collides(x, z, radius).
 export function createHumanoid(site, terrain, obstacles) {
@@ -115,8 +121,10 @@ export function createHumanoid(site, terrain, obstacles) {
     let tetherAnchor = null;
     let tetherTaut = false;
     let currentPitch = 0;
-    let digTimer = 0;       // seconds elapsed into the current dig (0 = idle)
-    let digTargetSample = null;  // the sample being drilled
+    let digTimer = 0;
+    let digTargetSample = null;
+    let lopeFactor = 0;   // 0→1 cross-fade into bounding lope
+    let lopePhase = 0;    // accumulated phase for hop timing
     const _tetherVec = new THREE.Vector3();
     const bound = site.worldSize / 2 - EDGE_MARGIN;
 
@@ -251,8 +259,22 @@ export function createHumanoid(site, terrain, obstacles) {
 
         // Airborne = no walk cycle (legs stop pumping mid-flight).
         const grounded = airY <= 0;
-        const moving = grounded && Math.abs(input.throttle) > 0.05;
+        const moving = (grounded || (lopeFactor > 0.3 && airY > 0))
+            && Math.abs(input.throttle) > 0.05;
         if (moving) stride += dt * STRIDE_RATE * Math.abs(speed) / WALK_SPEED;
+        // Wave 12.4 Apollo lope: at speed the gait cross-fades to a bounding
+        // lope — both feet leave the ground together, longer float, arms out.
+        const lopeTarget = moving && Math.abs(speed) > LOPE_THRESHOLD ? 1 : 0;
+        lopeFactor += (lopeTarget - lopeFactor) * Math.min(1, 4 * dt);
+        if (lopeFactor > 0.01) {
+            lopePhase += dt * STRIDE_RATE * 0.5 * lopeFactor;
+            // Periodic hop: launch when the stride is at push-off and airborne
+            if (Math.sin(lopePhase * 1.8) > 0.85 && airY <= 0 && jumpVel === 0) {
+                jumpVel = LOPE_HOP * lopeFactor;
+            }
+            // During lope, stride drifts (legs stay more extended in flight)
+            stride += dt * STRIDE_RATE * (-0.4 * lopeFactor) * Math.abs(speed) / WALK_SPEED;
+        }
         walkAmt += ((moving ? 1 : 0) - walkAmt) * Math.min(1, 8 * dt);
         _fwd.set(Math.sin(heading), 0, Math.cos(heading));
         _right.set(-Math.cos(heading), 0, Math.sin(heading));
@@ -271,7 +293,8 @@ export function createHumanoid(site, terrain, obstacles) {
         mesh.quaternion.slerp(_tiltQ, 1 - Math.exp(-12 * dt));
         mesh.position.y += Math.abs(Math.sin(stride)) * 0.06 * walkAmt;
 
-        const ikActive = USE_IK && rig && grounded && (moving || walkAmt > 0.01);
+        const ikActive = USE_IK && rig && (grounded || (lopeFactor > 0.3 && airY > 0))
+            && (moving || walkAmt > 0.01);
         const lStance = grounded && Math.sin(stride) < 0;
         const rStance = grounded && Math.sin(stride) > 0;
 
@@ -343,10 +366,14 @@ export function createHumanoid(site, terrain, obstacles) {
         prevRStance = rStance;
 
         if (rig && walkAmt > 0.01) {
+            const armBoost = lopeFactor > 0.01 ? 1 + lopeFactor * LOPE_ARM_AMP / 0.35 : 1;
             for (const j of rig) {
                 if (ikActive && (j.name === 'L_Thigh' || j.name === 'R_Thigh'
                     || j.name === 'L_Calf' || j.name === 'R_Calf')) continue;
-                _swing.setFromAxisAngle(_axis, Math.sin(stride + j.phase) * j.amp * walkAmt);
+                const baseAmp = (j.name === 'L_Upperarm' || j.name === 'R_Upperarm'
+                    || j.name === 'L_Forearm' || j.name === 'R_Forearm')
+                    ? j.amp * (1 + lopeFactor * 0.6) : j.amp;
+                _swing.setFromAxisAngle(_axis, Math.sin(stride + j.phase) * baseAmp * walkAmt);
                 j.bone.quaternion.copy(j.bind).multiply(_swing);
             }
         }
