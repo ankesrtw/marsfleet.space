@@ -199,13 +199,19 @@ async function startGame(site) {
     // cache container in the field, the lift drone slings it to the pad.
     const lab = createLab(scene, site, terrain, rocks);
     for (const o of lab.obstacles) colliders.addStatic(o.x, o.z, o.r, o.h);
-    const sling = createSling(scene, terrain);
+    const sling = createSling(scene, terrain, colliders);
     const deliveredIds = new Set();
+
+    // The lab landing pad is a drivable platform — units climb its skirt
+    // instead of clipping through the 0.35m deck (colliders.js decks).
+    colliders.addDeck(lab.padPos.x, lab.padPos.z, 5.5, 0.35, 1.0);
 
     // Wave 9 charging stations (chargepad.js): every base gets a solar pad.
     // The FIELD LAB gets one at boot — it is the origin base, and without it
     // there is nowhere to dock before the first outpost is earned.
-    const chargepads = createChargepads(scene, terrain, rocks);
+    // colliders: pad decks register as drivable platforms, repair bays as
+    // static obstacles (they were walk-through ghosts before).
+    const chargepads = createChargepads(scene, terrain, rocks, colliders);
 
     // Wave 9.4 relay network (comms.js): a mast at every base — the in-world
     // answer to "how do the units know where each other are", and what the
@@ -218,9 +224,12 @@ async function startGame(site) {
     // chargepads, which stay non-blocking for MOVEMENT (units land/drive
     // onto them) but must never be built over: the HQ once rose on the
     // lab's boot pad because no facade could see it.
+    // Pad clearance covers the REAL chargepad GLB (10m footprint -> r ~5.3
+    // + margin), not the old 3.6m fallback disc — 4.6 let masts and the
+    // repair bay overlap the deck rim at every base.
     const blockedAt = (x, z, r) =>
         colliders.forUnit('__site-build').collides(x, z, r)
-        || chargepads.list.some((p) => Math.hypot(p.x - x, p.z - z) < r + 4.6);
+        || chargepads.list.some((p) => Math.hypot(p.x - x, p.z - z) < r + 6.5);
 
     chargepads.addPadNear(lab.padPos.x, lab.padPos.z, 16, blockedAt);
     comms.addMastNear(lab.padPos.x, lab.padPos.z, 20, blockedAt);
@@ -232,8 +241,10 @@ async function startGame(site) {
     // boot, via bootstrap -> construct -> onBuilt).
     const outposts = createOutposts(scene, site, terrain, rocks, colliders, lab.padPos,
         (rec) => {
-            chargepads.addPadNear(rec.x, rec.z, rec.kind === 'hq' ? 19 : 9, blockedAt);
-            comms.addMastNear(rec.x, rec.z, rec.kind === 'hq' ? 24 : 12, blockedAt);
+            // checkpost pad ring 11 (was 9): the GLB pad's real ~5.3m radius
+            // + the 3.4m checkpost left a 0.3m gap at 9 — visually fused.
+            chargepads.addPadNear(rec.x, rec.z, rec.kind === 'hq' ? 19 : 11, blockedAt);
+            comms.addMastNear(rec.x, rec.z, rec.kind === 'hq' ? 24 : 13, blockedAt);
         }, blockedAt);
 
     // Edge-node analysis queue + persistent science archive (analysis.js):
@@ -265,8 +276,13 @@ async function startGame(site) {
     const sound = createSound();
 
     // Wave 9.5: Ariana hologram at the FIELD LAB — an AI-character
-    // projection that plays a scripted dialog on first approach.
-    const hologram = createLabHologram(scene, lab.stationPos);
+    // projection that plays a scripted dialog on first approach. She
+    // stands in FRONT of the station dock (its box half-width is ~3.75m;
+    // placing her at stationPos itself embedded her inside the building),
+    // grounded on the terrain at her own spot.
+    const holoSpot = new THREE.Vector3(lab.stationPos.x + 3.2, 0, lab.stationPos.z + 5.6);
+    holoSpot.y = terrain.sampleHeight(holoSpot.x, holoSpot.z);
+    const hologram = createLabHologram(scene, holoSpot);
 
     // Per-site objective chains (missions.js): the guided tutorial ships
     // as mission 'tutorial' (autostart, first-visit-only via its own
@@ -569,7 +585,8 @@ async function startGame(site) {
                 const c = sling.detach();
                 unit.setSlung(false);
                 c.state = 'field';
-                c.mesh.position.y = terrain.sampleHeight(c.mesh.position.x, c.mesh.position.z) + 0.28;
+                c.mesh.position.y = terrain.sampleHeight(c.mesh.position.x, c.mesh.position.z)
+                    + colliders.deckHeight(c.mesh.position.x, c.mesh.position.z) + 0.28;
                 c.mesh.rotation.set(0, c.mesh.rotation.y, 0);
                 sound.sling();
             }
@@ -727,12 +744,17 @@ async function startGame(site) {
 
         // Wave 9.5: recon scan mission progress — the fraction of the
         // survey zone that has been fog-revealed by the recon drone.
-        if (missions.currentAny()?.missionId === 'survey') {
+        // Gate on the survey chain being ACTIVE, not on it being the first
+        // active chain (currentAny returned the tutorial while both ran,
+        // silently freezing scan progress until the tutorial was done).
+        const surveyOn = !!site.surveyZone && missions.activeMissions.includes('survey');
+        if (surveyOn) {
             const sz = site.surveyZone;
             const frac = fog.revealedFraction(sz.x, sz.z, sz.radius);
             missions.advance('scan-zone', frac);
-            // Step 3: return to base — advance when the recon docks
-            if (units[activeIndex].unit === recon && chargepads.padAt(recon.position)) {
+            // Step 3: return to base — the recon must actually LAND on a
+            // pad (flying over one at cruise height is not a return).
+            if (recon.landed && chargepads.padAt(recon.position)) {
                 missions.advance('return-base');
             }
         }
@@ -751,7 +773,6 @@ async function startGame(site) {
 
         // minimap: unit dots (active gets a heading tick), lab square, TGT
         // ring (a cache target rings its source sample's marker).
-        const surveyActive = missions.currentAny()?.missionId === 'survey';
         fog.render(samples.markers, units.map((u, i) => ({
             x: u.unit.position.x, z: u.unit.position.z,
             heading: u.unit.heading, active: i === activeIndex,
@@ -768,7 +789,7 @@ async function startGame(site) {
             // "BOGGED DOWN" never feels random.
             sand: hazardZones.zones,
             // Wave 9.5: survey zone ring (visible while survey mission active)
-            surveyZone: surveyActive ? site.surveyZone : null,
+            surveyZone: surveyOn ? site.surveyZone : null,
             // Wave 9.5: repair bays alongside every chargepad
             repairShops: chargepads.repairPositions,
         });
@@ -798,7 +819,11 @@ async function startGame(site) {
         if (nearestPad) {
             const padDist = Math.hypot(nearestPad.x - hp.x, nearestPad.z - hp.z);
             if (!tetherAnchor || padDist < roverDist) {
-                if (padDist <= 80) tetherAnchor = new THREE.Vector3(nearestPad.x, terrain.sampleHeight(nearestPad.x, nearestPad.z), nearestPad.z);
+                if (padDist <= 80) tetherAnchor = new THREE.Vector3(
+                    nearestPad.x,
+                    terrain.sampleHeight(nearestPad.x, nearestPad.z)
+                        + colliders.deckHeight(nearestPad.x, nearestPad.z),
+                    nearestPad.z);
             }
         }
         hu.setTether(tetherAnchor);
@@ -886,11 +911,15 @@ async function startGame(site) {
         if (menuOpen) missions.advance('archive');
         // Wave 9.5: the Ariana hologram dialog preempts the mission
         // objective banner while active (it uses the same display slot).
-        const hologramActive = hologram.active;
-        const objective = hologramActive ? null : missions.currentAny();
-        hud.setObjective(objective
-            ? `${objective.stepNum}/${objective.total} · ${objective.step.text}`
-            : null);
+        // While it IS active, leave the slot alone — hologram.update wrote
+        // the dialog line, and a per-frame setObjective(null) here erased
+        // every line the instant it appeared (dialog never displayed).
+        if (!hologram.active) {
+            const objective = missions.currentAny();
+            hud.setObjective(objective
+                ? `${objective.stepNum}/${objective.total} · ${objective.step.text}`
+                : null);
+        }
 
         if (active.kind === 'ground') {
             const nearest = samples.nearestUncollected(active.unit.position);

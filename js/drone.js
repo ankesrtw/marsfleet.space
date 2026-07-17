@@ -199,7 +199,10 @@ export function createDrone(site, terrain, opts = {}) {
             rollTilt += (0 - rollTilt) * Math.min(1, 6 * dt);
             vel.set(0, 0);
             if (climb > 0.3) landed = false;
-            mesh.position.y = terrain.sampleHeight(mesh.position.x, mesh.position.z);
+            // deck height (colliders.js): parked ON a chargepad deck, not
+            // sunk 0.9m inside the GLB platform
+            mesh.position.y = terrain.sampleHeight(mesh.position.x, mesh.position.z)
+                + (obstacles?.deckHeight?.(mesh.position.x, mesh.position.z) ?? 0);
             mesh.rotation.set(pitchTilt, heading, rollTilt, 'YXZ');
             // rotors: spool up when a take-off is pending, else spin down
             rig.update(dt, autoTakeoffTo != null || climb > 0.3 ? 0.9 : 0);
@@ -279,7 +282,8 @@ export function createDrone(site, terrain, opts = {}) {
                 0, MAX_ALT
             );
         }
-        const groundY = terrain.sampleHeight(mesh.position.x, mesh.position.z);
+        const groundY = terrain.sampleHeight(mesh.position.x, mesh.position.z)
+            + (obstacles?.deckHeight?.(mesh.position.x, mesh.position.z) ?? 0);
         if (alt <= 0.05 && (climb < 0 || falling)) {
             // touchdown (or arrival)
             if (falling) {
@@ -324,7 +328,8 @@ export function createDrone(site, terrain, opts = {}) {
     function teleport(x, z) {
         mesh.position.x = x;
         mesh.position.z = z;
-        mesh.position.y = terrain.sampleHeight(x, z) + alt;
+        mesh.position.y = terrain.sampleHeight(x, z)
+            + (obstacles?.deckHeight?.(x, z) ?? 0) + alt;
         falling = false;
         fallVel = 0;
         vel.set(0, 0);

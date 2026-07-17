@@ -124,8 +124,10 @@ export function createHumanoid(site, terrain, obstacles) {
         }
         // Vertical: airborne frames integrate Mars gravity; grounded frames
         // stay clamped to the terrain exactly as before (a walker never needs
-        // a falling model while its boots are on the ground).
-        const groundY = terrain.sampleGroundHeight(mesh.position.x, mesh.position.z);
+        // a falling model while its boots are on the ground). Deck height
+        // (colliders.js) puts the boots ON chargepad decks / the lab pad.
+        const groundY = terrain.sampleGroundHeight(mesh.position.x, mesh.position.z)
+            + (obstacles?.deckHeight?.(mesh.position.x, mesh.position.z) ?? 0);
         if (jumpVel !== 0 || airY > 0) {
             jumpVel -= GRAVITY_MARS * dt;
             airY += jumpVel * dt;
@@ -151,7 +153,8 @@ export function createHumanoid(site, terrain, obstacles) {
 
     /** Wave 9.3 base travel: boots down on the new ground, jump arc cleared. */
     function teleport(x, z) {
-        mesh.position.set(x, terrain.sampleGroundHeight(x, z), z);
+        mesh.position.set(x, terrain.sampleGroundHeight(x, z)
+            + (obstacles?.deckHeight?.(x, z) ?? 0), z);
         airY = 0;
         jumpVel = 0;
         tetherAnchor = null; // teleport detaches the tether

@@ -21,14 +21,21 @@
 import * as THREE from 'three';
 import { attachStaticModel } from './models.js';
 
-const PAD_R = 3.6;        // visual disc radius
+const PAD_R = 3.6;        // visual disc radius (procedural fallback)
 export const DOCK_R = 5.0; // dock trigger radius (a bit past the disc lip)
+// chargepad.glb scales to a 10m footprint (models.js) — placement and the
+// repair-bay ring must clear the REAL pad radius (~5.2m), not the fallback's.
+const PAD_GLB_R = 5.3;
 
-// Wave 9.5: repair bay sits beside its chargepad, offset slightly
-// so the workshop reads as a separate structure next to the landing disc.
-const REPAIR_BAY_OFFSET = 5.5;
+// Wave 9.5 repair bay, resited (playtest: the old fixed 5.5m offset put the
+// 6m-footprint workshop ON the 10m GLB pad, overlapping deck and dock ring
+// at every single base). Ring placement like every other structure: bay
+// radius 3 + pad radius 5.3 + walking gap.
+const BAY_RING = 10.5;
+const BAY_R = 2.8;        // collision circle over the 6m-footprint workshop
+const BAY_H = 4;
 
-export function createChargepads(scene, terrain, rocks) {
+export function createChargepads(scene, terrain, rocks, colliders) {
     const pads = [];   // { x, z, group, ringMat, base }
     const repairBays = []; // { x, z } for minimap
     const group = new THREE.Group();
@@ -63,10 +70,69 @@ export function createChargepads(scene, terrain, rocks) {
         return g;
     }
 
-    function addPad(x, z) {
+    /** Measure the REAL pad geometry once chargepad.glb swaps in: the GLB
+        is a ~0.9m raised deck (r ~3.6) with solar panels standing ~1.6m at
+        the rim — very different from the flat fallback disc. Raycast a
+        polar grid to (a) resize the drivable deck record so units climb
+        onto the platform instead of sinking 0.9m into it, and (b) register
+        the raised rim panels as small static colliders so ground units
+        can't drive through them. */
+    function measureGlbPad(inner, x, z, gy, deck) {
+        inner.updateMatrixWorld(true);
+        const ray = new THREE.Raycaster();
+        const down = new THREE.Vector3(0, -1, 0);
+        const origin = new THREE.Vector3();
+        const hitAt = (r, a) => {
+            origin.set(x + Math.sin(a) * r, gy + 30, z + Math.cos(a) * r);
+            ray.set(origin, down);
+            const hit = ray.intersectObject(inner, true)[0];
+            return hit ? hit.point.y - gy : 0;
+        };
+        const deckH = Math.max(hitAt(0, 0), hitAt(0.8, 0), hitAt(0.8, Math.PI));
+        if (!(deckH > 0.05)) return; // flat GLB — fallback record already fits
+        // deck radius: widen while most azimuths still read deck-flat
+        let deckR = 1;
+        for (let r = 1.4; r <= 5.4; r += 0.4) {
+            let flat = 0;
+            for (let i = 0; i < 8; i++) {
+                const h = hitAt(r, (i / 8) * Math.PI * 2);
+                if (Math.abs(h - deckH) < 0.3) flat++;
+            }
+            if (flat >= 6) deckR = r; else break;
+        }
+        deck.h = deckH;
+        deck.r = deckR;
+        // rim structures (solar panels): cluster raised samples past the deck
+        const clusters = [];
+        for (let r = deckR + 0.2; r <= 5.4; r += 0.4) {
+            for (let i = 0; i < 24; i++) {
+                const a = (i / 24) * Math.PI * 2;
+                const h = hitAt(r, a);
+                if (h < deckH + 0.35) continue;
+                const px = x + Math.sin(a) * r, pz = z + Math.cos(a) * r;
+                const c = clusters.find((k) => Math.hypot(k.x - px, k.z - pz) < 2.2);
+                if (c) {
+                    c.x = (c.x * c.n + px) / (c.n + 1);
+                    c.z = (c.z * c.n + pz) / (c.n + 1);
+                    c.n++;
+                    c.h = Math.max(c.h, h);
+                } else {
+                    clusters.push({ x: px, z: pz, n: 1, h });
+                }
+            }
+        }
+        for (const c of clusters) colliders?.addStatic(c.x, c.z, 1.1, c.h + 0.3);
+    }
+
+    function addPad(x, z, blocked) {
         if (pads.some((p) => Math.hypot(p.x - x, p.z - z) < 2)) return null;
         const g = new THREE.Group();
-        g.position.set(x, terrain.sampleHeight(x, z) + 0.02, z);
+        const gy = terrain.sampleHeight(x, z) + 0.02;
+        g.position.set(x, gy, z);
+
+        // Drivable-platform record (colliders.js): fallback disc height now,
+        // re-measured from the real GLB when it lands (measureGlbPad).
+        const deckRec = colliders?.addDeck(x, z, PAD_R, 0.14, 1.4);
 
         // Inner group holds the procedural pad until chargepad.glb swaps in
         // (models.js fallback-first idiom, Wave 11); the status ring lives on
@@ -90,21 +156,34 @@ export function createChargepads(scene, terrain, rocks) {
             inner.add(post, panel);
         }
         g.add(inner);
-        attachStaticModel(inner, 'chargepad');
+        attachStaticModel(inner, 'chargepad', () => {
+            if (deckRec) measureGlbPad(inner, x, z, gy, deckRec);
+        });
 
-        // Repair bay beside the chargepad (Wave 9.5). A small workshop
-        // that provides the in-world explanation for dock-based repair.
-        // Built alongside every pad — one bay per base.
+        // Repair bay near the chargepad (Wave 9.5): the workshop that
+        // explains dock-based repair. Sited on its own ring around the pad
+        // (flattest of 8, clear of rocks + the shared occupancy test) and
+        // registered as a static collider — it is a building, not a decal.
+        let bBest = null;
+        for (let i = 0; i < 8; i++) {
+            const a = (i / 8) * Math.PI * 2 + Math.PI / 16;
+            const bx = x + Math.sin(a) * BAY_RING;
+            const bz = z + Math.cos(a) * BAY_RING;
+            if (rocks?.collides(bx, bz, BAY_R + 0.5)) continue;
+            if (blocked?.(bx, bz, BAY_R + 0.5)) continue;
+            const slope = 1 - terrain.sampleNormal(bx, bz).y;
+            if (!bBest || slope < bBest.slope) bBest = { x: bx, z: bz, slope };
+        }
+        const baySpot = bBest ?? { x: x + BAY_RING, z };
         const bayGroup = new THREE.Group();
-        const bx = x + Math.cos(Math.PI / 4) * REPAIR_BAY_OFFSET;
-        const bz = z + Math.sin(Math.PI / 4) * REPAIR_BAY_OFFSET;
-        bayGroup.position.set(bx, terrain.sampleHeight(bx, bz), bz);
+        bayGroup.position.set(baySpot.x, terrain.sampleHeight(baySpot.x, baySpot.z), baySpot.z);
         const bayInner = new THREE.Group();
         bayInner.add(makeRepairBayFallback());
         bayGroup.add(bayInner);
         attachStaticModel(bayInner, 'repair-bay');
         group.add(bayGroup);
-        repairBays.push({ x: bx, z: bz });
+        colliders?.addStatic(baySpot.x, baySpot.z, BAY_R, BAY_H);
+        repairBays.push({ x: baySpot.x, z: baySpot.z });
 
         // Status ring — dim idle, bright + pulsing while something charges.
         // Wave 11: sits OUTSIDE the deck at the DOCK_R trigger perimeter, on
@@ -136,13 +215,15 @@ export function createChargepads(scene, terrain, rocks) {
             const a = (i / 8) * Math.PI * 2;
             const x = cx + Math.sin(a) * ring;
             const z = cz + Math.cos(a) * ring;
-            if (rocks?.collides(x, z, PAD_R + 1)) continue;
-            if (blocked?.(x, z, PAD_R + 1)) continue;
+            // probe at the REAL (GLB) pad radius, not the fallback disc's —
+            // a pad sited with 4.6m clearance overlapped mast legs at 5.2m
+            if (rocks?.collides(x, z, PAD_GLB_R + 0.5)) continue;
+            if (blocked?.(x, z, PAD_GLB_R + 0.5)) continue;
             const slope = 1 - terrain.sampleNormal(x, z).y;
             if (!best || slope < best.slope) best = { x, z, slope };
         }
         const spot = best ?? { x: cx + ring, z: cz };
-        return addPad(spot.x, spot.z);
+        return addPad(spot.x, spot.z, blocked);
     }
 
     /** Nearest pad within DOCK_R of a world position, else null. */

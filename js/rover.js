@@ -422,7 +422,11 @@ export function createRover(site, terrain, obstacles, { hazards, weather } = {})
         //    velocity to the body, which then carries over the top: airtime,
         //    floaty at 0.38 g
         // Downed states stay glued (a rolled rover does not jump).
-        const baseY = terrain.sampleGroundHeight(mesh.position.x, mesh.position.z) + clearance;
+        // Deck height (colliders.js): chargepad decks and the lab pad are
+        // drivable platforms — the wheels ride ON them (ramped edges keep
+        // the ground-rise rate below the launch threshold at sane gears).
+        const baseY = terrain.sampleGroundHeight(mesh.position.x, mesh.position.z)
+            + (obstacles?.deckHeight?.(mesh.position.x, mesh.position.z) ?? 0) + clearance;
         const groundVel = dt > 0 && prevBaseY != null ? (baseY - prevBaseY) / dt : 0;
         prevBaseY = baseY;
         if (bodyY == null || incapacitated) {
@@ -536,7 +540,8 @@ export function createRover(site, terrain, obstacles, { hazards, weather } = {})
         old terrain — nulling bodyY/prevBaseY re-snaps it to the new ground
         on the next update (same path a fresh spawn takes). */
     function teleport(x, z) {
-        mesh.position.set(x, terrain.sampleGroundHeight(x, z) + clearance, z);
+        mesh.position.set(x, terrain.sampleGroundHeight(x, z)
+            + (obstacles?.deckHeight?.(x, z) ?? 0) + clearance, z);
         bodyY = null;
         prevBaseY = null;
         prevGroundY = null;

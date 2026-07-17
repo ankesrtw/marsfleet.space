@@ -24,10 +24,35 @@ const ROCK_CEILING = 2.0;
 
 export function createColliders(rocks) {
     const statics = []; // { x, z, r, h } — h = m above local ground
+    const decks = [];   // { x, z, r, h, ramp } — drivable raised platforms
     const units = new Map(); // name -> { position, radius, alt() }
 
     function addStatic(x, z, r, h = Infinity) {
         statics.push({ x, z, r, h });
+    }
+
+    /** Drivable platform (chargepad deck, lab landing pad): units RIDE ON
+        it rather than clip through it. Height is full inside r and ramps
+        to 0 across `ramp` metres outside — the ramp keeps the rover's
+        ground-rise rate below its launch threshold, so climbing a deck
+        reads as rolling up a skirt, not popping. Returns the (mutable)
+        record so callers can re-measure it once a GLB swaps in. */
+    function addDeck(x, z, r, h, ramp = 1.2) {
+        const deck = { x, z, r, h, ramp };
+        decks.push(deck);
+        return deck;
+    }
+
+    /** Extra ground height from any deck under (x, z) — 0 in the open. */
+    function deckHeight(x, z) {
+        let h = 0;
+        for (const d of decks) {
+            const dist = Math.hypot(x - d.x, z - d.z);
+            if (dist >= d.r + d.ramp) continue;
+            const k = dist <= d.r ? 1 : 1 - (dist - d.r) / d.ramp;
+            if (d.h * k > h) h = d.h * k;
+        }
+        return h;
     }
 
     /** entry = { position: live Vector3, radius: m, alt: () => m AGL }.
@@ -52,7 +77,8 @@ export function createColliders(rocks) {
     }
 
     /** rocks.collides-shaped facade for one unit — drop-in for the
-        `rocks` param the ground units already take. */
+        `rocks` param the ground units already take. deckHeight rides
+        along so every mover grounds itself on drivable platforms. */
     function forUnit(name) {
         return {
             collides(x, z, r) {
@@ -61,8 +87,9 @@ export function createColliders(rocks) {
                 if (selfAlt < ROCK_CEILING && rocks?.collides(x, z, r)) return true;
                 return hits(name, x, z, r);
             },
+            deckHeight,
         };
     }
 
-    return { addStatic, register, forUnit };
+    return { addStatic, addDeck, deckHeight, register, forUnit };
 }

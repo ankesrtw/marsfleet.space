@@ -137,9 +137,10 @@ export function createComms(scene, terrain, rocks, colliders) {
         g.add(lamp);
 
         group.add(g);
-        // Wave 11: the mast is a physical 9m pole — units shouldn't pass
+        // Wave 11: the mast is a physical 9m tower — units shouldn't pass
         // through it, and registering it also keeps future structures off it.
-        colliders?.addStatic(spot.x, spot.z, 1.2, MAST_H);
+        // Radius covers the GLB's ~3.2m guy-leg spread, not just the pole.
+        colliders?.addStatic(spot.x, spot.z, 1.6, MAST_H + 0.5);
         const mast = { x: spot.x, z: spot.z, lampMat, phase: masts.length * 0.8 };
         masts.push(mast);
         return mast;

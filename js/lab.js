@@ -75,7 +75,10 @@ export function createLab(scene, site, terrain, rocks) {
     // footprint below stays honest either way.
     const shellMat = new THREE.MeshStandardMaterial({ color: 0xd9d4c8, roughness: 0.6, metalness: 0.15 });
     const stationGroup = new THREE.Group();
-    stationGroup.position.set(-STATION_OFFSET, 0, 0);
+    // Ground the dock on ITS OWN terrain height, not the pad's — 14.5m of
+    // Mars can drop half a metre, and the container visibly floated on it.
+    const stationGroundY = terrain.sampleHeight(padPos.x - STATION_OFFSET, padPos.z);
+    stationGroup.position.set(-STATION_OFFSET, stationGroundY - padPos.y, 0);
     const shell = new THREE.Mesh(new THREE.BoxGeometry(14, 6.5, 7), shellMat);
     shell.position.y = 3.25;
     stationGroup.add(shell);
@@ -162,13 +165,14 @@ export function createLab(scene, site, terrain, rocks) {
 
     // stationPos/stationGroup: the dock's resting world position + node —
     // the landing intro (intro.js) hides the real dock and cargo-drops a
-    // copy onto exactly this spot, then hands off seamlessly.
-    const stationPos = new THREE.Vector3(padPos.x - STATION_OFFSET, padPos.y, padPos.z);
+    // copy onto exactly this spot, then hands off seamlessly. y is the
+    // dock's OWN ground height (see stationGroundY above).
+    const stationPos = new THREE.Vector3(padPos.x - STATION_OFFSET, stationGroundY, padPos.z);
 
     return { group, padPos, isOverPad, deliver, delivered, update, obstacles, stationPos, stationGroup };
 }
 
-export function createSling(scene, terrain) {
+export function createSling(scene, terrain, colliders) {
     const cableGeo = new THREE.BufferGeometry();
     const cablePos = new Float32Array(6);
     cableGeo.setAttribute('position', new THREE.BufferAttribute(cablePos, 3));
@@ -208,7 +212,8 @@ export function createSling(scene, terrain) {
         vel.multiplyScalar(damp);
         m.position.x += vel.x * dt;
         m.position.z += vel.y * dt;
-        const groundMin = terrain.sampleHeight(m.position.x, m.position.z) + 0.3;
+        const groundMin = terrain.sampleHeight(m.position.x, m.position.z)
+            + (colliders?.deckHeight(m.position.x, m.position.z) ?? 0) + 0.3;
         m.position.y = Math.max(groundMin, dronePos.y - CABLE_LEN);
         // sway tilt from lateral velocity
         m.rotation.z = THREE.MathUtils.clamp(-vel.x * 0.04, -0.4, 0.4);
