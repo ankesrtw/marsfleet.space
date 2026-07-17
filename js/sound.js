@@ -113,6 +113,7 @@ export function createSound() {
         'Recon Drone': { freq: 110, vol: 0.1 },
         'Lift Drone': { freq: 68, vol: 0.13 },
         'Humanoid': { freq: 60, vol: 0.05 },
+        'Van': { freq: 38, vol: 0.16 },
     };
 
     /** Per frame: unitName + normalized speed 0..1 drive the hum. */

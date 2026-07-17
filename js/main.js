@@ -8,6 +8,7 @@ import { loadTerrain } from './terrain.js';
 import { createRover } from './rover.js';
 import { createDrone } from './drone.js';
 import { createHumanoid } from './humanoid.js';
+import { createVan } from './van.js';
 import { createFog } from './fog.js';
 import { createSamples } from './samples.js';
 import { createHud } from './hud.js';
@@ -184,11 +185,13 @@ async function startGame(site) {
         obstacles: colliders.forUnit('lift'), bodyRadius: 1.2, wind,
     });
     const humanoid = createHumanoid(site, terrain, colliders.forUnit('humanoid'));
-    scene.add(rover.mesh, recon.mesh, lift.mesh, humanoid.mesh);
+    const van = createVan(site, terrain, colliders.forUnit('van'));
+    scene.add(rover.mesh, recon.mesh, lift.mesh, humanoid.mesh, van.mesh);
     // Obstacle footprints (radius mirrors each unit's own BODY_RADIUS /
     // bodyRadius); alt() gates unit-vs-unit checks to overlapping bands.
     colliders.register('rover', { position: rover.position, radius: 1.4, alt: () => 0 });
     colliders.register('humanoid', { position: humanoid.position, radius: 0.35, alt: () => 0 });
+    colliders.register('van', { position: van.position, radius: 2.2, alt: () => 0 });
     colliders.register('recon', { position: recon.position, radius: 0.7, alt: () => recon.alt });
     colliders.register('lift', { position: lift.position, radius: 1.2, alt: () => lift.alt });
 
@@ -272,6 +275,7 @@ async function startGame(site) {
     effects.addShadow(recon.mesh, 0.55, true);
     effects.addShadow(lift.mesh, 1.0, true);
     effects.addShadow(humanoid.mesh, 0.5);
+    effects.addShadow(van.mesh, 2.4);
     const waypoint = createWaypoint(scene, terrain);
     const sound = createSound();
 
@@ -349,7 +353,8 @@ async function startGame(site) {
         { name: 'Rover', unit: rover, kind: 'ground', charge: 100, odo: 0, drainRate: 0.05 },
         { name: 'Recon Drone', unit: recon, kind: 'fly', charge: 100, odo: 0, drainRate: 0.10 },
         { name: 'Lift Drone', unit: lift, kind: 'fly', charge: 100, odo: 0, drainRate: 0.11 },
-        { name: 'Humanoid', unit: humanoid, kind: 'ground', charge: 100, odo: 0, drainRate: 0.07 },
+        { name: 'Humanoid', unit: humanoid, kind: 'ground', charge: 100, odo: 0, drainRate: 0.07, stowed: false },
+        { name: 'Van', unit: van, kind: 'ground', charge: 100, odo: 0, drainRate: 0.10 },
     ];
     const SOLAR_RATE = 0.25;     // %/s recharge while not driving (~7 min
                                  // full charge in daylight — proportional
@@ -494,7 +499,7 @@ async function startGame(site) {
     // Debug/E2E handle (also used by the sampleHeight ground-truth check;
     // renderer/scene/camera exposed so tests on software-GL boxes can pause
     // the loop and capture canvas pixels via a same-task render+toDataURL).
-    window.__mc = { site, terrain, rover, drone: recon, recon, lift, humanoid, samples, renderer, scene, camera, camRig, units, env, effects, waypoint, sound, rocks, lab, sling, analysis, outposts, fog, colliders, missions, hazardZones, weather, dustDevils, wind, chargepads, comms, baseList, marsClock, setNightVision, get nightVision() { return nightVision; }, get intro() { return intro; }, hologram };
+    window.__mc = { site, terrain, rover, drone: recon, recon, lift, humanoid, van, samples, renderer, scene, camera, camRig, units, env, effects, waypoint, sound, rocks, lab, sling, analysis, outposts, fog, colliders, missions, hazardZones, weather, dustDevils, wind, chargepads, comms, baseList, marsClock, setNightVision, get nightVision() { return nightVision; }, get intro() { return intro; }, hologram };
 
     function applyUnitMode() {
         const active = units[activeIndex];
@@ -505,7 +510,14 @@ async function startGame(site) {
     }
 
     function switchUnit() {
-        activeIndex = (activeIndex + 1) % units.length;
+        // Wave 12: skip stowed units and unselectable units (driverless van)
+        const startedAt = activeIndex;
+        do {
+            activeIndex = (activeIndex + 1) % units.length;
+            const u = units[activeIndex];
+            const unselectable = u.stowed || (u.unit === van && !van.driver);
+            if (!unselectable) break;
+        } while (activeIndex !== startedAt);
         applyUnitMode();
         sound.switchUnit();
         if (units[activeIndex].unit === lift) missions.advance('switch');
@@ -556,6 +568,33 @@ async function startGame(site) {
 
     function tryCollect() {
         const active = units[activeIndex];
+        // Wave 12: van mount/dismount
+        if (active.unit === humanoid && !humanoid.digging) {
+            const vDist = Math.hypot(van.position.x - humanoid.position.x,
+                van.position.z - humanoid.position.z);
+            if (vDist <= 4 && !van.driver) {
+                // Mount: stow humanoid, become driver
+                humanoid.mesh.visible = false;
+                active.stowed = true;
+                van.setDriver(humanoid);
+                hud.toast('▸ BOARDED THE VAN');
+                return;
+            }
+        }
+        if (active.unit === van && van.driver) {
+            // Dismount: place humanoid beside the van
+            const hu = units.find(u => u.unit === humanoid);
+            if (hu) {
+                hu.stowed = false;
+                humanoid.mesh.visible = true;
+                const dx = van.position.x + Math.sin(van.heading + 1.0) * 5;
+                const dz = van.position.z + Math.cos(van.heading + 1.0) * 5;
+                humanoid.teleport(dx, dz);
+                van.setDriver(null);
+                hud.toast('▸ DISMOUNTED');
+            }
+            return;
+        }
         if (active.kind === 'ground') {
             const sample = samples.nearestUncollected(active.unit.position);
             if (!sample) return;
@@ -698,7 +737,10 @@ async function startGame(site) {
             const load = airborne ? Math.max(0.4, activeLoad) : activeLoad;
             // Docking needs the unit settled ON the pad — a drone hovering
             // over one is still burning its rotors, so it must be landed.
-            const pad = airborne ? null : chargepads.padAt(u.unit.position);
+            const pad = airborne ? null
+                : (chargepads.padAt(u.unit.position)
+                    || (van.deployed && van.padPos && Math.hypot(van.position.x - u.unit.position.x,
+                        van.position.z - u.unit.position.z) <= 7 ? van.padPos : null));
             u.docked = !!pad;
             const rate = pad ? DOCK_RATE : solarNow;
             u.charge = load > 0
@@ -830,6 +872,14 @@ async function startGame(site) {
                     terrain.sampleHeight(nearestPad.x, nearestPad.z)
                         + colliders.deckHeight(nearestPad.x, nearestPad.z),
                     nearestPad.z);
+            }
+        }
+        // Wave 12: deployed van is a mobile tether anchor
+        if (van.deployed && van.padPos) {
+            const vanDist = Math.hypot(van.position.x - hp.x, van.position.z - hp.z);
+            if (vanDist <= 80 && (!tetherAnchor || vanDist < roverDist
+                && (!nearestPad || vanDist < Math.hypot(nearestPad.x - hp.x, nearestPad.z - hp.z)))) {
+                tetherAnchor = van.position.clone();
             }
         }
         hu.setTether(tetherAnchor);
@@ -1072,6 +1122,7 @@ function setupKeyboard() {
         if (e.code === 'KeyG') document.dispatchEvent(new CustomEvent('mc-cycle-gear'));
         if (e.code === 'KeyN') document.dispatchEvent(new CustomEvent('mc-night-vision'));
         if (e.code === 'KeyM' || e.code === 'Escape') document.dispatchEvent(new CustomEvent('mc-menu'));
+        if (e.code === 'KeyV') document.dispatchEvent(new CustomEvent('mc-van-deploy'));
     });
     return keys;
 }
@@ -1149,6 +1200,12 @@ document.addEventListener('mc-night-vision', () => document.getElementById('mc-n
 document.addEventListener('mc-menu', () => {
     const menu = document.getElementById('mc-menu');
     if (menu) menu.dataset.open = menu.dataset.open === 'true' ? 'false' : 'true';
+});
+document.addEventListener('mc-van-deploy', () => {
+    const active = units[activeIndex];
+    if (!active || active.unit !== van) return;
+    if (van.deployed || van.deploying) van.undeploy();
+    else van.deploy();
 });
 
 boot();
