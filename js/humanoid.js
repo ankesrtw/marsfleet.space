@@ -12,14 +12,18 @@ import * as THREE from 'three';
 import { GRAVITY_MARS } from './physics.js';
 import { attachUnitModel } from './models.js';
 
-// ~5 km/h — a brisk suited walk (Apollo EVAs averaged ~2.2 km/h with
-// loping bursts near 5). Real scale, no assist needed to stay playable.
-const WALK_SPEED = 1.4;  // m/s
-const TURN_RATE = 2.4;   // rad/s
-const SLOPE_K = 0.8;     // much gentler falloff than the rover
+const WALK_SPEED = 1.4;
+const TURN_RATE = 2.4;
+const SLOPE_K = 0.8;
 const MIN_SPEED_FACTOR = 0.3;
-const BODY_RADIUS = 0.35; // m, collision footprint (also main.js registry)
-const EDGE_MARGIN = 30;   // m inside the DEM edge — the mission boundary
+const BODY_RADIUS = 0.35;
+const EDGE_MARGIN = 30;
+
+// Wave 12 slope tilt — a biped stays gravity-vertical, not glued to terrain.
+// Pitch: lean into climbs / brace back on descents. Roll: small lateral lean.
+const PITCH_GAIN = 0.5;
+const ROLL_GAIN = 0.15;
+const MAX_TILT = 0.35;
 
 // Wave 9.5: EVA safety tether. Beyond TETHER_LENGTH the humanoid's max
 // speed is clamped (the suit drags the line), simulating a taut tether
@@ -76,7 +80,14 @@ export function createHumanoid(site, terrain, obstacles) {
     const bound = site.worldSize / 2 - EDGE_MARGIN;
 
     const _swing = new THREE.Quaternion();
-    const _axis = new THREE.Vector3(1, 0, 0); // bind-local X = leg/arm swing
+    const _axis = new THREE.Vector3(1, 0, 0);
+    const _up = new THREE.Vector3(0, 1, 0);
+    const _fwd = new THREE.Vector3();
+    const _right = new THREE.Vector3();
+    const _yawQ = new THREE.Quaternion();
+    const _pitchQ = new THREE.Quaternion();
+    const _rollQ = new THREE.Quaternion();
+    const _tiltQ = new THREE.Quaternion();
 
     function update(dt, input) {
         // input: { throttle: -1..1, steer: -1..1, jump: bool }
@@ -140,8 +151,21 @@ export function createHumanoid(site, terrain, obstacles) {
         const moving = grounded && Math.abs(input.throttle) > 0.05;
         if (moving) stride += dt * 6;
         walkAmt += ((moving ? 1 : 0) - walkAmt) * Math.min(1, 8 * dt);
-        mesh.rotation.y = heading;
-        mesh.position.y += Math.abs(Math.sin(stride)) * 0.06 * walkAmt; // walk bob
+        _fwd.set(Math.sin(heading), 0, Math.cos(heading));
+        _right.set(-Math.cos(heading), 0, Math.sin(heading));
+        let pitch = THREE.MathUtils.clamp(normal.dot(_fwd) * PITCH_GAIN, -MAX_TILT, MAX_TILT);
+        let roll = THREE.MathUtils.clamp(normal.dot(_right) * ROLL_GAIN, -MAX_TILT, MAX_TILT);
+        if (airY > 0) {
+            const decay = Math.exp(-3 * dt);
+            pitch *= decay;
+            roll *= decay;
+        }
+        _yawQ.setFromAxisAngle(_up, heading);
+        _pitchQ.setFromAxisAngle(_right, -pitch);
+        _rollQ.setFromAxisAngle(_fwd, -roll);
+        _tiltQ.copy(_yawQ).multiply(_pitchQ).multiply(_rollQ);
+        mesh.quaternion.slerp(_tiltQ, 1 - Math.exp(-12 * dt));
+        mesh.position.y += Math.abs(Math.sin(stride)) * 0.06 * walkAmt;
 
         if (rig && walkAmt > 0.01) {
             for (const j of rig) {
