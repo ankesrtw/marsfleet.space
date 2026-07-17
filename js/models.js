@@ -39,10 +39,14 @@ const MODELS = {
     // toy-sized beside it. 2.6 makes the humanoid read person-scale.
     humanoid: { url: 'assets/models/humanoid.glb', yaw: Math.PI / 2, size: 2.6, axis: 'y' },
     // Wave 12 mobile van — NASA SEV/MMSEV silhouette, ~5.5m 6-wheeler.
-    // Asset pending (Tripo, generated after code merge per the plan);
-    // the 404 keeps the procedural fallback, same as every other unit.
-    // Re-measure placement/collision constants when the GLB lands.
-    van: { url: 'assets/models/van.glb', yaw: 0, size: 5.5, axis: 'z' },
+    // Source: Tripo repair-van-texured.glb (84 textured parts KEPT — the
+    // white hull / dark window / tire-tread read), compressed 1.69MB ->
+    // 671KB via gltf-transform dedup+flatten+weld+resize512+webp+quantize.
+    // Yaw -PI/2: raw +X is the long axis and the isolated front axle sits
+    // at raw -X (vertex clustering), which this maps to -Z = unit forward.
+    // Wheel spin/steer comes from van.js's wheels.js overlay rig, NOT GLB
+    // nodes — Tripo's part split bleeds tires into suspension arms.
+    van: { url: 'assets/models/van.glb', yaw: -Math.PI / 2, size: 5.5, axis: 'z' },
 };
 
 // Stationary structures (no heading, so no yaw-to-heading convention to
