@@ -196,6 +196,13 @@ async function startGame(site) {
     colliders.register('rover', { position: rover.position, radius: 1.4, alt: () => 0 });
     colliders.register('humanoid', { position: humanoid.position, radius: 0.35, alt: () => 0, enabled: () => !humanoidStowed });
     colliders.register('van', { position: van.position, radius: 2.2, alt: () => 0 });
+    // Wave 12.14: the van roof is a landable deck that FOLLOWS the van
+    // (deck records are mutable — the chargepad re-measure idiom, moved
+    // per frame). owner 'van' keeps the van off its own roof; the drones
+    // settle on it, so a parked recon rides along and charges when the
+    // van deploys. Radius under the real half-width so only genuinely
+    // on-roof counts; height re-measured from the GLB at swap.
+    const vanDeck = colliders.addDeck(van.position.x, van.position.z, 1.9, van.roofHeight, 1.3, 'van');
     colliders.register('recon', { position: recon.position, radius: 0.7, alt: () => recon.alt });
     colliders.register('lift', { position: lift.position, radius: 1.2, alt: () => lift.alt });
 
@@ -858,7 +865,38 @@ async function startGame(site) {
         else if (!active.dead) active.deadWarned = false;
 
         const beforeMove = active.unit.position.clone();
+        // Keep the previous deck centre so any landed drone that was
+        // genuinely parked on the roof can ride with the van this frame.
+        // (The owner exclusion in colliders.js prevents the van itself
+        // from treating that same deck as ground.)
+        const prevVanDeckX = vanDeck.x;
+        const prevVanDeckZ = vanDeck.z;
         active.unit.update(dt, input);
+        // Wave 12: the idle van also keeps simulating — it grounds itself
+        // on the terrain at boot and its deploy animation finishes even if
+        // the player switches away mid-fold. This must run before the idle
+        // drones: a drone parked on the roof needs the deck at the van's
+        // *new* position when it picks its ground height this frame.
+        if (active.unit !== van) van.update(dt, { throttle: 0, steer: 0 });
+        // Wave 12.14: the roof deck rides with the van. Keep it in sync
+        // before drone updates so a landed drone moves with an active van
+        // instead of spending a frame grounded at the old coordinates.
+        vanDeck.x = van.position.x;
+        vanDeck.z = van.position.z;
+        vanDeck.h = van.roofHeight;
+        const deckDx = vanDeck.x - prevVanDeckX;
+        const deckDz = vanDeck.z - prevVanDeckZ;
+        if (deckDx || deckDz) {
+            for (const u of units) {
+                // A flying drone cannot be a roof passenger. A landed one
+                // inside the old solid deck radius is moved before its own
+                // ground clamp, which then re-seats it on the moved roof.
+                if (u.kind !== 'fly' || !u.unit.landed
+                    || Math.hypot(u.unit.position.x - prevVanDeckX,
+                        u.unit.position.z - prevVanDeckZ) > vanDeck.r) continue;
+                u.unit.teleport(u.unit.position.x + deckDx, u.unit.position.z + deckDz);
+            }
+        }
         // idle drones keep simulating: hover physics settles, auto-land
         // sequences (incl. dead-battery force-landing) complete
         for (const u of units) {
@@ -866,10 +904,6 @@ async function startGame(site) {
                 u.unit.update(dt, { forward: 0, strafe: 0, turn: 0, climb: 0 });
             }
         }
-        // Wave 12: the idle van also keeps simulating — it grounds itself
-        // on the terrain at boot and its deploy animation finishes even if
-        // the player switches away mid-fold.
-        if (active.unit !== van) van.update(dt, { throttle: 0, steer: 0 });
         const movedDist = Math.hypot(
             active.unit.position.x - beforeMove.x,
             active.unit.position.z - beforeMove.z

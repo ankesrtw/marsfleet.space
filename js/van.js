@@ -76,6 +76,10 @@ export function createVan(site, terrain, obstacles) {
     // the deploy rig + wheel rig, and re-seat the deploy rig's panels on
     // the REAL roof line (the procedural hull's 2.35m hinge floated above
     // the GLB's 2.48m-high, 3.7m-wide body).
+    // Roof line for the drivable/landable roof deck (Wave 12.14) —
+    // procedural body top now, re-measured from the GLB at swap.
+    let roofH = 2.4;
+
     attachUnitModel(mesh, 'van', (_model, size) => {
         mesh.add(deployRig.group);
         wheelRig.layout(VAN_WHEELS_GLB);
@@ -84,6 +88,7 @@ export function createVan(site, terrain, obstacles) {
         // the roof-stowed wings stack instead of z-fighting mid-overlap.
         deployRig.panelL.position.set(-(size.x / 2 - 0.1), size.y + 0.14, 0);
         deployRig.panelR.position.set(size.x / 2 - 0.1, size.y + 0.04, 0);
+        roofH = size.y;
     });
 
     let heading = site.spawn.heading;
@@ -195,6 +200,7 @@ export function createVan(site, terrain, obstacles) {
         get maxSpeed() { return VAN_SPEED; },
         get mountRadius() { return MOUNT_R; },
         get dockRadius() { return DOCK_R; },
+        get roofHeight() { return roofH; },
         get health() { return health; },
         // Mobile base position: returns null if not deployed, else the van's
         // world x/z for main.js to register/remove a chargepad.

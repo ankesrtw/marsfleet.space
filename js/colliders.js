@@ -36,17 +36,22 @@ export function createColliders(rocks) {
         to 0 across `ramp` metres outside — the ramp keeps the rover's
         ground-rise rate below its launch threshold, so climbing a deck
         reads as rolling up a skirt, not popping. Returns the (mutable)
-        record so callers can re-measure it once a GLB swaps in. */
-    function addDeck(x, z, r, h, ramp = 1.2) {
-        const deck = { x, z, r, h, ramp };
+        record so callers can re-measure it once a GLB swaps in — or move
+        it every frame (Wave 12.14: the van's roof deck follows the van).
+        `owner` names the unit the deck is bolted to: that unit must NOT
+        ground itself on its own roof (self-referential lift-off). */
+    function addDeck(x, z, r, h, ramp = 1.2, owner = null) {
+        const deck = { x, z, r, h, ramp, owner };
         decks.push(deck);
         return deck;
     }
 
-    /** Extra ground height from any deck under (x, z) — 0 in the open. */
-    function deckHeight(x, z) {
+    /** Extra ground height from any deck under (x, z) — 0 in the open.
+        `exclude` skips decks owned by that unit (see addDeck). */
+    function deckHeight(x, z, exclude = null) {
         let h = 0;
         for (const d of decks) {
+            if (exclude != null && d.owner === exclude) continue;
             const dist = Math.hypot(x - d.x, z - d.z);
             if (dist >= d.r + d.ramp) continue;
             const k = dist <= d.r ? 1 : 1 - (dist - d.r) / d.ramp;
@@ -82,7 +87,8 @@ export function createColliders(rocks) {
 
     /** rocks.collides-shaped facade for one unit — drop-in for the
         `rocks` param the ground units already take. deckHeight rides
-        along so every mover grounds itself on drivable platforms. */
+        along so every mover grounds itself on drivable platforms —
+        minus any deck the unit itself carries (owner exclusion). */
     function forUnit(name) {
         return {
             collides(x, z, r) {
@@ -91,7 +97,7 @@ export function createColliders(rocks) {
                 if (selfAlt < ROCK_CEILING && rocks?.collides(x, z, r)) return true;
                 return hits(name, x, z, r);
             },
-            deckHeight,
+            deckHeight: (x, z) => deckHeight(x, z, name),
         };
     }
 
