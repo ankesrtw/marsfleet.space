@@ -50,6 +50,12 @@ const MISSIONS = {
         id: 'survey',
         title: 'SURVEY — AERIAL RECONNAISSANCE',
         steps: [
+            // Wave 12.12: the far scout zone (Neretva Vallis, ~5.5km out) is
+            // one-way range for the recon — the chain teaches the van loop
+            // FIRST: drive out, deploy, and the fleet has a field base to
+            // recharge at. advance('forward-base') fires from main.js when
+            // the van deploys far from every base pad.
+            { type: 'action', id: 'forward-base', text: 'ESTABLISH A FORWARD BASE — DEPLOY THE VAN AFIELD' },
             { type: 'action', id: 'switch-recon', text: 'SWITCH TO THE RECON DRONE (TAB)' },
             { type: 'survey', id: 'scan-zone', text: 'SCAN ALL SCOUT ZONES', target: 3 },
             { type: 'action', id: 'return-base', text: 'RETURN TO BASE' },

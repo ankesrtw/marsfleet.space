@@ -861,11 +861,23 @@ async function startGame(site) {
         const surveyOn = site.surveyZones?.length && missions.activeMissions.includes('survey');
         let zonesScanned = 0;
         if (surveyOn) {
+            // Wave 12.12: forward-base step — the van deployed >600m from
+            // every base pad counts as an established forward base. Per-frame
+            // broadcast like the archive gate (no-op unless the step waits).
+            if (van.deployed && van.padPos) {
+                const nb = chargepads.nearestTo(van.padPos.x, van.padPos.z);
+                const nd = nb ? Math.hypot(nb.x - van.padPos.x, nb.z - van.padPos.z) : Infinity;
+                if (nd > 600) missions.advance('forward-base');
+            }
             for (const sz of site.surveyZones) {
                 if (fog.revealedFraction(sz.x, sz.z, sz.radius) >= 0.65) zonesScanned++;
             }
             missions.advance('scan-zone', zonesScanned);
-            if (recon.landed && chargepads.padAt(recon.position)) {
+            // "Base" includes the deployed van — it IS the base out there.
+            const atVanDock = van.deployed && van.padPos
+                && Math.hypot(van.position.x - recon.position.x,
+                    van.position.z - recon.position.z) <= van.dockRadius;
+            if (recon.landed && (chargepads.padAt(recon.position) || atVanDock)) {
                 missions.advance('return-base');
             }
         }
