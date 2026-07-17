@@ -369,6 +369,7 @@ export function createHud(rootEl, { site, onSwitchUnit, onCollect, onToggleSfx, 
         'rollover': '⚠ ROLLOVER — ROCK W/S TO RIGHT, OR BRING A UNIT CLOSE',
         'bogged': '⚠ BOGGED DOWN — ROCK W/S, DON\'T DIG · UNIT NEARBY SPEEDS TOW',
         'rover-down': '⚠ ROVER DOWN — HOLD NEAR IT TO ASSIST',
+        'dig': '✦ DRILLING CORE SAMPLE',
     };
     const hazardEl = rootEl.querySelector('#mc-hazard');
     let hazardLabelShown = null;

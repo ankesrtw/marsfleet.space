@@ -61,10 +61,15 @@ const POSTURE_BONES = [
     { name: 'Spine01', walkAmp: 0, axisIdx: 0 },
     { name: 'Spine02', walkAmp: 0, axisIdx: 0 },
     { name: 'Head', walkAmp: 0, axisIdx: 0 },
+    { name: 'L_Hand', walkAmp: 0, axisIdx: 0 },
+    { name: 'R_Hand', walkAmp: 0, axisIdx: 0 },
 ];
 const PELVIS_DROP = 0.03;
 const SPINE_COUNTER = 0.4;
 const HEAD_LEVEL = 0.7;
+
+// Wave 12.3 digging
+const DIG_SECS = 4.5;
 
 // `obstacles` is a colliders.js facade (boulders + structures + other
 // units), shaped like the old rocks collider: collides(x, z, radius).
@@ -100,6 +105,8 @@ export function createHumanoid(site, terrain, obstacles) {
     let tetherAnchor = null;
     let tetherTaut = false;
     let currentPitch = 0;
+    let digTimer = 0;       // seconds elapsed into the current dig (0 = idle)
+    let digTargetSample = null;  // the sample being drilled
     const _tetherVec = new THREE.Vector3();
     const bound = site.worldSize / 2 - EDGE_MARGIN;
 
@@ -120,8 +127,18 @@ export function createHumanoid(site, terrain, obstacles) {
     const _tiltQ = new THREE.Quaternion();
 
     function update(dt, input) {
-        // input: { throttle: -1..1, steer: -1..1, jump: bool }
         heading += input.steer * TURN_RATE * dt;
+
+        if (digTimer > 0) {
+            if (Math.abs(input.throttle) > 0.05) {
+                digTimer = 0;
+                digTargetSample = null;
+            } else {
+                digTimer += dt;
+                if (digTimer >= DIG_SECS) digTimer = DIG_SECS;
+            }
+        }
+        const digging = digTimer > 0;
 
         // Mars jump (Wave 9). At 0.38 g the SAME impulse arcs ~2.6x higher and
         // hangs ~2.6x longer than on Earth, and that floatiness is the point —
@@ -147,7 +164,7 @@ export function createHumanoid(site, terrain, obstacles) {
                 tetherTaut = true;
             }
         }
-        const speed = input.throttle * WALK_SPEED * speedFactor;
+        const speed = digging ? 0 : input.throttle * WALK_SPEED * speedFactor;
 
         let nx = mesh.position.x + Math.sin(heading) * speed * dt;
         let nz = mesh.position.z + Math.cos(heading) * speed * dt;
@@ -205,19 +222,42 @@ export function createHumanoid(site, terrain, obstacles) {
             }
         }
 
-        if (postureRig && walkAmt > 0.01) {
+        if (postureRig && (walkAmt > 0.01 || digging)) {
             for (const p of postureRig) {
                 let angle = 0;
                 if (p.name === 'Pelvis') {
-                    const drop = -PELVIS_DROP * Math.abs(Math.sin(stride)) * walkAmt;
-                    const sway = p.walkAmp * Math.sin(stride) * walkAmt;
-                    angle = drop + sway;
-                } else if (p.name === 'Spine01' || p.name === 'Spine02') {
-                    const slerpPitch = currentPitch * (1 - Math.exp(-4 * dt));
-                    angle = -slerpPitch * SPINE_COUNTER;
+                    if (digging) {
+                        angle = -0.15 * Math.min(1, digTimer / (DIG_SECS * 0.3));
+                    } else {
+                        const drop = -PELVIS_DROP * Math.abs(Math.sin(stride)) * walkAmt;
+                        const sway = p.walkAmp * Math.sin(stride) * walkAmt;
+                        angle = drop + sway;
+                    }
+                } else if (p.name === 'Spine01') {
+                    if (digging) {
+                        angle = -0.45 * Math.min(1, digTimer / (DIG_SECS * 0.25));
+                    } else {
+                        const slerpPitch = currentPitch * (1 - Math.exp(-4 * dt));
+                        angle = -slerpPitch * SPINE_COUNTER;
+                    }
+                } else if (p.name === 'Spine02') {
+                    if (digging) {
+                        angle = -0.15 * Math.min(1, digTimer / (DIG_SECS * 0.25));
+                    } else {
+                        const slerpPitch = currentPitch * (1 - Math.exp(-4 * dt));
+                        angle = -slerpPitch * SPINE_COUNTER * 0.6;
+                    }
                 } else if (p.name === 'Head') {
-                    const slerpPitch = currentPitch * (1 - Math.exp(-6 * dt));
-                    angle = -slerpPitch * HEAD_LEVEL;
+                    if (digging) {
+                        angle = 0.35 * Math.min(1, digTimer / (DIG_SECS * 0.25));
+                    } else {
+                        const slerpPitch = currentPitch * (1 - Math.exp(-6 * dt));
+                        angle = -slerpPitch * HEAD_LEVEL;
+                    }
+                } else if (p.name === 'L_Hand' || p.name === 'R_Hand') {
+                    if (digging) {
+                        angle = 0.7 * Math.min(1, digTimer / (DIG_SECS * 0.25));
+                    }
                 }
                 _postureQ.setFromAxisAngle(_postureAxes[p.axisIdx], angle);
                 p.bone.quaternion.copy(p.bind).multiply(_postureQ);
@@ -241,16 +281,36 @@ export function createHumanoid(site, terrain, obstacles) {
         tetherAnchor = pos;
     }
 
+    function startDig(sample) {
+        if (digTimer > 0) return false;
+        digTimer = 0.001;
+        digTargetSample = sample;
+        return true;
+    }
+
+    function cancelDig() {
+        digTimer = 0;
+        digTargetSample = null;
+    }
+
+    function digProgress() {
+        if (digTimer <= 0) return 0;
+        return Math.min(1, digTimer / DIG_SECS);
+    }
+
     return {
-        mesh, update, teleport, setTether,
+        mesh, update, teleport, setTether, startDig, cancelDig, digProgress,
         get position() { return mesh.position; },
         get heading() { return heading; },
         get atBoundary() { return atBoundary; },
         get airborne() { return airY > 0; },
-        get airY() { return airY; },          // m above ground (jump arc)
+        get airY() { return airY; },
         get jumpVel() { return jumpVel; },
         get tetherTaut() { return tetherTaut; },
         get tetherAnchor() { return tetherAnchor; },
+        get digging() { return digTimer > 0 && digTimer < DIG_SECS; },
+        get digComplete() { return digTimer >= DIG_SECS; },
+        get digTarget() { return digTargetSample; },
         // Tether attachment point on the humanoid: shoulder height (~1.5m)
         get tetherPoint() {
             return new THREE.Vector3(mesh.position.x, mesh.position.y + 1.5, mesh.position.z);

@@ -15,6 +15,7 @@ export function createSound() {
     let ctx = null;
     let master = null;
     let engine = null;      // { osc, sub, filter, gain }
+    let drill = null;       // { osc, gain } — Wave 12 digging drill whine
     let windBed = null;     // wind-loop gain node (Wave 6: rides real wind)
     let enabled = localStorage.getItem(LS_KEY) !== 'off';
 
@@ -27,6 +28,7 @@ export function createSound() {
             master.connect(ctx.destination);
             buildWind();
             buildEngine();
+            buildDrill();
         } catch {
             ctx = null; // no audio available — stay silent forever
         }
@@ -84,6 +86,27 @@ export function createSound() {
         engine = { osc, sub, filter, gain };
     }
 
+    function buildDrill() {
+        const osc = ctx.createOscillator();
+        osc.type = 'sawtooth';
+        osc.frequency.value = 90;
+        const sub = ctx.createOscillator();
+        sub.type = 'triangle';
+        sub.frequency.value = 180;
+        const filter = ctx.createBiquadFilter();
+        filter.type = 'bandpass';
+        filter.frequency.value = 400;
+        filter.Q.value = 1.5;
+        const gain = ctx.createGain();
+        gain.gain.value = 0;
+        osc.connect(filter);
+        sub.connect(filter);
+        filter.connect(gain).connect(master);
+        osc.start();
+        sub.start();
+        drill = { osc, sub, filter, gain };
+    }
+
     // per-unit engine voicing: base pitch + how loud it may get
     const ENGINE_VOICE = {
         'Rover': { freq: 42, vol: 0.14 },
@@ -136,6 +159,17 @@ export function createSound() {
     return {
         update,
         toggle,
+        /** Wave 12: drilling sound — intensity 0..1 rides the dig progress bar. */
+        drill(intensity) {
+            if (!ctx || !drill) return;
+            const t = ctx.currentTime;
+            const vol = intensity * 0.09;
+            drill.gain.gain.setTargetAtTime(vol, t, 0.1);
+            const freq = 90 + 50 * intensity;
+            drill.osc.frequency.setTargetAtTime(freq, t, 0.1);
+            drill.sub.frequency.setTargetAtTime(freq * 2, t, 0.1);
+            drill.filter.frequency.setTargetAtTime(300 + 200 * intensity, t, 0.1);
+        },
         get enabled() { return enabled; },
         collect: () => blip([660, 990], 0.14, 0.2),
         sling: () => blip([520, 780], 0.12, 0.18),

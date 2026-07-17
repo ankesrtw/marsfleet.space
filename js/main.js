@@ -558,12 +558,17 @@ async function startGame(site) {
         const active = units[activeIndex];
         if (active.kind === 'ground') {
             const sample = samples.nearestUncollected(active.unit.position);
-            if (sample) {
-                samples.collect(sample);
-                hud.setInventory(samples.inventory, deliveredIds, analysis.analyzedIds);
-                sound.collect();
-                missions.advance('collect');
+            if (!sample) return;
+            // Wave 12: humanoid drills outpost-flagged samples (timed core);
+            // the rover keeps its instant robotic-arm collect.
+            if (active.unit === humanoid && sample.outpost) {
+                humanoid.startDig(sample);
+                return;
             }
+            samples.collect(sample);
+            hud.setInventory(samples.inventory, deliveredIds, analysis.analyzedIds);
+            sound.collect();
+            missions.advance('collect');
             return;
         }
         // Lift drone: the same E action hooks, releases and delivers.
@@ -841,6 +846,31 @@ async function startGame(site) {
         sound.update(active.name, Math.min(1, engineNorm),
             Math.hypot(windHere.vx, windHere.vz) / 20); // /WIND_PEAK — 1.0 at storm max
 
+        // Wave 12 digging: humanoid cores outpost-flagged samples.
+        if (active.unit === humanoid && humanoid.digging) {
+            const dp = humanoid.digProgress();
+            const pct = Math.round(dp * 100);
+            hud.setHazard({ type: 'dig', pct });
+            sound.drill(dp);
+            const ds = humanoid.digTarget;
+            if (ds) effects.spawnDust(ds.x,
+                terrain.sampleHeight(ds.x, ds.z) + 0.3, ds.z, 2);
+        } else if (active.unit === humanoid) {
+            sound.drill(0);
+        }
+        if (humanoid.digComplete) {
+            const ds = humanoid.digTarget;
+            if (ds) {
+                samples.collect(ds);
+                hud.setInventory(samples.inventory, deliveredIds, analysis.analyzedIds);
+                sound.collect();
+                missions.advance('collect');
+            }
+            humanoid.cancelDig();
+            hud.setHazard(null);
+            sound.drill(0);
+        }
+
         // Edge-of-DEM warning while the active unit pushes the boundary.
         hud.setBoundary(!!active.unit.atBoundary);
 
@@ -871,7 +901,9 @@ async function startGame(site) {
         // is in (rover-only getter), else the site-wide dust storm once
         // it's thick enough to matter. One slot.
         const recPct = Math.round(rover.recoveryMeter * 100);
-        if (active.unit === rover && rover.condition === 'rolled') {
+        if (humanoid.digging) {
+            // hazard banner owned by the dig block above — don't overwrite
+        } else if (active.unit === rover && rover.condition === 'rolled') {
             hud.setHazard({ type: 'rollover', pct: recPct });
         } else if (active.unit === rover && rover.condition === 'bogged') {
             hud.setHazard({ type: 'bogged', pct: recPct });
