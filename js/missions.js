@@ -51,7 +51,7 @@ const MISSIONS = {
         title: 'SURVEY — AERIAL RECONNAISSANCE',
         steps: [
             { type: 'action', id: 'switch-recon', text: 'SWITCH TO THE RECON DRONE (TAB)' },
-            { type: 'survey', id: 'scan-zone', text: 'SCAN THE DESIGNATED ZONE', target: 0.65 },
+            { type: 'survey', id: 'scan-zone', text: 'SCAN ALL SCOUT ZONES', target: 3 },
             { type: 'action', id: 'return-base', text: 'RETURN TO BASE' },
         ],
     },

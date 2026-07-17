@@ -351,17 +351,19 @@ export function createFog(site, minimapEl, terrain) {
             }
         }
 
-        // Survey zone (Wave 9.5 recon scan mission): teal dashed ring
-        // above the fog, visible only when a survey mission is active.
-        if (extras?.surveyZone) {
-            const { px, py } = worldToPx(extras.surveyZone.x, extras.surveyZone.z);
-            const r = (extras.surveyZone.radius / worldSize) * MAP_RES;
-            displayCtx.strokeStyle = 'rgba(46, 196, 214, 0.7)';
-            displayCtx.lineWidth = 2;
-            displayCtx.setLineDash([6, 4]);
-            displayCtx.beginPath();
-            displayCtx.arc(px, py, r, 0, Math.PI * 2);
-            displayCtx.stroke();
+        // Survey zones (Wave 12.5 multi-zone survey): teal dashed rings
+        // visible only when a survey mission is active.
+        if (extras?.surveyZones) {
+            for (const sz of extras.surveyZones) {
+                const { px, py } = worldToPx(sz.x, sz.z);
+                const r = (sz.radius / worldSize) * MAP_RES;
+                displayCtx.strokeStyle = 'rgba(46, 196, 214, 0.7)';
+                displayCtx.lineWidth = 2;
+                displayCtx.setLineDash([6, 4]);
+                displayCtx.beginPath();
+                displayCtx.arc(px, py, r, 0, Math.PI * 2);
+                displayCtx.stroke();
+            }
             displayCtx.setLineDash([]);
         }
 

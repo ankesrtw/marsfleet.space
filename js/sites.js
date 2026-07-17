@@ -54,10 +54,13 @@ export const SITES = {
         spawn: { x: 2127, z: 615, heading: Math.PI / 4 },
         // Objective chains offered here (missions.js keys). Sites without
         // the field simply have none — Wave 4 pattern, Jezero-first.
-        // Survey zone center/radius for the recon scan mission (wave 9.5).
-        // Positioned over the Séítah dune margin — a large, interesting area
-        // that rewards aerial survey.
-        surveyZone: { x: 1350, z: 480, radius: 200 },
+        // Wave 12.5 multi-zone survey: several recon scouting targets per site.
+        // The survey mission counts zones revealed to 65%+.
+        surveyZones: [
+            { x: 1350, z: 480, radius: 200 },   // Séítah dune margin
+            { x: 1800, z: 2300, radius: 180 },  // Dust Devil Flats
+            { x: -2380, z: -2450, radius: 200 }, // Neretva Vallis
+        ],
         missions: ['tutorial', 'survey'],
         // Wave 7 base-building: once ALL missions above are complete, the
         // Signal Headquarters structure builds near the FIELD LAB

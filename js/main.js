@@ -752,13 +752,13 @@ async function startGame(site) {
         // Gate on the survey chain being ACTIVE, not on it being the first
         // active chain (currentAny returned the tutorial while both ran,
         // silently freezing scan progress until the tutorial was done).
-        const surveyOn = !!site.surveyZone && missions.activeMissions.includes('survey');
+        const surveyOn = site.surveyZones?.length && missions.activeMissions.includes('survey');
         if (surveyOn) {
-            const sz = site.surveyZone;
-            const frac = fog.revealedFraction(sz.x, sz.z, sz.radius);
-            missions.advance('scan-zone', frac);
-            // Step 3: return to base — the recon must actually LAND on a
-            // pad (flying over one at cruise height is not a return).
+            let done = 0;
+            for (const sz of site.surveyZones) {
+                if (fog.revealedFraction(sz.x, sz.z, sz.radius) >= 0.65) done++;
+            }
+            missions.advance('scan-zone', done);
             if (recon.landed && chargepads.padAt(recon.position)) {
                 missions.advance('return-base');
             }
@@ -794,7 +794,7 @@ async function startGame(site) {
             // "BOGGED DOWN" never feels random.
             sand: hazardZones.zones,
             // Wave 9.5: survey zone ring (visible while survey mission active)
-            surveyZone: surveyOn ? site.surveyZone : null,
+            surveyZones: surveyOn ? site.surveyZones : null,
             // Wave 9.5: repair bays alongside every chargepad
             repairShops: chargepads.repairPositions,
         });
