@@ -369,6 +369,10 @@ async function startGame(site) {
     // battery after dusk was stranded at 0% until sunrise with no way out.
     const DOCK_RATE = 0.7;       // %/s while docked
     const REPAIR_RATE = 1.4;     // %/s hull repair while docked (Wave 9.2)
+    // Wave 12.11: the deployed van repairs too — but as a FIELD patch-up
+    // (the humanoid crew with hand tools), not a workshop. Slower than a
+    // base repair bay, so the bays stay worth the drive home.
+    const FIELD_REPAIR_FACTOR = 0.4;
     const RESTART_CHARGE = 10;   // empty units stay dead until this
     const NIGHT_DRAIN_K = 0.5;   // cold-night heater tax: +50% drain at full dark
     const STORM_FOG_K = 8;       // FOG.density multiplier span at storm peak
@@ -785,13 +789,16 @@ async function startGame(site) {
             // Docking needs the unit settled ON the pad — a drone hovering
             // over one is still burning its rotors, so it must be landed.
             // Wave 12: a deployed van is a pad too, and the stowed humanoid
-            // charges off the van's cabin dock while riding along.
+            // charges off the van's cabin dock while riding along. basePad
+            // vs vanPad stay distinct: charging is equal, repair is not.
+            const basePad = airborne ? null : chargepads.padAt(u.unit.position);
+            const vanPad = !basePad && !airborne && van.deployed && van.padPos
+                && Math.hypot(van.position.x - u.unit.position.x,
+                    van.position.z - u.unit.position.z) <= van.dockRadius
+                ? van.padPos : null;
             const pad = (u.unit === humanoid && humanoidStowed)
                 ? { x: van.position.x, z: van.position.z }
-                : airborne ? null
-                    : (chargepads.padAt(u.unit.position)
-                        || (van.deployed && van.padPos && Math.hypot(van.position.x - u.unit.position.x,
-                            van.position.z - u.unit.position.z) <= van.dockRadius ? van.padPos : null));
+                : (basePad || vanPad);
             u.docked = !!pad;
             const rate = pad ? DOCK_RATE : solarNow;
             u.charge = load > 0
@@ -800,10 +807,11 @@ async function startGame(site) {
             u.charging = load <= 0 && rate > 0 && u.charge < 100;
             if (pad && u.charging) livePads.add(pad);
 
-            // Repair bay: a base pad is also the ONLY thing that puts hull
-            // condition back (nothing in the field heals it). Park to fix.
+            // Repair: a base pad's workshop bay puts hull condition back at
+            // full rate; the deployed van field-repairs at FIELD_REPAIR_FACTOR
+            // (Wave 12.11) — a roadside patch-up, not a bay. Park to fix.
             if (pad && u.unit.repair && u.unit.health < 100) {
-                u.unit.repair(REPAIR_RATE * dt);
+                u.unit.repair(REPAIR_RATE * (basePad ? 1 : FIELD_REPAIR_FACTOR) * dt);
                 livePads.add(pad);
             }
 
