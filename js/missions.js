@@ -78,10 +78,37 @@ const MISSIONS = {
     },
 };
 
+/** Resolve the two data-driven step counts — the survey scan target and the
+    photo-recon collect count — from THIS site's arrays, so a site with a
+    different number of survey zones / photo spots still gets a completable
+    chain (plan 21). Clones the shared MISSIONS template so two sites never
+    fight over one mutable object. */
+function resolveMissions(site) {
+    const zoneN = site.surveyZones?.length ?? 0;
+    const spotN = site.photoSpots?.length ?? 0;
+    const out = {};
+    for (const [id, def] of Object.entries(MISSIONS)) {
+        out[id] = {
+            ...def,
+            steps: def.steps.map((s) => {
+                if (s.type === 'survey' && s.id === 'scan-zone')
+                    return { ...s, target: zoneN || s.target };
+                if (s.type === 'collect' && s.id === 'photo-count')
+                    return { ...s, count: spotN || s.count,
+                             text: `IMAGE ALL ${spotN || s.count} TARGETS FROM THE AIR (P)` };
+                return s;
+            }),
+        };
+    }
+    return out;
+}
+
 export function createMissions(site, { onComplete, onStep } = {}) {
     // Only missions this site offers (sites.js `missions` field); a site
-    // without the field simply has none — Gale stays untouched by design.
-    const available = (site.missions ?? []).filter((id) => MISSIONS[id]);
+    // without the field simply has none. `defs` = this site's resolved copy
+    // (data-driven survey/photo counts) — use it, never the raw template.
+    const defs = resolveMissions(site);
+    const available = (site.missions ?? []).filter((id) => defs[id]);
     const save = Save(site.id);
 
     const active = new Map();    // missionId -> { stepIdx, progress }
@@ -91,7 +118,7 @@ export function createMissions(site, { onComplete, onStep } = {}) {
     }
 
     function start(missionId) {
-        const def = MISSIONS[missionId];
+        const def = defs[missionId];
         if (!def || !available.includes(missionId)) return false;
         active.set(missionId, { stepIdx: 0, progress: 0 });
         return true;
@@ -107,7 +134,7 @@ export function createMissions(site, { onComplete, onStep } = {}) {
     /** Step object the given active mission is currently on, or null. */
     function current(missionId) {
         const run = active.get(missionId);
-        return run ? MISSIONS[missionId].steps[run.stepIdx] : null;
+        return run ? defs[missionId].steps[run.stepIdx] : null;
     }
 
     /** Banner feed: first active chain's position, or null when idle.
@@ -116,10 +143,10 @@ export function createMissions(site, { onComplete, onStep } = {}) {
         for (const [missionId, run] of active) {
             return {
                 missionId,
-                title: MISSIONS[missionId].title,
-                step: MISSIONS[missionId].steps[run.stepIdx],
+                title: defs[missionId].title,
+                step: defs[missionId].steps[run.stepIdx],
                 stepNum: run.stepIdx + 1,
-                total: MISSIONS[missionId].steps.length,
+                total: defs[missionId].steps.length,
             };
         }
         return null;
@@ -130,7 +157,7 @@ export function createMissions(site, { onComplete, onStep } = {}) {
         extended across chains). `value` only matters for survey steps. */
     function advance(matchId, value) {
         for (const [missionId, run] of active) {
-            const step = MISSIONS[missionId].steps[run.stepIdx];
+            const step = defs[missionId].steps[run.stepIdx];
             let done = false;
             if (step.type === 'action' && step.id === matchId) {
                 done = true;
@@ -144,14 +171,14 @@ export function createMissions(site, { onComplete, onStep } = {}) {
             if (!done) continue;
             run.stepIdx += 1;
             run.progress = 0;
-            const steps = MISSIONS[missionId].steps;
+            const steps = defs[missionId].steps;
             const last = run.stepIdx >= steps.length;
             // Wave 9.8: announce the transition, so the HUD can say what just
             // got done and what comes next. Still no game logic here — this is
             // the same broadcast, it just carries the step it crossed.
             onStep?.({
                 missionId,
-                title: MISSIONS[missionId].title,
+                title: defs[missionId].title,
                 done: step,                       // the step just completed
                 doneNum: run.stepIdx,             // 1-based number of that step
                 next: last ? null : steps[run.stepIdx],
@@ -182,7 +209,7 @@ export function createMissions(site, { onComplete, onStep } = {}) {
     function menuEntries() {
         return available.map((id) => ({
             id,
-            title: MISSIONS[id].title,
+            title: defs[id].title,
             done: completed.has(id),
             active: active.has(id),
         }));
@@ -194,14 +221,14 @@ export function createMissions(site, { onComplete, onStep } = {}) {
         // Autostart chains not yet completed — main.js starts these at boot
         // (the tutorial's old first-visit gate, generalized).
         get autostarts() {
-            return available.filter((id) => MISSIONS[id].autostart && !completed.has(id));
+            return available.filter((id) => defs[id].autostart && !completed.has(id));
         },
         // Step texts for the overview card (hud.js), per mission.
         stepTexts(missionId) {
-            return MISSIONS[missionId]?.steps.map((s) => s.text) ?? [];
+            return defs[missionId]?.steps.map((s) => s.text) ?? [];
         },
         titleOf(missionId) {
-            return MISSIONS[missionId]?.title ?? '';
+            return defs[missionId]?.title ?? '';
         },
     };
 }
