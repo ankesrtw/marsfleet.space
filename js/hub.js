@@ -23,7 +23,7 @@
 
 import * as THREE from 'three';
 import { SITES, LOCKED_SITES } from './sites.js';
-import { Save } from './saves.js';
+import { Save, resetGame } from './saves.js';
 
 const TEXTURE_URL = 'assets/hub/mars-globe.jpg';
 const R = 1;                      // globe radius (world units)
@@ -46,7 +46,7 @@ const PIN_LIFT = 1.012;           // dot radius above the globe surface
 const DOT_SCALE = 0.06, DOT_SCALE_LOCKED = 0.045;
 const DEG2RAD = Math.PI / 180;
 
-export function createHub({ onEnter, onResetGame } = {}) {
+export function createHub({ onEnter } = {}) {
     const root = document.getElementById('hub-root');
     const canvas = document.getElementById('hub-canvas');
 
@@ -80,9 +80,11 @@ export function createHub({ onEnter, onResetGame } = {}) {
         coords: document.getElementById('hub-card-coords'),
         progress: document.getElementById('hub-card-progress'),
         enter: document.getElementById('hub-card-enter'),
+        reset: document.getElementById('hub-card-reset'),
         locked: document.getElementById('hub-card-locked'),
         close: document.getElementById('hub-card-close'),
     };
+    const resetGameBtn = document.getElementById('hub-reset-game');
 
     function build() {
         renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: false });
@@ -217,36 +219,47 @@ export function createHub({ onEnter, onResetGame } = {}) {
     }
 
     /** Two-line billboard label: site name + a progress badge (playable) or
-        "COMING SOON" (locked). Badge read once from Save(id) at build. */
-    function makeLabel(site, playable) {
+        "COMING SOON" (locked). The badge canvas is redrawable so RESET SITE /
+        RESET GAME can refresh it in place (refreshLabel). */
+    const LABEL_W = 512, LABEL_H = 160;
+    function drawLabelCanvas(site, playable, canvasEl) {
         const badge = playable ? progressBadge(site) : 'COMING SOON';
-        const W = 512, H = 160;
-        const c = document.createElement('canvas');
-        c.width = W; c.height = H;
+        const c = canvasEl || document.createElement('canvas');
+        c.width = LABEL_W; c.height = LABEL_H;
         const ctx = c.getContext('2d');
+        ctx.clearRect(0, 0, LABEL_W, LABEL_H);
         ctx.textAlign = 'center';
         ctx.textBaseline = 'middle';
-        // name
         ctx.font = '600 46px system-ui, sans-serif';
         ctx.lineWidth = 6; ctx.strokeStyle = 'rgba(0,0,0,0.75)';
-        ctx.strokeText(site.name, W / 2, 52);
+        ctx.strokeText(site.name, LABEL_W / 2, 52);
         ctx.fillStyle = playable ? '#fff2e0' : '#b9c2cf';
-        ctx.fillText(site.name, W / 2, 52);
-        // badge
+        ctx.fillText(site.name, LABEL_W / 2, 52);
         ctx.font = '600 34px "SF Mono", ui-monospace, Menlo, monospace';
-        ctx.lineWidth = 5;
-        ctx.strokeText(badge, W / 2, H - 44);
+        ctx.lineWidth = 5; ctx.strokeStyle = 'rgba(0,0,0,0.75)';
+        ctx.strokeText(badge, LABEL_W / 2, LABEL_H - 44);
         ctx.fillStyle = playable ? '#ffcf6a' : '#8a97a8';
-        ctx.fillText(badge, W / 2, H - 44);
+        ctx.fillText(badge, LABEL_W / 2, LABEL_H - 44);
+        return c;
+    }
 
+    function makeLabel(site, playable) {
+        const c = drawLabelCanvas(site, playable);
         const tex = new THREE.CanvasTexture(c);
         tex.colorSpace = THREE.SRGBColorSpace;
         const spr = new THREE.Sprite(new THREE.SpriteMaterial({
             map: tex, transparent: true, depthWrite: false, depthTest: true,
         }));
-        spr.scale.set(0.5, 0.5 * H / W, 1);
+        spr.scale.set(0.5, 0.5 * LABEL_H / LABEL_W, 1);
+        spr.userData.canvas = c;
         spr.userData.tex = tex;
         return spr;
+    }
+
+    /** Redraw a pin's badge from its (possibly just-cleared) save. */
+    function refreshLabel(p) {
+        drawLabelCanvas(p.site, p.playable, p.label.userData.canvas);
+        p.label.userData.tex.needsUpdate = true;
     }
 
     /** Compact progress read from the per-site save: samples analysed / total
@@ -400,28 +413,71 @@ export function createHub({ onEnter, onResetGame } = {}) {
         cardEls.name.textContent = s.name;
         cardEls.mission.textContent = s.mission;
         cardEls.coords.textContent = coordText(s.center);
+        disarm(cardEls.reset, 'RESET SITE');
         if (p.playable) {
             const badge = progressBadge(s);
             cardEls.progress.textContent = badge;
             cardEls.progress.hidden = false;
             cardEls.enter.hidden = false;
             cardEls.enter.textContent = badge === 'NEW' ? 'ENTER' : 'CONTINUE';
+            cardEls.reset.hidden = badge === 'NEW';   // nothing to wipe when NEW
             cardEls.locked.hidden = true;
         } else {
             cardEls.progress.hidden = true;
             cardEls.enter.hidden = true;
+            cardEls.reset.hidden = true;
             cardEls.locked.hidden = false;
             cardEls.locked.textContent = 'COMING SOON — this site isn’t surveyed yet.';
         }
         card.hidden = false;
         card.dataset.locked = p.playable ? 'false' : 'true';
+        resetGameBtn.hidden = true;               // avoid overlap with the card
     }
 
     function closeCard() {
         card.hidden = true;
+        resetGameBtn.hidden = false;
         selected = null;
         focusTarget = null;
         setTimeout(() => { if (!selected) userInteracted = false; }, 400);
+    }
+
+    // ---- Resets (plan 22-C: the two wider tiers live on the hub) -----------
+    /** RESET SITE: wipe just the selected site's save, refresh its badge in
+        place, keep the card open (now reading NEW). */
+    function resetSite() {
+        if (!selected || !selected.playable) return;
+        Save(selected.site.id).clear();
+        refreshLabel(selected);
+        cardEls.progress.textContent = 'NEW';
+        cardEls.enter.textContent = 'ENTER';
+        cardEls.reset.hidden = true;
+        disarm(cardEls.reset, 'RESET SITE');
+    }
+
+    /** RESET GAME: wipe every site + global prefs, refresh all pin badges to
+        NEW, and drop back to a clean hub. */
+    function resetGameAll() {
+        resetGame();
+        for (const p of pins) refreshLabel(p);
+        disarm(resetGameBtn, 'RESET GAME');
+        closeCard();
+    }
+
+    /** Two-step arm/confirm (mirrors hud.js's reset) — no native confirm().
+        First click arms + relabels; second within 4s runs `action`. */
+    function armConfirm(btn, idleLabel, action) {
+        if (btn.dataset.armed === 'true') { action(); return; }
+        btn.dataset.armed = 'true';
+        btn.textContent = `CONFIRM ${idleLabel}?`;
+        clearTimeout(btn._disarm);
+        btn._disarm = setTimeout(() => disarm(btn, idleLabel), 4000);
+    }
+    function disarm(btn, idleLabel) {
+        if (!btn) return;
+        clearTimeout(btn._disarm);
+        btn.dataset.armed = 'false';
+        btn.textContent = idleLabel;
     }
 
     /** Real-coordinate readout, e.g. "18.46°N  77.42°E". */
@@ -491,6 +547,8 @@ export function createHub({ onEnter, onResetGame } = {}) {
         root.hidden = false;
         root.style.opacity = '';       // clear any fade left by a prior fly-in
         root.style.transition = '';
+        card.hidden = true;
+        resetGameBtn.hidden = false;
         if (!built) build();
         addListeners();
         timer.update(); // seed; the 0.05 clamp caps any first-frame gap anyway
@@ -506,6 +564,8 @@ export function createHub({ onEnter, onResetGame } = {}) {
         window.addEventListener('resize', onResize);
         cardEls.close.addEventListener('click', closeCard);
         cardEls.enter.addEventListener('click', enterSelected);
+        cardEls.reset.addEventListener('click', onResetSiteClick);
+        resetGameBtn.addEventListener('click', onResetGameClick);
     }
     function removeListeners() {
         canvas.removeEventListener('pointerdown', onPointerDown);
@@ -516,7 +576,11 @@ export function createHub({ onEnter, onResetGame } = {}) {
         window.removeEventListener('resize', onResize);
         cardEls.close.removeEventListener('click', closeCard);
         cardEls.enter.removeEventListener('click', enterSelected);
+        cardEls.reset.removeEventListener('click', onResetSiteClick);
+        resetGameBtn.removeEventListener('click', onResetGameClick);
     }
+    function onResetSiteClick() { armConfirm(cardEls.reset, 'RESET SITE', resetSite); }
+    function onResetGameClick() { armConfirm(resetGameBtn, 'RESET GAME', resetGameAll); }
 
     /** ENTER/CONTINUE: fly the camera down into the pin and fade out, THEN
         tear the hub down (freeing the WebGL context) and hand off to the sim,
@@ -548,6 +612,8 @@ export function createHub({ onEnter, onResetGame } = {}) {
         disposed = true;
         cancelAnimationFrame(raf); raf = 0;
         removeListeners();
+        disarm(cardEls.reset, 'RESET SITE');
+        disarm(resetGameBtn, 'RESET GAME');
         if (card) card.hidden = true;
         for (const p of pins) {
             p.dot.material.dispose();
@@ -583,6 +649,7 @@ export function createHub({ onEnter, onResetGame } = {}) {
         },
         _openCard(id) { const p = pins.find((x) => x.site.id === id); if (p) openCard(p); },
         _pinUnder(x, y) { return pinUnder(x, y)?.site.id ?? null; },
+        _badge(id) { const s = SITES[id]; return s ? progressBadge(s) : null; },
     };
 }
 

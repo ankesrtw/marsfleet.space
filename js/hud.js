@@ -152,14 +152,16 @@ export function createHud(rootEl, { site, onSwitchUnit, onCollect, onToggleSfx, 
                     <h3>SIM</h3>
                     <button class="mars-btn" id="mc-sol">SOL CYCLE ${solOn ? 'ON' : 'LOCKED (DAY)'}</button>
                     <button class="mars-btn" id="mc-nv-menu">NIGHT VISION OFF</button>
-                    <button class="mars-btn mars-btn--reset" id="mc-reset">RESET MISSION</button>
+                    <button class="mars-btn mars-btn--reset" id="mc-reset">RESET RUN</button>
                     <button class="mars-btn" id="mc-replay-intro">▶ LANDING INTRO</button>
                     <p class="mars-menu__note">GEAR (HUD button or G) time-compresses speed per unit:
                     rover REAL = the true 4.2 cm/s, G1 ×50, G2 ×150, G3 ×400; drones G1 = real scale
                     (10 / 6 m/s), G2 ×2, G3 ×4. SOL CYCLE runs a 40-min day/night — lock it for
                     permanent daylight (solar recharge needs the sun either way).
-                    RESET MISSION restarts the site — unit positions, batteries, samples, lab and
-                    map fog. The SCIENCE ARCHIVE below survives resets.
+                    RESET RUN restarts this site's live run — unit positions, batteries, samples,
+                    lab and map fog. Its SCIENCE ARCHIVE, missions and photos survive. To wipe a
+                    site's whole save (RESET SITE) or the entire game (RESET GAME), use its pin on
+                    the OPEN MISSION MAP globe.
                     The clock on the minimap reads that cycle as Mars local time (noon = the sun at
                     apex, so it can never disagree with the sky), counting up from the real sol this
                     site's rover is on today. LOCK appears there while the cycle is frozen.</p>
@@ -168,7 +170,7 @@ export function createHud(rootEl, { site, onSwitchUnit, onCollect, onToggleSfx, 
                     <h3>MISSIONS</h3>
                     <div class="mars-menu__missions" id="mc-missions-list"></div>
                     <p class="mars-menu__note">Objective chains for this site. ✓ missions stay completed
-                    across visits and RESET MISSION — replay anytime.</p>
+                    across visits and RESET RUN — replay anytime.</p>
                 </div>
                 <div class="mars-menu__section">
                     <h3>BASE STRUCTURES</h3>
@@ -177,7 +179,7 @@ export function createHud(rootEl, { site, onSwitchUnit, onCollect, onToggleSfx, 
                     </ul>
                     <p class="mars-menu__note">Analyzing a flagged sample establishes a checkpost at its
                     site. Complete every mission to raise the Signal Headquarters beside the FIELD LAB.
-                    Structures are earned from the archive and mission record, so they survive RESET MISSION.</p>
+                    Structures are earned from the archive and mission record, so they survive RESET RUN.</p>
                 </div>
                 <div class="mars-menu__section">
                     <h3>BASES — TRAVEL</h3>
@@ -390,8 +392,10 @@ export function createHud(rootEl, { site, onSwitchUnit, onCollect, onToggleSfx, 
         nvOverlay.dataset.visible = String(on);
     }
 
-    // RESET MISSION: two-step arm/confirm (no native confirm() dialog —
-    // it would freeze the render loop and look nothing like the HUD).
+    // RESET RUN: two-step arm/confirm (no native confirm() dialog — it would
+    // freeze the render loop and look nothing like the HUD). The narrowest of
+    // the three reset tiers (plan 22-C): reloads the live run only; the site's
+    // saved progress is untouched. RESET SITE / RESET GAME live on the hub.
     const resetBtn = rootEl.querySelector('#mc-reset');
     let resetDisarmTimer = null;
     resetBtn.addEventListener('click', () => {
@@ -400,11 +404,11 @@ export function createHud(rootEl, { site, onSwitchUnit, onCollect, onToggleSfx, 
             return;
         }
         resetBtn.dataset.armed = 'true';
-        resetBtn.textContent = 'CONFIRM RESET?';
+        resetBtn.textContent = 'CONFIRM RESET RUN?';
         clearTimeout(resetDisarmTimer);
         resetDisarmTimer = setTimeout(() => {
             resetBtn.dataset.armed = 'false';
-            resetBtn.textContent = 'RESET MISSION';
+            resetBtn.textContent = 'RESET RUN';
         }, 4000);
     });
 

@@ -1645,3 +1645,31 @@ html, body {
     letter-spacing: 0.06em;
     color: #8a97a8;
 }
+
+/* RESET SITE sits beside ENTER in the card action row (overrides the menu
+   variant's top margin so the two buttons align). */
+.hub-card__reset {
+    margin-top: 0;
+    justify-content: center;
+}
+
+.hub-card__reset[hidden] {
+    display: none !important;
+}
+
+/* Hub-level RESET GAME — a quiet corner button so it never competes with the
+   pins; only reads loud once armed (via .mars-btn--reset[data-armed]). */
+.hub-reset-game {
+    pointer-events: auto;
+    position: absolute;
+    left: max(16px, env(safe-area-inset-left));
+    bottom: max(16px, env(safe-area-inset-bottom));
+    margin-top: 0;
+    font-size: 0.72rem;
+    letter-spacing: 0.1em;
+    opacity: 0.7;
+}
+
+.hub-reset-game:hover {
+    opacity: 1;
+}
