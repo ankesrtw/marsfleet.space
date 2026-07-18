@@ -53,6 +53,14 @@ export function createSamples(site, terrain) {
     const markerGeo = new THREE.ConeGeometry(0.8, 2.2, 8);
 
     for (const s of site.samples) {
+        // Wave 12.15: a buried core has no physical beacon at all. Recon
+        // survey has to localize its named subsurface anomaly first; only
+        // then can it participate in TGT/proximity collection. It remains
+        // visually unmarked even after localization — the humanoid drills
+        // at the surveyed coordinates, rather than walking to a cone.
+        s.surveyed = !s.buried;
+        s.collected = false;
+        if (s.buried) continue;
         const mesh = new THREE.Mesh(
             markerGeo,
             new THREE.MeshStandardMaterial({ color: 0xe0b95e })
@@ -62,14 +70,17 @@ export function createSamples(site, terrain) {
         mesh.userData.sampleId = s.id;
         group.add(mesh);
         s._mesh = mesh;
-        s.collected = false;
+    }
+
+    function available(sample) {
+        return !sample.collected && (!sample.buried || sample.surveyed);
     }
 
     function nearestUncollected(position) {
         let nearest = null;
         let nearestDist = Infinity;
         for (const s of site.samples) {
-            if (s.collected) continue;
+            if (!available(s)) continue;
             const d = Math.hypot(position.x - s.x, position.z - s.z);
             if (d < nearestDist) {
                 nearestDist = d;
@@ -84,7 +95,7 @@ export function createSamples(site, terrain) {
         let nearest = null;
         let nearestDist = Infinity;
         for (const s of site.samples) {
-            if (s.collected) continue;
+            if (!available(s)) continue;
             const d = Math.hypot(position.x - s.x, position.z - s.z);
             if (d < nearestDist) {
                 nearestDist = d;
@@ -96,7 +107,7 @@ export function createSamples(site, terrain) {
 
     function collect(sample) {
         sample.collected = true;
-        sample._mesh.material.color.set(0x5ee08a);
+        sample._mesh?.material.color.set(0x5ee08a);
         inventory.push({ ...sample, _mesh: undefined });
 
         // Leave a sealed cache container beside the marker for the lift
@@ -108,6 +119,21 @@ export function createSamples(site, terrain) {
         mesh.position.set(cx, terrain.sampleHeight(cx, cz), cz);
         group.add(mesh);
         containers.push({ id: sample.id, name: sample.name, note: sample.note, finding: sample.finding, mesh, state: 'field' });
+    }
+
+    /** Reveal subsurface targets only once recon fog coverage reaches the
+        zone's requested threshold. This is intentionally stateful so the
+        caller can announce a newly located core exactly once. */
+    function revealBuried(surveyZones, revealedFraction) {
+        const newlySurveyed = [];
+        for (const s of site.samples) {
+            if (!s.buried || s.surveyed || s.collected) continue;
+            const zone = surveyZones?.find((z) => z.id === s.buried.surveyZone);
+            if (!zone || revealedFraction(zone) < (s.buried.revealAt ?? 0.65)) continue;
+            s.surveyed = true;
+            newlySurveyed.push(s);
+        }
+        return newlySurveyed;
     }
 
     /** Nearest field (not slung/delivered) container within `radius`. */
@@ -125,5 +151,11 @@ export function createSamples(site, terrain) {
         return nearestDist <= radius ? nearest : null;
     }
 
-    return { group, inventory, containers, nearestUncollected, nearestInfo, nearestContainer, collect, markers: site.samples };
+    return {
+        group, inventory, containers, nearestUncollected, nearestInfo,
+        nearestContainer, collect, revealBuried,
+        // fog.render uses physical marker meshes; surveyed buried cores are
+        // deliberately absent here, even while their TGT coordinates exist.
+        get markers() { return site.samples.filter((s) => s._mesh); },
+    };
 }

@@ -685,9 +685,14 @@ async function startGame(site) {
             if (active.unit === van) return;
             const sample = samples.nearestUncollected(active.unit.position);
             if (!sample) return;
-            // Wave 12: humanoid drills outpost-flagged samples (timed core);
-            // the rover keeps its instant robotic-arm collect.
-            if (active.unit === humanoid && sample.outpost) {
+            // Wave 12: humanoid drills outpost-flagged samples (timed core).
+            // Wave 12.15: surveyed buried cores also require that drill;
+            // the rover's arm cannot extract a subsurface sample.
+            if (sample.buried && active.unit !== humanoid) {
+                hud.toast('▸ SUBSURFACE CORE — HUMANOID DRILL REQUIRED');
+                return;
+            }
+            if (active.unit === humanoid && (sample.outpost || sample.buried)) {
                 humanoid.startDig(sample);
                 return;
             }
@@ -937,6 +942,19 @@ async function startGame(site) {
             }
             missions.advance('scan-zone', zonesScanned);
         }
+        // Wave 12.15: surveying can localize a subsurface core without
+        // materializing a visible sample marker. The target arrow takes
+        // the player to the mapped coordinates; only the humanoid drill
+        // ever extracts the core. Deliberately OUTSIDE the surveyOn gate:
+        // fog coverage is session-only but mission completion persists, so
+        // a player who finished the survey last session must still be able
+        // to localize the core by overflying the zone again.
+        if (site.surveyZones?.length) {
+            for (const s of samples.revealBuried(site.surveyZones,
+                (sz) => fog.revealedFraction(sz.x, sz.z, sz.radius))) {
+                hud.toast(`▸ SUBSURFACE ANOMALY LOCATED — ${s.name.toUpperCase()}`);
+            }
+        }
         // Wave 12.13: photo mission active — drives TGT, minimap glyphs and
         // the (n/total) tally below.
         const photoOn = site.photoSpots?.length && missions.activeMissions.includes('photo');
@@ -1181,7 +1199,7 @@ async function startGame(site) {
                 && Math.hypot(van.position.x - humanoid.position.x,
                     van.position.z - humanoid.position.z) <= van.mountRadius) {
                 hud.setPrompt('BOARD THE VAN');
-            } else if (nearest && active.unit === humanoid && nearest.outpost) {
+            } else if (nearest && active.unit === humanoid && (nearest.outpost || nearest.buried)) {
                 hud.setPrompt(`DRILL CORE: ${nearest.name}`);
             } else {
                 hud.setPrompt(nearest ? `COLLECT: ${nearest.name}` : null);

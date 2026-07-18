@@ -57,9 +57,9 @@ export const SITES = {
         // Wave 12.5 multi-zone survey: several recon scouting targets per site.
         // The survey mission counts zones revealed to 65%+.
         surveyZones: [
-            { x: 1350, z: 480, radius: 200 },   // Séítah dune margin
-            { x: 1800, z: 2300, radius: 180 },  // Dust Devil Flats
-            { x: -2380, z: -2450, radius: 200 }, // Neretva Vallis
+            { id: 'seitah', x: 1350, z: 480, radius: 200 },   // Séítah dune margin
+            { id: 'dust-devil-flats', x: 1800, z: 2300, radius: 180 }, // Dust Devil Flats
+            { id: 'neretva', x: -2380, z: -2450, radius: 200 }, // Neretva Vallis
         ],
         // Wave 12.13 photo-recon targets: real landforms worth an aerial
         // frame, spread across all quadrants so the imaging run is a real
@@ -122,6 +122,13 @@ export const SITES = {
               finding: 'Tilted sandstone blocks exposed by the impact — a cross-section through the buried ancient river system.' },
             { id: 'neretva-vallis', name: 'Neretva Vallis', x: -2450, z: -2600, note: 'Inlet channel floor — simulated survey target',
               finding: '[SIM] Rounded pebble conglomerate on the channel floor — sustained river flow entered the crater here.' },
+            // Wave 12.15: no cone/beacon exists here. Recon must first map
+            // the Neretva survey zone; the humanoid then cores this exact
+            // buried patch through the timed drill interaction.
+            { id: 'neretva-subsurface-core', name: 'Neretva Subsurface Core', x: -2320, z: -2370,
+              note: '[SIM] Buried channel-floor core — localized by aerial survey',
+              finding: '[SIM] Fine-grained channel-floor sediments preserved beneath the wind-scoured surface — a protected record of sustained river inflow.',
+              buried: { surveyZone: 'neretva' } },
             { id: 'relay-ridge', name: 'Relay Ridge', x: 2450, z: -2350, note: 'Comms relay candidate — simulated survey target',
               finding: '[SIM] High-standing rim ridge with clear line of sight across the site — flagged for a future relay mast.' },
             { id: 'dust-devil-flats', name: 'Dust Devil Flats', x: 1800, z: 2300, note: 'Aeolian survey — simulated survey target',
