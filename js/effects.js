@@ -225,6 +225,46 @@ export function createEffects(scene, terrain) {
         tetherMat.color.setHex(taut ? 0xe07b39 : 0x2ec4d6);
     }
 
+    // ---- recon sensor cone (Wave 12.17) ----------------------------------
+    // The survey camera's nadir footprint: a faint additive cone from the
+    // recon down to the ground plus a rim ring where it lands. Pure visual
+    // (capture stays proximity-gated in photos.js) — it sells "this drone
+    // is imaging" and shows roughly what a frame will cover.
+    const SENSOR_HALF_TAN = 0.49;   // tan ~26° half-FOV
+    const sensorMat = new THREE.MeshBasicMaterial({
+        color: 0x2ec4d6, transparent: true, opacity: 0.07,
+        blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide,
+    });
+    const sensorCone = new THREE.Mesh(new THREE.ConeGeometry(1, 1, 24, 1, true), sensorMat);
+    sensorCone.frustumCulled = false;
+    sensorCone.visible = false;
+    scene.add(sensorCone);
+    const sensorRing = new THREE.Mesh(
+        new THREE.RingGeometry(0.92, 1, 32),
+        new THREE.MeshBasicMaterial({
+            color: 0x2ec4d6, transparent: true, opacity: 0.18,
+            blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide,
+        })
+    );
+    sensorRing.rotation.x = -Math.PI / 2;
+    sensorRing.frustumCulled = false;
+    sensorRing.visible = false;
+    scene.add(sensorRing);
+
+    /** Per frame: apex rides the recon, base sits on the ground. `visible`
+        gates on "recon is the active unit and airborne" (main.js). */
+    function updateSensorCone(pos, groundY, agl, visible) {
+        const on = visible && agl > 2;
+        sensorCone.visible = on;
+        sensorRing.visible = on;
+        if (!on) return;
+        const r = agl * SENSOR_HALF_TAN;
+        sensorCone.scale.set(r, agl, r);
+        sensorCone.position.set(pos.x, groundY + agl / 2, pos.z);
+        sensorRing.scale.setScalar(r);
+        sensorRing.position.set(pos.x, groundY + 0.15, pos.z);
+    }
+
     function update(dt, active, speed, daylight = 1) {
         updateShadows();
         updateDust(dt, active, speed);
@@ -241,7 +281,7 @@ export function createEffects(scene, terrain) {
 
     // spawnDust exported for one-off emitters (Wave 12 core drill) — the
     // wheel/boot dust keeps flowing through update() as before.
-    return { addShadow, update, updateTether, spawnDust, _dust: dust, _tracks: tracks };
+    return { addShadow, update, updateTether, updateSensorCone, spawnDust, _dust: dust, _tracks: tracks };
 }
 
 /** Soft radial falloff canvas — shared by blob shadows and dust sprites. */

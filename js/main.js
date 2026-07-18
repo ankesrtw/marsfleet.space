@@ -1101,6 +1101,15 @@ async function startGame(site) {
         }
 
         effects.update(dt, active, speedNow, env.daylight());
+        // Wave 12.17: survey-camera cone under the recon while it's the
+        // driven unit and airborne — the imaging footprint made visible.
+        effects.updateSensorCone(
+            recon.position,
+            terrain.sampleHeight(recon.position.x, recon.position.z)
+                + colliders.deckHeight(recon.position.x, recon.position.z),
+            recon.alt,
+            active.unit === recon && !recon.landed
+        );
         const engineNorm = active.kind === 'fly'
             ? (active.unit.landed ? 0 : Math.max(0.35, speedNow / active.unit.maxSpeed))
             : speedNow / (active.name === 'Humanoid' ? 1.4
