@@ -634,6 +634,7 @@ export function createHub({ onEnter } = {}) {
     return {
         show, dispose,
         get spin() { return spin; },
+        get camDist() { return camDist; },
         // --- E2E/debug hooks (verify skill), mirroring main.js's __mc ---
         get pins() { return pins.map((p) => ({ id: p.site.id, playable: p.playable })); },
         get selectedId() { return selected?.site.id ?? null; },
