@@ -42,6 +42,15 @@
                 <h1>MARS COLONY</h1>
                 <p>SELECT A LANDING SITE</p>
             </div>
+            <!-- Cloud save (plan 23): sign in to sync progress to YOUR Google
+                 Drive. Hidden/inert until GOOGLE_CLIENT_ID is set in cloudsync.js. -->
+            <div id="hub-cloud" hidden>
+                <button id="hub-signin" class="mars-btn hub-cloud__signin">Sign in with Google</button>
+                <div id="hub-cloud-status" class="hub-cloud__status" hidden>
+                    <span id="hub-cloud-chip" class="hub-cloud__chip" data-state="synced"></span>
+                    <button id="hub-signout" class="hub-cloud__signout">Sign out</button>
+                </div>
+            </div>
             <!-- Pin card — populated by hub.js on pin pick; RESET SITE and the
                  hub-level RESET GAME button are wired in step 5. -->
             <div id="hub-card" hidden aria-live="polite">

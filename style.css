@@ -1673,3 +1673,82 @@ html, body {
 .hub-reset-game:hover {
     opacity: 1;
 }
+
+/* Cloud save widget (plan 23) — top-right, opposite RESET GAME. Inert
+   (hidden) until GOOGLE_CLIENT_ID is set in cloudsync.js. */
+#hub-cloud[hidden] {
+    display: none !important;
+}
+
+#hub-cloud {
+    pointer-events: auto;
+    position: absolute;
+    top: max(16px, env(safe-area-inset-top));
+    right: max(16px, env(safe-area-inset-right));
+    display: flex;
+    flex-direction: column;
+    align-items: flex-end;
+    gap: 8px;
+}
+
+.hub-cloud__signin {
+    font-size: 0.72rem;
+    letter-spacing: 0.06em;
+    border-color: #7a4f30;
+}
+
+.hub-cloud__signin::before {
+    content: "☁";
+    margin-right: 6px;
+    color: #e0b95e;
+}
+
+.hub-cloud__signin[hidden] {
+    display: none !important;
+}
+
+.hub-cloud__status {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    background: rgba(20, 12, 8, 0.75);
+    border: 1px solid #7a4f30;
+    border-radius: 6px;
+    padding: 6px 12px;
+}
+
+.hub-cloud__status[hidden] {
+    display: none !important;
+}
+
+.hub-cloud__chip {
+    font-family: 'SF Mono', ui-monospace, Menlo, Consolas, monospace;
+    font-size: 0.7rem;
+    letter-spacing: 0.08em;
+}
+
+.hub-cloud__chip[data-state="synced"] {
+    color: #7fdca0;
+}
+
+.hub-cloud__chip[data-state="syncing"] {
+    color: #e0b95e;
+}
+
+.hub-cloud__chip[data-state="offline"] {
+    color: #e0a06a;
+}
+
+.hub-cloud__signout {
+    background: none;
+    border: none;
+    color: #b9a894;
+    font-size: 0.7rem;
+    letter-spacing: 0.06em;
+    cursor: pointer;
+    padding: 0;
+}
+
+.hub-cloud__signout:hover {
+    color: #f2ece3;
+}

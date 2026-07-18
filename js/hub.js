@@ -24,6 +24,7 @@
 import * as THREE from 'three';
 import { SITES, LOCKED_SITES } from './sites.js';
 import { Save, resetGame } from './saves.js';
+import { createCloudSync, isConfigured } from './cloudsync.js';
 
 const TEXTURE_URL = 'assets/hub/mars-globe.jpg';
 const R = 1;                      // globe radius (world units)
@@ -85,6 +86,14 @@ export function createHub({ onEnter } = {}) {
         close: document.getElementById('hub-card-close'),
     };
     const resetGameBtn = document.getElementById('hub-reset-game');
+    const cloudEls = {
+        root: document.getElementById('hub-cloud'),
+        signin: document.getElementById('hub-signin'),
+        status: document.getElementById('hub-cloud-status'),
+        chip: document.getElementById('hub-cloud-chip'),
+        signout: document.getElementById('hub-signout'),
+    };
+    let cloud = null;
 
     function build() {
         renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: false });
@@ -155,9 +164,51 @@ export function createHub({ onEnter } = {}) {
         scene.add(stars);
 
         buildPins();
+        setupCloud();
 
         timer = new THREE.Timer();
         built = true;
+    }
+
+    // ---- Cloud save (plan 23) ---------------------------------------------
+    /** Wire the Google-Drive sign-in widget — inert (hidden) until a
+        GOOGLE_CLIENT_ID is configured. On mount, silently resume a prior
+        session and sync; a successful merge refreshes the pin badges. */
+    function setupCloud() {
+        if (!isConfigured()) { cloudEls.root.hidden = true; return; }
+        cloudEls.root.hidden = false;
+        cloud = createCloudSync({
+            onStatus: renderCloud,
+            onSynced: () => { for (const p of pins) refreshLabel(p); refreshCardBadge(); },
+        });
+        cloudEls.signin.addEventListener('click', onSignIn);
+        cloudEls.signout.addEventListener('click', onSignOut);
+        document.addEventListener('visibilitychange', onVisibility);
+        renderCloud(cloud.status);
+        cloud.resume();
+    }
+    function onSignIn() { cloud?.signIn(); }
+    function onSignOut() { cloud?.signOut(); }
+    function onVisibility() { if (document.visibilityState === 'hidden') cloud?.flush(); }
+
+    function renderCloud(status) {
+        if (status === 'disabled') { cloudEls.root.hidden = true; return; }
+        cloudEls.root.hidden = false;
+        const active = status !== 'signed-out';        // syncing | synced | offline
+        cloudEls.signin.hidden = active;
+        cloudEls.status.hidden = !active;
+        cloudEls.chip.textContent =
+            { syncing: 'SYNCING…', synced: 'SYNCED ✓', offline: 'OFFLINE' }[status] || '';
+        cloudEls.chip.dataset.state = status;
+    }
+
+    /** After a sync adopts cloud progress, an open playable card is stale. */
+    function refreshCardBadge() {
+        if (!selected || !selected.playable || card.hidden) return;
+        const badge = progressBadge(selected.site);
+        cardEls.progress.textContent = badge;
+        cardEls.enter.textContent = badge === 'NEW' ? 'ENTER' : 'CONTINUE';
+        cardEls.reset.hidden = badge === 'NEW';
     }
 
     // ---- Pins --------------------------------------------------------------
@@ -612,6 +663,9 @@ export function createHub({ onEnter } = {}) {
         disposed = true;
         cancelAnimationFrame(raf); raf = 0;
         removeListeners();
+        cloudEls.signin.removeEventListener('click', onSignIn);
+        cloudEls.signout.removeEventListener('click', onSignOut);
+        document.removeEventListener('visibilitychange', onVisibility);
         disarm(cardEls.reset, 'RESET SITE');
         disarm(resetGameBtn, 'RESET GAME');
         if (card) card.hidden = true;
@@ -651,6 +705,8 @@ export function createHub({ onEnter } = {}) {
         _openCard(id) { const p = pins.find((x) => x.site.id === id); if (p) openCard(p); },
         _pinUnder(x, y) { return pinUnder(x, y)?.site.id ?? null; },
         _badge(id) { const s = SITES[id]; return s ? progressBadge(s) : null; },
+        get cloudConfigured() { return isConfigured(); },
+        _renderCloud(status) { cloudEls.root.hidden = false; renderCloud(status); }, // UI-state preview (no OAuth)
     };
 }
 
