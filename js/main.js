@@ -385,6 +385,11 @@ async function startGame(site) {
     // (the humanoid crew with hand tools), not a workshop. Slower than a
     // base repair bay, so the bays stay worth the drive home.
     const FIELD_REPAIR_FACTOR = 0.4;
+    // Wave 12.16 cargo bay: driven-van cache logistics.
+    const VAN_CARGO_CAP = 3;     // caches the bay holds (sling carries 1)
+    const VAN_CARGO_R = 6;       // m — roll this close to auto-load
+    const VAN_DELIVER_R = 12;    // m from the lab pad center to unload
+    const vanCargo = [];         // container objects riding in the bay
     const RESTART_CHARGE = 10;   // empty units stay dead until this
     const NIGHT_DRAIN_K = 0.5;   // cold-night heater tax: +50% drain at full dark
     const STORM_FOG_K = 8;       // FOG.density multiplier span at storm peak
@@ -535,7 +540,7 @@ async function startGame(site) {
     // Debug/E2E handle (also used by the sampleHeight ground-truth check;
     // renderer/scene/camera exposed so tests on software-GL boxes can pause
     // the loop and capture canvas pixels via a same-task render+toDataURL).
-    window.__mc = { site, terrain, rover, drone: recon, recon, lift, humanoid, van, samples, renderer, scene, camera, camRig, units, env, effects, waypoint, sound, rocks, lab, sling, analysis, outposts, fog, colliders, missions, hazardZones, weather, dustDevils, wind, chargepads, comms, baseList, marsClock, setNightVision, get nightVision() { return nightVision; }, get intro() { return intro; }, hologram, photos, tryPhoto };
+    window.__mc = { site, terrain, rover, drone: recon, recon, lift, humanoid, van, samples, renderer, scene, camera, camRig, units, env, effects, waypoint, sound, rocks, lab, sling, analysis, outposts, fog, colliders, missions, hazardZones, weather, dustDevils, wind, chargepads, comms, baseList, marsClock, setNightVision, get nightVision() { return nightVision; }, get intro() { return intro; }, hologram, photos, tryPhoto, vanCargo };
 
     function applyUnitMode() {
         const active = units[activeIndex];
@@ -908,6 +913,37 @@ async function startGame(site) {
             if (u.kind === 'fly' && u !== active) {
                 u.unit.update(dt, { forward: 0, strafe: 0, turn: 0, climb: 0 });
             }
+        }
+
+        // Wave 12.16: cargo bay — the DRIVEN van auto-loads any field cache
+        // it rolls up to (the humanoid crew does the loading; a driverless
+        // van loads nothing) and bulk-delivers when it pulls up at the
+        // FIELD LAB pad. Slow, ground-bound, but carries three — the bulk
+        // alternative to the sling drone's fast single hook.
+        if (van.driver && vanCargo.length < VAN_CARGO_CAP) {
+            const c = samples.nearestContainer(van.position, VAN_CARGO_R);
+            if (c) {
+                c.state = 'cargo';
+                c.mesh.visible = false;   // stowed in the bay
+                vanCargo.push(c);
+                sound.sling();
+                hud.toast(`▸ CACHE LOADED: ${c.name.toUpperCase()} (CARGO ${vanCargo.length}/${VAN_CARGO_CAP})`);
+            }
+        }
+        if (van.driver && vanCargo.length
+            && Math.hypot(van.position.x - lab.padPos.x, van.position.z - lab.padPos.z) <= VAN_DELIVER_R) {
+            while (vanCargo.length) {
+                const c = vanCargo.shift();
+                c.mesh.visible = true;    // lab.deliver parks it on the pad
+                lab.deliver(c);
+                deliveredIds.add(c.id);
+                analysis.enqueue(c);      // edge node picks it up FIFO
+                missions.advance('deliver');
+            }
+            hud.setLab(lab.delivered.length, site.samples.length);
+            hud.setInventory(samples.inventory, deliveredIds, analysis.analyzedIds);
+            sound.deliver();
+            hud.toast('▸ CARGO DELIVERED TO THE FIELD LAB');
         }
         const movedDist = Math.hypot(
             active.unit.position.x - beforeMove.x,
