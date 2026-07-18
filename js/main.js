@@ -69,6 +69,8 @@ function qualityFor(site) {
             ?? (coarse ? 128 : 256),
         // Wave 5 clipmap: quads per side of each detail level (terrain.js).
         clipQuads: coarse ? 64 : 96,
+        // terrain.js uses this to pick a site's mobile heightmap variant.
+        coarse,
     };
 }
 

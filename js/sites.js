@@ -140,24 +140,29 @@ export const SITES = {
         name: 'Gale Crater',
         mission: 'Curiosity · MSL',
         heightmapUrl: 'assets/gale/heightmap.png',
+        // Phones load this 2048px downsample (same elev scale) — the 4096
+        // canvas.getImageData() decode is at the iOS Safari canvas ceiling.
+        heightmapUrlMobile: 'assets/gale/heightmap-mobile.png',
         textureUrl: 'assets/gale/albedo.jpg',
         // Baked from `gdalinfo -stats` on the real cropped DEM
-        // (prep_site.sh gale, run 2026-07-10 — 2048px 16-bit RG, streamed
+        // (prep_site.sh gale, run 2026-07-18 — 4096px 16-bit RG, streamed
         // AOI). 806m relief: crater floor -> Mount Sharp foothills.
-        elevMin: -4529.3466796875,
+        elevMin: -4529.4702148438,
         elevMax: -3723.2702636719,
         // 9km x 9km crop centered at (8144500, -276000)m = (137.4026E, 4.6563S).
         // Width fixed at 9km by the HiRISE ortho corridor; spans the real
         // traverse: Bradbury Landing -> Yellowknife Bay -> Vera Rubin Ridge.
         worldSize: 9000,
-        // 1m-source DEM (2048px heightmap = 4.4m/px): 512 segments
-        // (17.6m quads) left real roughness on the table (slope stats
-        // barely soften between native-res and 512-seg sampling). 640
-        // (14.1m quads) pulls more of that relief into the rendered +
-        // physics-sampled mesh. Measured on the weakest target GPU
-        // (Intel HSW GT1): 512→25.6ms, 640→28.4ms, 768→35.3ms per
-        // frame — 640 is the knee; 768 costs ~10ms for little gain.
-        segments: { desktop: 640, mobile: 192 },
+        // 1m-source DEM now shipped at 4096px (2.2m/px). Under the Wave 5
+        // geometry clipmap, `segments` only sets the finest near-camera step
+        // s0 = worldSize/segments and adds one detail level per doubling —
+        // render cost is decoupled from it (the old "640 is the knee, 768 =
+        // 35ms" note was the pre-clipmap single full plane, now stale). So
+        // desktop goes to 1024 (s0 = 8.8m quads, was 14.1m at 640), pulling
+        // the finer heightmap into real geometry; the CPU grid (1025^2) and
+        // its one-time build are the only real cost. Mobile stays 192 and
+        // loads the 2048 heightmap variant (heightmapUrlMobile above).
+        segments: { desktop: 1024, mobile: 192 },
         center: { lon: 137.40264, lat: -4.65629 },
         // Curiosity touchdown (UTC) — drives the live mission sol counter.
         landingUtc: '2012-08-06T05:17:00Z',

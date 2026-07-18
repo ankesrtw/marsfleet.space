@@ -27,8 +27,12 @@ import * as THREE from 'three';
 import { SUN_DIR, FOG, createDetailTexture } from './environment.js';
 
 export async function loadTerrain(site, quality) {
-    const img = await loadImageBitmap(site.heightmapUrl);
-    const res = img.width; // heightmap is square (see prep script, 1024x1024)
+    // Phones load the smaller mobile heightmap where a site ships one (Gale):
+    // the full 4096 canvas.getImageData() decode is at the iOS Safari canvas
+    // ceiling. Falls back to the single heightmap when there's no variant.
+    const heightmapUrl = (quality.coarse && site.heightmapUrlMobile) || site.heightmapUrl;
+    const img = await loadImageBitmap(heightmapUrl);
+    const res = img.width; // heightmap is square (see prep script)
 
     const canvas = document.createElement('canvas');
     canvas.width = res;
