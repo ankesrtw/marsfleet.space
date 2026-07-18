@@ -7,24 +7,24 @@
    (Jetson-class, simulated — a timed sequence, no real backend).
    Completion reveals the sample's REAL published mission finding
    (sites.js `finding`) and appends a record to the science archive
-   in localStorage ('mc-results'), so results persist across page
-   loads, sessions and sites. Re-analyzing a sample in a later
-   session replaces its old record instead of duplicating it.
+   in localStorage per site (saves.js Save(site.id) 'results'), so
+   results persist across page loads and sessions. Re-analyzing a
+   sample in a later session replaces its old record.
 
    Same idiom as the other sim modules: created once per site,
    update(dt) driven from the main render loop, plain object out.
    ============================================================ */
 
-const LS_KEY = 'mc-results';
+import { Save } from './saves.js';
+
 const ANALYZE_SECS = 28;
 
 export function createAnalysis(site, { onDone } = {}) {
+    const save = Save(site.id);
     // [{ id, name, site, siteName, finding, analyzedAt }] — newest last.
-    let archive = [];
-    try {
-        const raw = JSON.parse(localStorage.getItem(LS_KEY));
-        if (Array.isArray(raw)) archive = raw;
-    } catch { /* corrupt or private mode — start empty */ }
+    // Per-site now (saves.js): holds only THIS site's analysed records.
+    let archive = save.get('results', []);
+    if (!Array.isArray(archive)) archive = [];
 
     const queue = [];          // containers waiting for the node
     let current = null;        // { c, t } — container being processed
@@ -52,7 +52,7 @@ export function createAnalysis(site, { onDone } = {}) {
         };
         archive = archive.filter((r) => !(r.site === rec.site && r.id === rec.id));
         archive.push(rec);
-        try { localStorage.setItem(LS_KEY, JSON.stringify(archive)); } catch { /* private mode */ }
+        save.set('results', archive);
         analyzedIds.add(rec.id);
         onDone?.(rec);
     }

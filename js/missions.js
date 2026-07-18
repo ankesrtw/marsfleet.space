@@ -25,11 +25,13 @@
      sling/deliver call sites, just dressed over a different
      narrative object. No new interaction code.
 
-   Persistence: completion only, one flag per mission
-   (`mc-mission-<id>-done`), same survives-RESET-MISSION spirit as
-   the science archive. In-progress state is session-only, matching
-   how incomplete tutorial progress never survived reload either.
+   Persistence: completion only, one flag per mission, PER SITE
+   (saves.js Save(site.id) 'mission-<id>-done') — so a mission id
+   shared across sites no longer collides. Survives RESET MISSION
+   like the archive; in-progress state is session-only.
    ============================================================ */
+
+import { Save } from './saves.js';
 
 const MISSIONS = {
     tutorial: {
@@ -76,19 +78,16 @@ const MISSIONS = {
     },
 };
 
-const doneKey = (id) => `mc-mission-${id}-done`;
-
 export function createMissions(site, { onComplete, onStep } = {}) {
     // Only missions this site offers (sites.js `missions` field); a site
     // without the field simply has none — Gale stays untouched by design.
     const available = (site.missions ?? []).filter((id) => MISSIONS[id]);
+    const save = Save(site.id);
 
     const active = new Map();    // missionId -> { stepIdx, progress }
     const completed = new Set();
     for (const id of available) {
-        // Private mode: treat as already-done rather than nag every load
-        // (same convention as the old mc-tutorial-done gate).
-        try { if (localStorage.getItem(doneKey(id)) === '1') completed.add(id); } catch { completed.add(id); }
+        if (save.get(`mission-${id}-done`)) completed.add(id);
     }
 
     function start(missionId) {
@@ -101,7 +100,7 @@ export function createMissions(site, { onComplete, onStep } = {}) {
     function finish(missionId) {
         active.delete(missionId);
         completed.add(missionId);
-        try { localStorage.setItem(doneKey(missionId), '1'); } catch { /* private mode */ }
+        save.set(`mission-${missionId}-done`, 1);
         onComplete?.(missionId);
     }
 

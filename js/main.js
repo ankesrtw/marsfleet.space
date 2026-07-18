@@ -23,6 +23,7 @@ import { createEffects } from './effects.js';
 import { createWaypoint } from './waypoint.js';
 import { createSound } from './sound.js';
 import { createLab, createSling } from './lab.js';
+import { Save, migrateLegacySaves } from './saves.js';
 import { createAnalysis } from './analysis.js';
 import { createColliders } from './colliders.js';
 import { createLandingIntro } from './intro.js';
@@ -42,12 +43,12 @@ const DELIVER_ALT = 16;   // m AGL over the pad — ABOVE cruiseAlt (12), so
                           // arriving at cruise height delivers, no hunt-the-
                           // altitude (the short cable sells the lowering)
 
-// First-visit-only cinematic gate (see intro.js). Set the moment the
-// sequence STARTS, not when it finishes, so a refresh mid-sequence or a
-// skip doesn't re-trigger it. Deliberately NOT cleared by RESET MISSION —
-// same spirit as `mc-results` surviving resets. (Mission completion flags
-// live in missions.js: `mc-mission-<id>-done`, same convention.)
-const LS_INTRO_KEY = 'mc-intro-seen';
+// First-visit-only cinematic gate (see intro.js), now PER SITE via
+// Save(site.id) 'intro-seen' — each site plays its own landing once. Set
+// the moment the sequence STARTS (not when it finishes) so a refresh
+// mid-sequence or a skip doesn't re-trigger it; NOT cleared by RESET
+// MISSION (reload), only by RESET SITE. Sibling per-site progress keys
+// (results, photos, mission-<id>-done) work the same way — see saves.js.
 
 // Night-vision mode (Wave 9.7) — a view preference, persisted like gear and
 // the overlay mode. The gain pair is the intensifier's AGC: the CSS chain
@@ -112,6 +113,9 @@ function createMarsEnvMap(renderer) {
 }
 
 async function boot() {
+    // One-time: fold any pre-hub GLOBAL save into the last-played site's
+    // namespace before anything reads per-site state (saves.js).
+    migrateLegacySaves();
     // Straight into the sim — no landing screen. Priority: ?site= deep
     // link, then last-played site, then Jezero. Switching sites lives in
     // the in-game MENU (which navigates with ?site=, feeding this).
@@ -525,7 +529,7 @@ async function startGame(site) {
         if (intro?.active) return;
         intro?.dispose();
         intro = createLandingIntro(scene, site, lab.stationPos);
-        try { localStorage.setItem(LS_INTRO_KEY, '1'); } catch { /* private mode */ }
+        Save(site.id).set('intro-seen', 1);
         // Escape hatch on ANY input — click/tap or any key (there was no
         // keyboard way out, which read as a hang on slow machines).
         canvas.addEventListener('pointerdown', () => intro?.skip(), { once: true });
@@ -534,9 +538,7 @@ async function startGame(site) {
         const first = intro.update(0);
         camRig.update(first.pos, first.heading, 'fly', true);
     }
-    try {
-        if (localStorage.getItem(LS_INTRO_KEY) !== '1') startIntro();
-    } catch { /* private mode — skip the intro rather than replay every load */ }
+    if (!Save(site.id).get('intro-seen')) startIntro();
     if (!intro) camRig.update(rover.position, rover.heading, 'ground', true);
 
     // Debug/E2E handle (also used by the sampleHeight ground-truth check;

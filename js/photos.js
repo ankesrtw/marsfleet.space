@@ -7,7 +7,7 @@
    REAL frame grab — renderer.render + canvas downscale in the same
    task (the reliable-headless-screenshot idiom from the E2E notes) —
    stored as a jpeg thumbnail in the SURVEY IMAGING album (menu),
-   persisted in localStorage `mc-photos` like the science archive.
+   persisted per site (saves.js Save(site.id) 'photos') like the archive.
 
    Mission counting is per-SESSION (sessionCaptured), NOT derived
    from the persisted album: the album survives RESET MISSION, and
@@ -15,22 +15,23 @@
    mission uncompletable. Re-imaging a spot replaces its album entry.
    ============================================================ */
 
+import { Save } from './saves.js';
+
 const PHOTO_R = 150;    // m horizontal capture radius (targets are landforms)
 export const MIN_ALT = 8; // m AGL — aerial imaging, not a parked snapshot
 const THUMB_W = 360;    // px thumbnail width (~20-40KB jpeg — album of a
                         // dozen stays far under the localStorage quota)
-const KEY = 'mc-photos';
 
 export function createPhotos(site) {
     const spots = (site.photoSpots ?? []).map((s) => ({ ...s }));
     const sessionCaptured = new Set();
 
-    let album = [];
-    try { album = JSON.parse(localStorage.getItem(KEY)) ?? []; } catch { album = []; }
+    const save = Save(site.id);
+    let album = save.get('photos', []);
+    if (!Array.isArray(album)) album = [];
 
     function persist() {
-        try { localStorage.setItem(KEY, JSON.stringify(album)); }
-        catch { /* private mode / quota — album still lives this session */ }
+        save.set('photos', album);
     }
 
     /** Spot within capture range of a world position, or null. */
