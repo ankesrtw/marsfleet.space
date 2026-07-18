@@ -671,40 +671,21 @@ html, body {
     margin: 16px 0 8px;
 }
 
-.mars-menu__sites {
-    display: flex;
-    flex-direction: column;
-    gap: 8px;
-}
-
-.mars-menu__site {
-    display: flex;
-    flex-direction: column;
-    gap: 2px;
-    padding: 10px 14px;
-    border: 1px solid #5a3a26;
-    border-radius: 8px;
-    color: inherit;
-    text-decoration: none;
-    background: rgba(90, 58, 38, 0.15);
-}
-
-.mars-menu__site:hover, .mars-menu__site:active {
+/* OPEN MISSION MAP — returns to the globe hub (plan 22-C). Gold accent so it
+   reads as the primary navigation out of the in-game menu. Replaced the old
+   per-site landing-site link list. */
+.mars-btn--map {
+    justify-content: center;
+    width: 100%;
+    box-sizing: border-box;
     border-color: #e0b95e;
-    background: rgba(224, 185, 94, 0.15);
+    color: #ffe9bf;
+    background: rgba(224, 185, 94, 0.14);
+    letter-spacing: 0.1em;
 }
 
-.mars-menu__site.is-current {
-    border-color: #e0b95e;
-}
-
-.mars-menu__site b {
-    font-size: 0.9rem;
-}
-
-.mars-menu__site span {
-    font-size: 0.72rem;
-    opacity: 0.7;
+.mars-btn--map:hover, .mars-btn--map:active {
+    background: rgba(224, 185, 94, 0.26);
 }
 
 .mars-menu__missions {

@@ -18,7 +18,7 @@
    ============================================================ */
 
 import { isTouchDevice } from './touch.js';
-import { SITES, M_PER_DEG, SOL_MS } from './sites.js';
+import { M_PER_DEG, SOL_MS } from './sites.js';
 
 export function createHud(rootEl, { site, onSwitchUnit, onCollect, onToggleSfx, sfxEnabled = true, onCycleGear, gear = 'G2', onToggleSol, solOn = true, onToggleLanding, onCommandAlt, onReset, onSkipIntro, onSkipMission, onReplayIntro, onStartMission, missions = [], onSetOverlayMode, onTravel, onToggleNv, onReplayHologram, onVanDeploy, onPhoto }) {
     rootEl.innerHTML = `
@@ -142,8 +142,11 @@ export function createHud(rootEl, { site, onSwitchUnit, onCollect, onToggleSfx, 
             <div class="mars-menu__panel">
                 <h2>MARS COLONY</h2>
                 <div class="mars-menu__section">
-                    <h3>LANDING SITES</h3>
-                    <div class="mars-menu__sites" id="mc-menu-sites"></div>
+                    <h3>MISSION MAP</h3>
+                    <button class="mars-btn mars-btn--map" id="mc-open-hub">◉ OPEN MISSION MAP</button>
+                    <p class="mars-menu__note">Return to the orbital site map to switch
+                    landing sites or start a new one. Each site keeps its own saved
+                    progress — see its pin badge on the globe.</p>
                 </div>
                 <div class="mars-menu__section">
                     <h3>SIM</h3>
@@ -263,18 +266,12 @@ export function createHud(rootEl, { site, onSwitchUnit, onCollect, onToggleSfx, 
     // textContent — config is trusted, but keep the habit).
     rootEl.querySelector('.mars-tele__site').textContent =
         `${site.name.toUpperCase()} · ${site.mission.toUpperCase()}`;
-    const sitesEl = rootEl.querySelector('#mc-menu-sites');
-    for (const s of Object.values(SITES)) {
-        const a = document.createElement('a');
-        a.className = 'mars-menu__site' + (s.id === site.id ? ' is-current' : '');
-        a.href = `?site=${encodeURIComponent(s.id)}`;
-        const name = document.createElement('b');
-        name.textContent = s.name;
-        const mission = document.createElement('span');
-        mission.textContent = s.id === site.id ? `${s.mission} — CURRENT` : s.mission;
-        a.append(name, mission);
-        sitesEl.appendChild(a);
-    }
+    // "OPEN MISSION MAP" returns to the globe hub (plan 22-C): a full nav to
+    // ?hub tears down the sim's WebGL context and re-boots into the hub
+    // (boot() sees ?hub). Replaces the old in-menu ?site= landing-site list.
+    rootEl.querySelector('#mc-open-hub')?.addEventListener('click', () => {
+        window.location.href = '?hub';
+    });
 
     const tele = {
         clock: rootEl.querySelector('#mc-t-clock'),

@@ -28,6 +28,8 @@ import { Save } from './saves.js';
 const TEXTURE_URL = 'assets/hub/mars-globe.jpg';
 const R = 1;                      // globe radius (world units)
 const CAM_MIN = 1.7, CAM_MAX = 4.2, CAM_START = 2.7;
+const CAM_ENTER = 1.05;           // fly-in dive target (just off the surface)
+const ENTER_MS = 850;             // fly-in duration before the sim handoff
 const TILT_LIMIT = 1.15;          // rad — how far the poles can swing to camera
 const AUTO_SPIN = 0.045;          // rad/s idle rotation (slow, cinematic)
 const DAMP = 0.90;                // per-frame drag-inertia damping
@@ -61,6 +63,7 @@ export function createHub({ onEnter, onResetGame } = {}) {
     let hovered = null, selected = null;
     let focusTarget = null;           // { y, x } eased spin/tilt to face a pin
     let dotTex = null;
+    let entering = false, enterStart = 0; // fly-in handoff in progress
 
     // Drag / inertia state.
     const pointers = new Map();       // id -> {x,y}
@@ -281,6 +284,7 @@ export function createHub({ onEnter, onResetGame } = {}) {
 
     // ---- Interaction -------------------------------------------------------
     function onPointerDown(e) {
+        if (entering) return;          // input frozen during the fly-in
         // Capture can throw (e.g. a synthetic event with no live pointer);
         // must never abort the handler — the pointer still needs registering.
         try { canvas.setPointerCapture(e.pointerId); } catch { /* not capturable */ }
@@ -328,7 +332,10 @@ export function createHub({ onEnter, onResetGame } = {}) {
             setTimeout(() => { if (!selected) userInteracted = false; }, 2500);
         }
     }
-    function onWheel(e) { e.preventDefault(); dolly(e.deltaY * 0.0016); userInteracted = true; }
+    function onWheel(e) {
+        if (entering) return;
+        e.preventDefault(); dolly(e.deltaY * 0.0016); userInteracted = true;
+    }
 
     function twoPointerDist() {
         const p = [...pointers.values()];
@@ -456,9 +463,13 @@ export function createHub({ onEnter, onResetGame } = {}) {
             }
         }
         updatePins();
-        camera.position.z += (camDist - camera.position.z) * 0.12; // eased dolly
+        // Fly-in dives faster than a normal dolly so the zoom reads even at a
+        // few fps; the fade masks the last of it before the sim takes over.
+        const ease = entering ? 0.22 : 0.12;
+        camera.position.z += (camDist - camera.position.z) * ease;
         camera.lookAt(0, 0, 0);
         renderer.render(scene, camera);
+        if (entering && performance.now() - enterStart >= ENTER_MS) finishEnter();
     }
 
     /** Per-frame pin dressing: hide labels + fade dots on the far hemisphere
@@ -478,6 +489,8 @@ export function createHub({ onEnter, onResetGame } = {}) {
     function show() {
         if (disposed) return;
         root.hidden = false;
+        root.style.opacity = '';       // clear any fade left by a prior fly-in
+        root.style.transition = '';
         if (!built) build();
         addListeners();
         timer.update(); // seed; the 0.05 clamp caps any first-frame gap anyway
@@ -505,14 +518,27 @@ export function createHub({ onEnter, onResetGame } = {}) {
         cardEls.enter.removeEventListener('click', enterSelected);
     }
 
-    /** ENTER/CONTINUE: hand off to the sim. Step 4 wraps this in a camera
-        fly-in; for now it tears down the hub (freeing the WebGL context) and
-        boots the site — so only one context is ever live. */
+    /** ENTER/CONTINUE: fly the camera down into the pin and fade out, THEN
+        tear the hub down (freeing the WebGL context) and hand off to the sim,
+        whose landing-drop intro carries the descent from there. The dispose-
+        before-startGame order keeps exactly one WebGL context alive. */
     function enterSelected() {
-        if (!selected || !selected.playable) return;
-        const site = selected.site;
+        if (!selected || !selected.playable || entering) return;
+        card.hidden = true;
+        entering = true;
+        enterStart = performance.now();
+        userInteracted = true;
+        focusTarget = faceTargetFor(selected.dir); // hold the pin centred
+        camDist = CAM_ENTER;                        // dive toward the surface
+        root.style.transition = `opacity ${ENTER_MS}ms ease-in`;
+        root.style.opacity = '0';
+    }
+
+    function finishEnter() {
+        const site = selected?.site;
+        entering = false;
         dispose();
-        onEnter?.(site);
+        if (site) onEnter?.(site);
     }
 
     /** Free everything and drop the WebGL context — call before startGame so

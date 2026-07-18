@@ -119,34 +119,36 @@ async function boot() {
     // namespace before anything reads per-site state (saves.js).
     migrateLegacySaves();
 
-    // Site Hub (plan 22-B/C). Step 2: an explicit ?hub deep-link shows the
-    // globe so it can be verified standalone; step 4 makes the hub the
-    // first-ever-boot default and wires the pin fly-in handoff.
-    if (new URLSearchParams(window.location.search).has('hub')) {
-        const { createHub } = await import('./hub.js');
-        const hub = createHub({ onEnter: enterSite });
-        window.__hub = hub; // E2E handle (verify skill)
-        hub.show();
-        return;
-    }
-
-    // Straight into the sim — no landing screen. Priority: ?site= deep
-    // link, then last-played site, then Jezero. Switching sites lives in
-    // the in-game MENU (which navigates with ?site=, feeding this).
-    const site = getSiteFromUrl()
-        || SITES[localStorage.getItem('mc-site')]
-        || SITES.jezero;
-    try { localStorage.setItem('mc-site', site.id); } catch { /* private mode */ }
-    document.getElementById('game-root').hidden = false;
-    await startGame(site);
+    // Boot priority (plan 22-C Site Hub):
+    //   1. ?hub          -> the globe hub (the in-game "OPEN MISSION MAP" nav)
+    //   2. ?site=<valid> -> that site directly (deep-link bypass, unchanged)
+    //   3. mc-site       -> auto-resume the last-played site (returning player)
+    //   4. first-ever    -> the globe hub, so a new player picks a landing site
+    const params = new URLSearchParams(window.location.search);
+    if (params.has('hub')) { await showHub(); return; }
+    const urlSite = getSiteFromUrl();
+    if (urlSite) { enterSite(urlSite); return; }
+    const last = SITES[localStorage.getItem('mc-site')];
+    if (last) { enterSite(last); return; }
+    await showHub();
 }
 
-/** Enter a playable site from the hub: remember it as last-played, reveal the
-    sim canvas, and boot. The hub disposes ITS WebGL context before calling
-    this, so only one context is ever live (main.js's ?hub handoff / step 4
-    fly-in both land here). */
+/** Show the 3D Mars globe hub. Its own short-lived WebGL context; a pin's
+    ENTER flies in, disposes the hub, then calls enterSite (one context at a
+    time). Imported lazily so returning players never pay for hub.js. */
+async function showHub() {
+    const { createHub } = await import('./hub.js');
+    const hub = createHub({ onEnter: enterSite });
+    window.__hub = hub;   // E2E handle (verify skill)
+    hub.show();
+}
+
+/** Enter a playable site: remember it as last-played, clean the URL so a
+    refresh AUTO-RESUMES here (drops ?hub / ?site), reveal the sim canvas, and
+    boot. The hub disposes its WebGL context before calling this. */
 function enterSite(site) {
     try { localStorage.setItem('mc-site', site.id); } catch { /* private mode */ }
+    try { history.replaceState({}, '', './'); } catch { /* file:// etc. */ }
     document.getElementById('game-root').hidden = false;
     startGame(site);
 }
