@@ -1,5 +1,9 @@
 /* ============================================================
    terrain.js — real-heightmap terrain, GPU display + CPU sampling.
+   Wave 5: the display mesh is a geometry clipmap (concentric detail
+   rings recentered on the active unit each frame via update()) so
+   render cost is independent of worldSize; the CPU sampler stays one
+   fixed-res grid over the whole map.
 
    Same "one height function, two call sites" discipline as
    rocket-island/js/island.js: the vertex shader displaces the mesh
@@ -44,8 +48,6 @@ export async function loadTerrain(site, quality) {
     const albedoTexture = await loadTexture(site.textureUrl);
 
     const seg = quality.terrainSegments || 256;
-    const geo = new THREE.PlaneGeometry(site.worldSize, site.worldSize, seg, seg);
-    geo.rotateX(-Math.PI / 2);
 
     const uniforms = {
         uHeightmap: { value: heightTexture },
@@ -55,6 +57,7 @@ export async function loadTerrain(site, quality) {
         uElevRange: { value: range },
         uTexel: { value: 1 / res },
         uWorldStep: { value: site.worldSize / res },
+        uWorldSize: { value: site.worldSize },
         uSunDir: { value: SUN_DIR },
         uFogColor: { value: FOG.color },
         uFogDensity: { value: FOG.density },
@@ -63,12 +66,9 @@ export async function loadTerrain(site, quality) {
         uTint: { value: new THREE.Color(site.tint ?? 0xffffff) },
     };
 
-    const mat = new THREE.ShaderMaterial({
-        uniforms,
-        lights: false,
-        vertexShader: /* glsl */ `
+    const vertexShader = /* glsl */ `
             uniform sampler2D uHeightmap;
-            uniform float uElevMin, uElevRange, uTexel, uWorldStep;
+            uniform float uElevMin, uElevRange, uTexel, uWorldStep, uWorldSize;
             varying vec2 vUv;
             varying vec3 vNormal;
             varying float vViewDist;
@@ -81,26 +81,38 @@ export async function loadTerrain(site, quality) {
             }
 
             void main() {
-                vUv = uv;
-                float h = uElevMin + heightAt(uv) * uElevRange;
-                vec3 displaced = position + normal * h;
+                // Clipmap levels are flat local grids positioned by
+                // terrain.update(); UV comes from WORLD xz so a moving mesh
+                // always samples the same world-anchored surface. Vertices
+                // past the map edge clamp to it (degenerate zero-area quads).
+                vec3 wp = (modelMatrix * vec4(position, 1.0)).xyz;
+                float halfW = uWorldSize * 0.5;
+                wp.x = clamp(wp.x, -halfW, halfW);
+                wp.z = clamp(wp.z, -halfW, halfW);
+                // v flips because uHeightmap/uAlbedo are flipY textures and
+                // image rows run north->south while world +z runs south.
+                vUv = vec2(wp.x / uWorldSize + 0.5, 0.5 - wp.z / uWorldSize);
+                float h = uElevMin + heightAt(vUv) * uElevRange;
+                vec3 displaced = vec3(wp.x, h, wp.z);
 
                 // Relief normal from heightmap central differences — this is
-                // what turns the flat ortho into visibly 3D terrain.
-                float hL = heightAt(uv - vec2(uTexel, 0.0)) * uElevRange;
-                float hR = heightAt(uv + vec2(uTexel, 0.0)) * uElevRange;
-                float hD = heightAt(uv - vec2(0.0, uTexel)) * uElevRange;
-                float hU = heightAt(uv + vec2(0.0, uTexel)) * uElevRange;
+                // what turns the flat ortho into visibly 3D terrain. Sampled
+                // at the fixed heightmap texel step regardless of clipmap
+                // level, so shading is seam-free across ring boundaries.
+                float hL = heightAt(vUv - vec2(uTexel, 0.0)) * uElevRange;
+                float hR = heightAt(vUv + vec2(uTexel, 0.0)) * uElevRange;
+                float hD = heightAt(vUv - vec2(0.0, uTexel)) * uElevRange;
+                float hU = heightAt(vUv + vec2(0.0, uTexel)) * uElevRange;
                 // uv v runs north->south flipped vs world z (flipY texture),
                 // so the v-difference sign flips into world space here.
                 vNormal = normalize(vec3(hL - hR, 2.0 * uWorldStep, hU - hD));
 
-                vec4 mv = modelViewMatrix * vec4(displaced, 1.0);
+                vec4 mv = viewMatrix * vec4(displaced, 1.0);
                 vViewDist = -mv.z;
                 gl_Position = projectionMatrix * mv;
             }
-        `,
-        fragmentShader: /* glsl */ `
+        `;
+    const fragmentShader = /* glsl */ `
             uniform sampler2D uAlbedo;
             uniform sampler2D uDetail;
             uniform vec3 uTint;
@@ -146,21 +158,75 @@ export async function loadTerrain(site, quality) {
                 float fogAmt = 1.0 - exp(-uFogDensity * uFogDensity * vViewDist * vViewDist);
                 gl_FragColor = vec4(mix(lit, uFogColor, fogAmt), 1.0);
             }
-        `,
-    });
+        `;
 
-    const mesh = new THREE.Mesh(geo, mat);
+    // ---- geometry clipmap (Wave 5) ----
+    //
+    // Concentric levels centered on the active unit: level 0 is an m×m quad
+    // grid at the site's fine step s0 = worldSize/segments (the density the
+    // old single plane had EVERYWHERE), each ring k doubles the step inside
+    // an m×m footprint with a hole for the finer level. Render cost is now
+    // independent of worldSize — the Hellas-scale (>10 km) prerequisite.
+    //
+    // Stitching is overlap + polygonOffset, not skirts: the hole is 2
+    // parent quads smaller per side than the child's extent, so the child
+    // always overlaps the ring regardless of snap offset (max relative
+    // offset 1.5 steps < 2). Coarser levels get increasing polygonOffset so
+    // the finer surface wins in the overlap band; T-junction cracks show
+    // the near-coplanar other level behind them, never a hole. Lighting
+    // can't seam because normals come from the heightmap texture at a
+    // fixed texel step (see vertex shader).
+    const m = quality.clipQuads || 96;
+    const s0 = site.worldSize / seg;
+    const levelCount = Math.max(0, Math.ceil(Math.log2(seg / m)));
+    const mesh = new THREE.Group();
     mesh.name = 'terrain';
+    const levels = [];
+    for (let k = 0; k <= levelCount; k++) {
+        const step = s0 * (1 << k);
+        const mat = new THREE.ShaderMaterial({
+            uniforms, // one SHARED object — uSunDir/uFog mutate in place
+            lights: false,
+            vertexShader,
+            fragmentShader,
+            polygonOffset: k > 0,
+            polygonOffsetFactor: k,
+            polygonOffsetUnits: k,
+        });
+        const lvl = new THREE.Mesh(
+            buildLevelGeometry(m, k === 0 ? 0 : m / 2 - 4, step), mat);
+        // Local geometry is flat at y=0 but renders displaced to areoid
+        // elevation (y ≈ −2500 at Jezero) — the stale flat bounds would
+        // frustum-cull whole patches.
+        lvl.frustumCulled = false;
+        lvl.name = `terrain-l${k}`;
+        mesh.add(lvl);
+        // Snapping to 2·step keeps level-0 vertices ON the CPU sampler's
+        // lattice (the no-sink invariant) and each ring's triangulation
+        // stable under movement.
+        levels.push({ mesh: lvl, snap: 2 * step });
+    }
+
+    function update(centerX, centerZ) {
+        for (const l of levels) {
+            const ox = Math.round(centerX / l.snap) * l.snap;
+            const oz = Math.round(centerZ / l.snap) * l.snap;
+            if (l.mesh.position.x !== ox || l.mesh.position.z !== oz)
+                l.mesh.position.set(ox, 0, oz);
+        }
+    }
 
     // CPU-side mirror of the RENDERED surface, for height/slope queries.
     //
     // Sampling the full-res height data directly made units sink into the
-    // ground: the mesh only displaces its (seg+1)² vertices, so between
+    // ground: the rendered mesh only displaces its vertices, so between
     // vertices the drawn triangles sit above the finer data in concave
     // spots. Instead, mirror what the GPU actually renders — the heights
-    // at the mesh vertices (GL-exact bilinear texture filtering), then
-    // interpolate across the same triangles the rasterizer draws
-    // (PlaneGeometry splits each quad along the b–d diagonal).
+    // at the level-0 vertex lattice (GL-exact bilinear texture filtering),
+    // then interpolate across the same triangles the rasterizer draws
+    // (buildLevelGeometry replicates PlaneGeometry's b–d diagonal split).
+    // Stays FIXED-RES regardless of clipmap rings: level 0 snaps to this
+    // exact lattice, and only level 0 ever carries the active unit.
     const gridN = seg + 1;
     const grid = new Float32Array(gridN * gridN);
     for (let iy = 0; iy <= seg; iy++) {
@@ -238,10 +304,44 @@ export async function loadTerrain(site, quality) {
     }
 
     return {
-        mesh, sampleHeight, sampleNormal,
+        mesh, uniforms, update, sampleHeight, sampleNormal,
         sampleGroundHeight, sampleGroundNormal, micro,
         worldSize: site.worldSize,
     };
+}
+
+/** One clipmap level: an m×m quad grid in the XZ plane at `step` meters per
+    quad, centered on the origin, with an optional centered holeQuads×holeQuads
+    hole (0 = solid center patch). Triangulation replicates PlaneGeometry's
+    a-b-d / b-c-d diagonal split exactly — the CPU sampler interpolates across
+    the same triangles (the no-sink invariant). */
+function buildLevelGeometry(m, holeQuads, step) {
+    const n = m + 1;
+    const half = (m * step) / 2;
+    const pos = new Float32Array(n * n * 3);
+    for (let iz = 0; iz < n; iz++) {
+        for (let ix = 0; ix < n; ix++) {
+            const i = (iz * n + ix) * 3;
+            pos[i] = ix * step - half;
+            pos[i + 2] = iz * step - half;
+        }
+    }
+    const h0 = (m - holeQuads) / 2, h1 = (m + holeQuads) / 2;
+    const idx = [];
+    for (let iz = 0; iz < m; iz++) {
+        for (let ix = 0; ix < m; ix++) {
+            if (ix >= h0 && ix < h1 && iz >= h0 && iz < h1) continue;
+            const a = iz * n + ix;
+            const b = (iz + 1) * n + ix;
+            const c = (iz + 1) * n + ix + 1;
+            const d = iz * n + ix + 1;
+            idx.push(a, b, d, b, c, d);
+        }
+    }
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+    geo.setIndex(idx);
+    return geo;
 }
 
 /** Deterministic 0..1 hash of an integer lattice point (rocks.js-style

@@ -66,6 +66,8 @@ function qualityFor(site) {
     return {
         terrainSegments: (coarse ? site.segments?.mobile : site.segments?.desktop)
             ?? (coarse ? 128 : 256),
+        // Wave 5 clipmap: quads per side of each detail level (terrain.js).
+        clipQuads: coarse ? 64 : 96,
     };
 }
 
@@ -772,6 +774,7 @@ async function startGame(site) {
                 // show the real dock mid-drop.
                 lab.stationGroup.visible = false;
                 const { pos, heading } = intro.update(dt);
+                terrain.update(pos.x, pos.z); // clipmap detail under the descent
                 camRig.update(pos, heading, 'fly');
                 env.update(camera, dt);
                 renderer.render(scene, camera);
@@ -789,6 +792,10 @@ async function startGame(site) {
         }
 
         const active = units[activeIndex];
+
+        // Wave 5: recenter the terrain clipmap's detail rings on the active
+        // unit (level-0 snap keeps its lattice on the CPU sampler's grid).
+        terrain.update(active.unit.position.x, active.unit.position.z);
 
         // Per-kind input. Drones use RC Mode 2 on touch (left stick =
         // throttle/yaw, right stick = pitch/roll) and WASD+QERF on keys.
@@ -1195,7 +1202,7 @@ async function startGame(site) {
         // is copied by VALUE into both scene.fog (environment.js re-syncs
         // it) and the terrain shader's uniform — that one is synced here.
         FOG.density = FOG_BASE_DENSITY * (1 + weather.intensity * STORM_FOG_K);
-        terrain.mesh.material.uniforms.uFogDensity.value = FOG.density;
+        terrain.uniforms.uFogDensity.value = FOG.density;
 
         // Mission banner + its one non-action-callback gate (opening the
         // menu to read the SCIENCE ARCHIVE has no discrete main.js call
