@@ -118,6 +118,18 @@ async function boot() {
     // One-time: fold any pre-hub GLOBAL save into the last-played site's
     // namespace before anything reads per-site state (saves.js).
     migrateLegacySaves();
+
+    // Site Hub (plan 22-B/C). Step 2: an explicit ?hub deep-link shows the
+    // globe so it can be verified standalone; step 4 makes the hub the
+    // first-ever-boot default and wires the pin fly-in handoff.
+    if (new URLSearchParams(window.location.search).has('hub')) {
+        const { createHub } = await import('./hub.js');
+        const hub = createHub({ onEnter: (site) => startGame(site) });
+        window.__hub = hub; // E2E handle (verify skill)
+        hub.show();
+        return;
+    }
+
     // Straight into the sim — no landing screen. Priority: ?site= deep
     // link, then last-played site, then Jezero. Switching sites lives in
     // the in-game MENU (which navigates with ?site=, feeding this).

@@ -32,6 +32,19 @@
 </head>
 
 <body>
+    <!-- Site Hub — 3D Mars globe (plan 22-B/C). Its own canvas + short-lived
+         WebGL context (hub.js), disposed before the sim boots so only one
+         context is ever live. Hidden until boot() decides to show it. -->
+    <div id="hub-root" hidden>
+        <canvas id="hub-canvas"></canvas>
+        <div id="hub-ui">
+            <div id="hub-title">
+                <h1>MARS COLONY</h1>
+                <p>SELECT A LANDING SITE</p>
+            </div>
+        </div>
+    </div>
+
     <div id="game-root" hidden>
         <canvas id="mc-canvas"></canvas>
         <div id="mc-hud"></div>
