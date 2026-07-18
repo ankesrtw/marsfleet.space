@@ -124,6 +124,131 @@ export function migrateLegacySaves() {
     } catch { /* private mode — nothing to migrate */ }
 }
 
+/* ============================================================
+   Cloud-sync layer (plan 23) — serialise/merge the same per-site
+   blobs so cloudsync.js can mirror them to the player's own Drive.
+   All localStorage access stays inside this module; cloudsync.js
+   handles only auth + transport. v1 = progress only: photos never
+   leave the device.
+   ============================================================ */
+
+const PHOTOS_KEY = 'photos'; // excluded from cloud sync in v1
+
+/** Last-write timestamp for a site (0 if never written). */
+export function siteUpdatedAt(siteId) {
+    try {
+        const raw = localStorage.getItem(skey(siteId, 'updatedAt'));
+        const n = raw == null ? 0 : Number(raw);
+        return Number.isFinite(n) ? n : 0;
+    } catch { return 0; }
+}
+
+/** Serialise a site's whole save to a plain object (photos excluded),
+    keyed by the same sub-keys Save() uses, including `updatedAt`. `{}`
+    when the site has never been played. */
+export function exportSite(siteId) {
+    const prefix = `${NS}-${siteId}-`;
+    const blob = {};
+    try {
+        for (let i = 0; i < localStorage.length; i++) {
+            const key = localStorage.key(i);
+            if (!key || !key.startsWith(prefix)) continue;
+            const sub = key.slice(prefix.length);
+            if (sub === PHOTOS_KEY) continue;
+            const raw = localStorage.getItem(key);
+            try { blob[sub] = JSON.parse(raw); } catch { blob[sub] = raw; }
+        }
+    } catch { /* private mode */ }
+    return blob;
+}
+
+/** Write a site blob back verbatim — crucially WITHOUT re-stamping
+    `updatedAt` (that would destroy the merge decision), so the adopted
+    side's timestamp is preserved. Photos in the blob are ignored. */
+export function importSite(siteId, blob) {
+    if (!blob || typeof blob !== 'object') return;
+    const prefix = `${NS}-${siteId}-`;
+    try {
+        for (const [k, v] of Object.entries(blob)) {
+            if (k === PHOTOS_KEY) continue;
+            localStorage.setItem(prefix + k, JSON.stringify(v));
+        }
+    } catch { /* private mode / quota */ }
+}
+
+/** Snapshot the full local save as the cloud file shape:
+    `{ version, updatedAt, sites: { id: blob }, prefs }`. Global prefs are
+    every flat `mc-<k>` that is not a per-site key nor the migration flag. */
+export function exportAll(siteIds) {
+    const sites = {};
+    let newest = 0;
+    for (const id of siteIds) {
+        const blob = exportSite(id);
+        if (Object.keys(blob).length) {
+            sites[id] = blob;
+            newest = Math.max(newest, blob.updatedAt || 0);
+        }
+    }
+    return { version: 1, updatedAt: newest, sites, prefs: exportPrefs(siteIds) };
+}
+
+/** Apply a merged cloud file back to localStorage (per-site blobs + prefs). */
+export function applyMerged(merged, siteIds) {
+    if (!merged || typeof merged !== 'object') return;
+    for (const id of siteIds) {
+        if (merged.sites && merged.sites[id]) importSite(id, merged.sites[id]);
+    }
+    if (merged.prefs) {
+        for (const [k, v] of Object.entries(merged.prefs)) {
+            try { localStorage.setItem(`${NS}-${k}`, String(v)); } catch { /* private */ }
+        }
+    }
+}
+
+/** Global (non-per-site) prefs as a flat object — the tiny keybind/gear/
+    view state, worth carrying so it follows the player too. */
+function exportPrefs(siteIds) {
+    const prefs = {};
+    const isPerSite = (key) => siteIds.some((id) => key.startsWith(`${NS}-${id}-`));
+    try {
+        for (let i = 0; i < localStorage.length; i++) {
+            const key = localStorage.key(i);
+            if (!key || !key.startsWith(`${NS}-`)) continue;
+            if (key === MIGRATED_FLAG || key === `${NS}-site`) continue;
+            if (isPerSite(key)) continue;
+            prefs[key.slice(NS.length + 1)] = localStorage.getItem(key);
+        }
+    } catch { /* private mode */ }
+    return prefs;
+}
+
+/** PURE last-write-wins-per-site merge (no localStorage) — the part that can
+    silently lose data, so it is isolated and unit-tested. Returns the merged
+    cloud-shape file plus a per-site record of which side won (for logging).
+    Ties keep local (avoids a needless write-back churn). */
+export function mergeSaves(local, cloud) {
+    local = local || { sites: {} };
+    cloud = cloud || { sites: {} };
+    const lSites = local.sites || {}, cSites = cloud.sites || {};
+    const ids = new Set([...Object.keys(lSites), ...Object.keys(cSites)]);
+    const merged = { version: 1, sites: {}, prefs: {} };
+    const winners = {};
+    for (const id of ids) {
+        const l = lSites[id], c = cSites[id];
+        if (!l) { merged.sites[id] = c; winners[id] = 'cloud'; continue; }
+        if (!c) { merged.sites[id] = l; winners[id] = 'local'; continue; }
+        if ((c.updatedAt || 0) > (l.updatedAt || 0)) {
+            merged.sites[id] = c; winners[id] = 'cloud';
+        } else {
+            merged.sites[id] = l; winners[id] = 'local';
+        }
+    }
+    const cloudPrefsNewer = (cloud.updatedAt || 0) > (local.updatedAt || 0);
+    merged.prefs = (cloudPrefsNewer ? cloud.prefs : local.prefs) || {};
+    merged.updatedAt = Math.max(local.updatedAt || 0, cloud.updatedAt || 0);
+    return { merged, winners };
+}
+
 /** Remove every localStorage key matching pred. Snapshots the key list
     first so removal never reindexes the scan. */
 function purge(pred) {
