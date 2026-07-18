@@ -241,6 +241,18 @@ export const SITES = {
     },
 };
 
+// Future landing sites — shown on the Site Hub globe (hub.js) as dim
+// "COMING SOON" pins at their real coordinates, but NOT yet playable (no
+// heightmap/albedo/samples). Kept OUT of SITES so getSiteFromUrl / startGame
+// can never route into a site with no assets; the hub is the only consumer.
+// Real coords land each pin on a recognizable feature of the Viking mosaic:
+// Hellas = the bright basin lower-right, Olympus Mons = the big shield left.
+export const LOCKED_SITES = [
+    { id: 'hellas', name: 'Hellas Planitia', mission: 'Future landing — survey pending', center: { lon: 70.0, lat: -42.4 }, playable: false },
+    { id: 'olympus', name: 'Olympus Mons', mission: 'Future landing — survey pending', center: { lon: -134.0, lat: 18.65 }, playable: false },
+    { id: 'meridiani', name: 'Meridiani Planum', mission: 'Opportunity · MER-B (future port)', center: { lon: -5.4, lat: -1.95 }, playable: false },
+];
+
 export function getSiteFromUrl() {
     const params = new URLSearchParams(window.location.search);
     const id = params.get('site');

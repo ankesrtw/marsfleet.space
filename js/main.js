@@ -124,7 +124,7 @@ async function boot() {
     // first-ever-boot default and wires the pin fly-in handoff.
     if (new URLSearchParams(window.location.search).has('hub')) {
         const { createHub } = await import('./hub.js');
-        const hub = createHub({ onEnter: (site) => startGame(site) });
+        const hub = createHub({ onEnter: enterSite });
         window.__hub = hub; // E2E handle (verify skill)
         hub.show();
         return;
@@ -139,6 +139,16 @@ async function boot() {
     try { localStorage.setItem('mc-site', site.id); } catch { /* private mode */ }
     document.getElementById('game-root').hidden = false;
     await startGame(site);
+}
+
+/** Enter a playable site from the hub: remember it as last-played, reveal the
+    sim canvas, and boot. The hub disposes ITS WebGL context before calling
+    this, so only one context is ever live (main.js's ?hub handoff / step 4
+    fly-in both land here). */
+function enterSite(site) {
+    try { localStorage.setItem('mc-site', site.id); } catch { /* private mode */ }
+    document.getElementById('game-root').hidden = false;
+    startGame(site);
 }
 
 async function startGame(site) {

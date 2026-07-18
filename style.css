@@ -1560,3 +1560,107 @@ html, body {
     color: #e0b95e;
     opacity: 0.85;
 }
+
+/* Pin card — the panel that appears when a site pin is picked. Docked
+   bottom-centre (desktop) / full-width bottom sheet (mobile). Only the card
+   opts back into pointer events; the rest of #hub-ui stays click-through. */
+#hub-card[hidden] {
+    display: none !important;
+}
+
+#hub-card {
+    pointer-events: auto;
+    position: absolute;
+    left: 50%;
+    bottom: max(28px, env(safe-area-inset-bottom));
+    transform: translateX(-50%);
+    width: min(420px, calc(100vw - 32px));
+    box-sizing: border-box;
+    background: rgba(20, 12, 8, 0.9);
+    border: 1px solid #7a4f30;
+    border-radius: 12px;
+    padding: 18px 20px 20px;
+    backdrop-filter: blur(6px);
+    -webkit-backdrop-filter: blur(6px);
+    box-shadow: 0 10px 40px rgba(0, 0, 0, 0.55);
+    animation: hub-card-in 0.22s ease-out;
+}
+
+@keyframes hub-card-in {
+    from { opacity: 0; transform: translate(-50%, 12px); }
+    to { opacity: 1; transform: translate(-50%, 0); }
+}
+
+#hub-card-close {
+    position: absolute;
+    top: 8px;
+    right: 10px;
+    width: 30px;
+    height: 30px;
+    background: none;
+    border: none;
+    color: #b9a894;
+    font-size: 1.5rem;
+    line-height: 1;
+    cursor: pointer;
+}
+
+#hub-card-close:hover {
+    color: #f2ece3;
+}
+
+.hub-card__progress {
+    font-family: 'SF Mono', ui-monospace, Menlo, Consolas, monospace;
+    font-size: 0.72rem;
+    letter-spacing: 0.08em;
+    color: #ffcf6a;
+    margin-bottom: 6px;
+}
+
+#hub-card h2 {
+    margin: 0;
+    font-size: 1.35rem;
+    letter-spacing: 0.06em;
+    color: #f2ece3;
+}
+
+.hub-card__mission {
+    margin-top: 3px;
+    font-size: 0.82rem;
+    letter-spacing: 0.03em;
+    color: #c9b8a4;
+}
+
+.hub-card__coords {
+    margin-top: 8px;
+    font-family: 'SF Mono', ui-monospace, Menlo, Consolas, monospace;
+    font-size: 0.78rem;
+    letter-spacing: 0.05em;
+    color: #9fb0a6;
+}
+
+.hub-card__actions {
+    display: flex;
+    gap: 10px;
+    margin-top: 16px;
+}
+
+.hub-card__enter {
+    flex: 1;
+    justify-content: center;
+    border-color: #e0b95e;
+    color: #ffe9bf;
+    background: rgba(224, 185, 94, 0.14);
+    letter-spacing: 0.12em;
+}
+
+.hub-card__enter:hover {
+    background: rgba(224, 185, 94, 0.26);
+}
+
+.hub-card__locked {
+    margin: 14px 0 0;
+    font-size: 0.8rem;
+    letter-spacing: 0.06em;
+    color: #8a97a8;
+}

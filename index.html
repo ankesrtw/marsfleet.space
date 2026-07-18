@@ -42,6 +42,19 @@
                 <h1>MARS COLONY</h1>
                 <p>SELECT A LANDING SITE</p>
             </div>
+            <!-- Pin card — populated by hub.js on pin pick; RESET SITE and the
+                 hub-level RESET GAME button are wired in step 5. -->
+            <div id="hub-card" hidden aria-live="polite">
+                <button id="hub-card-close" aria-label="Close">&times;</button>
+                <div id="hub-card-progress" class="hub-card__progress"></div>
+                <h2 id="hub-card-name"></h2>
+                <div id="hub-card-mission" class="hub-card__mission"></div>
+                <div id="hub-card-coords" class="hub-card__coords"></div>
+                <div class="hub-card__actions">
+                    <button id="hub-card-enter" class="mars-btn hub-card__enter">ENTER</button>
+                </div>
+                <p id="hub-card-locked" class="hub-card__locked" hidden></p>
+            </div>
         </div>
     </div>
 
