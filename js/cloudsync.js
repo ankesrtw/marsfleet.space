@@ -30,7 +30,7 @@ export const GOOGLE_CLIENT_ID = '';   // e.g. '1234567890-abc.apps.googleusercon
 
 const SCOPE = 'https://www.googleapis.com/auth/drive.file';
 const GIS_SRC = 'https://accounts.google.com/gsi/client';
-const FILE_NAME = 'MarsColony-save.json';
+const FILE_NAME = 'MarsSim-save.json';
 const LS_STATE = 'mc-cloud-state';     // { signedIn, expiry } — never the token itself
 const TOKEN_SKEW_MS = 60_000;          // treat a token as expired this early
 

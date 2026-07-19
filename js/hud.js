@@ -140,7 +140,7 @@ export function createHud(rootEl, { site, onSwitchUnit, onCollect, onToggleSfx, 
         </div>
         <div class="mars-menu" id="mc-menu" data-open="false">
             <div class="mars-menu__panel">
-                <h2>MARS COLONY</h2>
+                <h2>MARS SIM</h2>
                 <div class="mars-menu__section">
                     <h3>MISSION MAP</h3>
                     <button class="mars-btn mars-btn--map" id="mc-open-hub">◉ OPEN MISSION MAP</button>

@@ -5,25 +5,36 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
     <link rel="icon" type="image/svg+xml" href="../icon.svg">
-    <meta name="description" content="Mars Colony — drive a rover, fly a drone and walk a surface unit across real Mars terrain from Jezero and Gale craters.">
-    <title>SIGNAL — Mars Colony</title>
+    <!-- PWA / installable app (Android TWA — plan 19). Manifest wraps this page
+         as a standalone app; icons + theme mirror the game's Mars-gold branding. -->
+    <link rel="manifest" href="manifest.json">
+    <meta name="theme-color" content="#1d110a">
+    <meta name="mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="apple-mobile-web-app-title" content="Mars Sim">
+    <link rel="apple-touch-icon" href="icons/icon-192.png">
+    <meta name="description" content="Mars Sim — drive a rover, fly a drone and walk a surface unit across real Mars terrain from Jezero and Gale craters.">
+    <title>SIGNAL — Mars Sim</title>
 
     <!-- Open Graph / social share -->
     <meta property="og:type" content="website">
-    <meta property="og:title" content="SIGNAL — Mars Colony">
+    <meta property="og:title" content="SIGNAL — Mars Sim">
     <meta property="og:description" content="Drive, fly and walk across real Mars terrain — Jezero and Gale craters, from real elevation data.">
     <meta property="og:url" content="https://signal-playground-0uj.pages.dev/mars-colony/">
     <meta property="og:site_name" content="SIGNAL">
     <meta name="twitter:card" content="summary_large_image">
 
-    <!-- Three.js ESM via import map — latest stable (0.185.1), intentionally newer
-         than this project's other games (pinned at 0.160.1); this is a standalone
-         game with no shared vendor files, so it can track latest independently. -->
+    <!-- Three.js ESM via import map — vendored locally (0.185.1) at vendor/three/
+         instead of a CDN, so the game runs fully offline and can be bundled into
+         the native Android app (Capacitor, plan 19). Relative paths resolve both on
+         the web and inside the app's WebView. Dep graph = core + GLTFLoader
+         (+ BufferGeometryUtils, SkeletonUtils). See vendor/three/VERSION.txt. -->
     <script type="importmap">
     {
       "imports": {
-        "three": "https://cdn.jsdelivr.net/npm/three@0.185.1/build/three.module.js",
-        "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.185.1/examples/jsm/"
+        "three": "./vendor/three/three.module.js",
+        "three/addons/": "./vendor/three/addons/"
       }
     }
     </script>
@@ -39,7 +50,7 @@
         <canvas id="hub-canvas"></canvas>
         <div id="hub-ui">
             <div id="hub-title">
-                <h1>MARS COLONY</h1>
+                <h1>MARS SIM</h1>
                 <p>SELECT A LANDING SITE</p>
             </div>
             <!-- Cloud save (plan 23): sign in to sync progress to YOUR Google

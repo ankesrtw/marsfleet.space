@@ -1,0 +1,13 @@
+three@0.185.1 — vendored from jsDelivr 2026-07-19 for offline / native (Capacitor)
+build. No CDN at runtime; import map in ../../index.html points here.
+
+Files (dependency graph):
+  three.module.js                     thin re-export -> ./three.core.js
+  three.core.js                       the actual engine (r185 split build)
+  addons/loaders/GLTFLoader.js        imports 'three' + the two utils below
+  addons/utils/BufferGeometryUtils.js imports 'three'
+  addons/utils/SkeletonUtils.js       imports 'three'
+
+To upgrade: re-fetch the SAME set at the new version (mind that three.module.js
+is a re-export — three.core.js must come with it), then re-run the offline
+verify (scratchpad/verify_offline2.py: boots with zero external requests).

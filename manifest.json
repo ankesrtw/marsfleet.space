@@ -1,0 +1,22 @@
+{
+  "id": "/mars-colony/",
+  "name": "Mars Sim",
+  "short_name": "Mars Sim",
+  "description": "Drive a rover, fly a drone and walk a surface unit across real Mars terrain — Jezero and Gale craters, built from real elevation data.",
+  "start_url": "/mars-colony/",
+  "scope": "/mars-colony/",
+  "display": "fullscreen",
+  "display_override": ["fullscreen", "standalone"],
+  "orientation": "landscape",
+  "background_color": "#150b07",
+  "theme_color": "#1d110a",
+  "lang": "en",
+  "dir": "ltr",
+  "categories": ["games", "simulation"],
+  "prefer_related_applications": false,
+  "icons": [
+    { "src": "icons/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "icons/icon-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}
