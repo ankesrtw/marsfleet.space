@@ -1,27 +1,30 @@
 /* ============================================================
-   strider.js — STRIDER, the quadruped walker (plan 24).
+   ongak.js — ONGAK, the quadruped walker (plan 24; renamed +
+   polished plan 26).
 
    Spot/ANYmal-class four-legged robot: the fleet's steep-slope
    specialist. Sagittal (non-yaw) legs in a trot gait — diagonal
    pairs in antiphase — with the reference image's X-stance:
    front knees bulge forward, hind knees bulge back.
 
-   Procedural model matched to assets/refs strider reference:
-   boxy white chassis, burnt-orange accent band + shoulder blocks,
-   dark underbelly and side vents, stereo-camera head on a neck
-   pedestal at the FRONT (front = body −Z: forward travel under W
-   is along −_fwd, same sign convention as every ground unit).
+   Warm livery (burnt-orange accents + amber glow) with emissive
+   trim + sensor bar so it reads as a finished machine, not raw
+   primitives. Stereo-camera head on a neck pedestal at the FRONT
+   (front = body −Z: forward travel under W is along −_fwd, same
+   sign convention as every ground unit).
    ============================================================ */
 
 import * as THREE from 'three';
 import { createWalker } from './walker-rig.js';
 
-// Fleet role: between rover (fast, slope-limited) and arachne
+// Fleet role: between rover (fast, slope-limited) and makadane
 // (slowest, near slope-proof). Slope factor floor .45 vs the
 // humanoid's .3 — legs keep more speed on a grade than boots.
 const SPEC = {
-    name: 'strider',
-    spawnOffset: { x: -7, z: 6 },
+    name: 'ongak',
+    // Warm identity: burnt-orange accents, amber sensor glow.
+    livery: { accent: 0xd4762e, glow: 0xffae42 },
+    spawnOffset: { x: -10, z: 7 },
     walkSpeed: 2.0,
     turnRate: 2.0,
     slopeK: 0.45,
@@ -65,6 +68,15 @@ function build(mats) {
     band.position.set(0, 0.86, -0.2);
     body.add(band);
 
+    // glowing amber trim strips down both flanks (the finished-machine
+    // read — a lit accent line rather than one flat painted band)
+    const stripGeo = new THREE.BoxGeometry(0.008, 0.03, 0.86);
+    for (const sx of [-1, 1]) {
+        const strip = new THREE.Mesh(stripGeo, mats.glow);
+        strip.position.set(sx * 0.281, 0.9, 0.02);
+        body.add(strip);
+    }
+
     const deck = new THREE.Mesh(new THREE.BoxGeometry(0.46, 0.05, 0.96), mats.panel);
     deck.position.y = 1.055;
     body.add(deck);
@@ -77,6 +89,14 @@ function build(mats) {
         body.add(vent);
     }
 
+    // panel-line greebles across the hull top (breaks up the flat lid)
+    const boltGeo = new THREE.BoxGeometry(0.07, 0.02, 0.07);
+    for (const bz of [-0.34, -0.05, 0.24]) {
+        const bolt = new THREE.Mesh(boltGeo, mats.joint);
+        bolt.position.set(0, 1.037, bz);
+        body.add(bolt);
+    }
+
     // ---- deck instruments --------------------------------------
     const canGeo = new THREE.CylinderGeometry(0.07, 0.07, 0.13, 12);
     const can1 = new THREE.Mesh(canGeo, mats.panel);
@@ -84,6 +104,10 @@ function build(mats) {
     const can2 = new THREE.Mesh(canGeo, mats.accent);
     can2.position.set(0.13, 1.14, 0.26);
     body.add(can1, can2);
+    // little glow cap on the instrument can
+    const cap = new THREE.Mesh(new THREE.CylinderGeometry(0.04, 0.04, 0.02, 12), mats.glow);
+    cap.position.set(0.13, 1.212, 0.26);
+    body.add(cap);
 
     const aerial = new THREE.Mesh(new THREE.CylinderGeometry(0.008, 0.008, 0.4, 6), mats.dark);
     aerial.position.set(0.18, 1.26, 0.44);
@@ -97,6 +121,11 @@ function build(mats) {
     const head = new THREE.Mesh(new THREE.BoxGeometry(0.3, 0.14, 0.16), mats.panel);
     head.position.set(0, 1.29, -0.38);
     body.add(head);
+
+    // glowing sensor bar across the face, between the two lenses
+    const bar = new THREE.Mesh(new THREE.BoxGeometry(0.2, 0.03, 0.012), mats.glow);
+    bar.position.set(0, 1.29, -0.462);
+    body.add(bar);
 
     const lensGeo = new THREE.CylinderGeometry(0.035, 0.035, 0.03, 10);
     for (const sx of [-1, 1]) {
@@ -138,6 +167,6 @@ function build(mats) {
     return { body, legs };
 }
 
-export function createStrider(site, terrain, obstacles) {
+export function createOngak(site, terrain, obstacles) {
     return createWalker(site, terrain, obstacles, SPEC);
 }

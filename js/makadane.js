@@ -1,5 +1,6 @@
 /* ============================================================
-   arachne.js — ARACHNE, the octopod walker (plan 24).
+   makadane.js — MAKADANE, the octopod walker (plan 24; renamed +
+   polished plan 26).
 
    Eight radially-mounted 3-DOF legs (coxa yaw + femur + tibia)
    around a flat octagonal deck — the fleet's near-slope-proof
@@ -15,9 +16,10 @@
    arthropods (and hexapod robots) translate a radial mount into
    directional travel.
 
-   Model matched to assets/refs arachne reference: octagonal white
-   deck with orange rim facets, dark underbelly, stereo-camera
-   mast forward (−Z), whip-antenna cluster aft.
+   Cool livery (teal facets + cyan glow) with emissive rim + mast
+   sensor, deliberately contrasting Ongak's warm palette so the two
+   walkers read as distinct machines, not identical procedural kit.
+   Stereo-camera mast forward (−Z), whip-antenna cluster aft.
    ============================================================ */
 
 import * as THREE from 'three';
@@ -30,7 +32,9 @@ const HOME_OUT = 0.72;  // foot home: this far outboard of its hip
 const RIPPLE = 0.22;    // metachronal stagger between leg pairs
 
 const SPEC = {
-    name: 'arachne',
+    name: 'makadane',
+    // Cool identity: teal rim facets, cyan sensor glow.
+    livery: { accent: 0x2ba39b, glow: 0x33e0ff },
     spawnOffset: { x: -4, z: -9 },
     walkSpeed: 1.5,
     turnRate: 1.6,
@@ -67,7 +71,7 @@ function build(mats) {
     plate.position.y = 0.735;
     body.add(plate);
 
-    // orange rim facets on alternating octagon faces
+    // teal rim facets on alternating octagon faces
     const facetGeo = new THREE.BoxGeometry(0.3, 0.14, 0.02);
     for (let i = 0; i < 4; i++) {
         const az = i * Math.PI / 2 + Math.PI / 4;
@@ -75,6 +79,17 @@ function build(mats) {
         facet.position.set(Math.sin(az) * 0.615, 0.6, Math.cos(az) * 0.615);
         facet.rotation.y = az;
         body.add(facet);
+    }
+
+    // glowing cyan ring segments on the OTHER four faces — a lit rim
+    // that circles the deck (the finished, powered-machine read)
+    const glowGeo = new THREE.BoxGeometry(0.26, 0.03, 0.015);
+    for (let i = 0; i < 4; i++) {
+        const az = i * Math.PI / 2;
+        const seg = new THREE.Mesh(glowGeo, mats.glow);
+        seg.position.set(Math.sin(az) * 0.63, 0.66, Math.cos(az) * 0.63);
+        seg.rotation.y = az;
+        body.add(seg);
     }
 
     // ---- camera mast, forward (−Z) ------------------------------
@@ -86,6 +101,11 @@ function build(mats) {
     camHead.position.set(0, 0.97, -0.16);
     body.add(camHead);
 
+    // glowing sensor bar between the mast lenses
+    const bar = new THREE.Mesh(new THREE.BoxGeometry(0.16, 0.025, 0.012), mats.glow);
+    bar.position.set(0, 0.97, -0.232);
+    body.add(bar);
+
     const lensGeo = new THREE.CylinderGeometry(0.03, 0.03, 0.03, 10);
     for (const sx of [-1, 1]) {
         const lens = new THREE.Mesh(lensGeo, mats.lens);
@@ -96,12 +116,13 @@ function build(mats) {
 
     // ---- whip antenna cluster, aft ------------------------------
     const whips = [[0.18, 0.55, 0.24], [0.26, 0.72, 0.15], [0.1, 0.88, 0.32]];
-    const tipGeo = new THREE.SphereGeometry(0.014, 8, 6);
+    const tipGeo = new THREE.SphereGeometry(0.018, 8, 6);
     for (const [wx, wh, wz] of whips) {
         const whip = new THREE.Mesh(new THREE.CylinderGeometry(0.006, 0.006, wh, 6), mats.dark);
         whip.position.set(wx, 0.735 + wh / 2, wz);
         body.add(whip);
-        const tip = new THREE.Mesh(tipGeo, mats.actuator);
+        // glowing tip beacon (was a dull actuator bead)
+        const tip = new THREE.Mesh(tipGeo, mats.glow);
         tip.position.set(wx, 0.735 + wh, wz);
         body.add(tip);
     }
@@ -136,6 +157,6 @@ function build(mats) {
     return { body, legs };
 }
 
-export function createArachne(site, terrain, obstacles) {
+export function createMakadane(site, terrain, obstacles) {
     return createWalker(site, terrain, obstacles, SPEC);
 }

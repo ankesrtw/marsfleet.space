@@ -261,8 +261,8 @@ export function createHud(rootEl, { site, onSwitchUnit, onCollect, onToggleSfx, 
                         <li>Switch unit — TAB · Collect — E · Menu — M</li>
                         <li>Humanoid + outpost-flagged sample — E starts a timed core drill (~4.5 s). Moving cancels it; the rover's arm still collects instantly</li>
                         <li>Van — walk the humanoid within 4 m, E to board (only the humanoid can drive it) · E again to dismount</li>
-                        <li>Strider (quad walker) — WASD or left stick. Trot gait, high slope tolerance: takes grades the rover bogs on. No jump — sure-footed, not springy</li>
-                        <li>Arachne (octopod walker) — WASD or left stick. Eight legs, four always planted: the fleet's near-slope-proof crawler, slow but steady</li>
+                        <li>Ongak (quad walker) — WASD or left stick. Trot gait, high slope tolerance: takes grades the rover bogs on. No jump — sure-footed, not springy</li>
+                        <li>Makadane (octopod walker) — WASD or left stick. Eight legs, four always planted: the fleet's near-slope-proof crawler, slow but steady</li>
                         <li>Van deploy — V (or the DEPLOY BASE button): panels out, the van becomes a field chargepad. V again packs up</li>
                         <li>Night vision — N (or the NV button): an image intensifier for driving after dark, when the terrain is otherwise nearly black. The HUD stays in its own colours</li>
                         <li>Lift drone — hover low over a cache container, E to sling it, fly to the FIELD LAB pad, E to deliver</li>
@@ -402,15 +402,15 @@ export function createHud(rootEl, { site, onSwitchUnit, onCollect, onToggleSfx, 
     // setActiveUnit() receives; extend the catalog to give any unit a
     // dossier chip + lightbox card. Paths are static game assets.
     const DOSSIERS = {
-        Strider: {
-            img: 'assets/dossier/strider.jpg',
-            title: 'STRIDER — Quadruped Walker',
+        Ongak: {
+            img: 'assets/dossier/ongak.jpg',
+            title: 'ONGAK — Quadruped Walker',
             blurb: 'Spot/ANYmal-class four-legged frame. Trot gait, high slope '
                 + 'tolerance: takes grades the rover bogs on.',
         },
-        Arachne: {
-            img: 'assets/dossier/arachne.jpg',
-            title: 'ARACHNE — Octopod Walker',
+        Makadane: {
+            img: 'assets/dossier/makadane.jpg',
+            title: 'MAKADANE — Octopod Walker',
             blurb: 'Eight radial legs, four always planted. The fleet\'s '
                 + 'near-slope-proof crawler — slow, steady, near-untippable.',
         },

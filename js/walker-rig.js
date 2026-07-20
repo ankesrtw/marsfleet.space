@@ -1,8 +1,8 @@
 /* ============================================================
    walker-rig.js — shared legged-robot locomotion (plan 24).
 
-   One rig engine for every multi-leg walker (Strider quad,
-   Arachne octopod). Generalizes the humanoid's Wave 12.2 foot-IK
+   One rig engine for every multi-leg walker (Ongak quad,
+   Makadane octopod). Generalizes the humanoid's Wave 12.2 foot-IK
    from 2 hardcoded bone legs to an N-entry leg array on a
    PROCEDURAL articulated chain (hip yaw → femur pitch → tibia
    pitch), so no GLB/bone pipeline is involved at all.
@@ -31,20 +31,31 @@ import * as THREE from 'three';
 
 const EDGE_MARGIN = 30;
 
-/** Shared walker material set — reference-matched livery (plan 24):
-    white composite panels + burnt-orange accent bands + gunmetal
-    links + bronze joint actuators. One instance per unit, shared
-    across all its meshes (draw-call sanity on the 2-core box). */
-export function walkerMaterials() {
+/** Shared walker material set. Per-unit `livery` lets each walker carry its
+    own identity instead of looking identically procedural (plan 26 polish):
+      livery = { panel, accent, glow }  (hex colours, all optional)
+    Defaults = the plan-24 reference livery (white panels + burnt-orange).
+    Lower roughness / higher metalness than the originals gives crisper spec
+    highlights (reads far less flat), and the emissive `lens`/`glow` pair is
+    the "alive" tech accent — glowing sensor eyes + trim strips. One instance
+    per unit, shared across its meshes (draw-call sanity on the 2-core box). */
+export function walkerMaterials(livery = {}) {
+    const accent = livery.accent ?? 0xc96f2e;
+    const glow = livery.glow ?? 0x2288ff;
     return {
-        panel: new THREE.MeshStandardMaterial({ color: 0xd6d2c8, roughness: 0.55, metalness: 0.15 }),
-        accent: new THREE.MeshStandardMaterial({ color: 0xc96f2e, roughness: 0.5, metalness: 0.2 }),
-        joint: new THREE.MeshStandardMaterial({ color: 0x3c3f42, roughness: 0.35, metalness: 0.7 }),
-        actuator: new THREE.MeshStandardMaterial({ color: 0x9c7a45, roughness: 0.4, metalness: 0.8 }),
-        dark: new THREE.MeshStandardMaterial({ color: 0x1c1d1f, roughness: 0.6, metalness: 0.3 }),
+        panel: new THREE.MeshStandardMaterial({ color: livery.panel ?? 0xe0ddd4, roughness: 0.42, metalness: 0.28 }),
+        accent: new THREE.MeshStandardMaterial({ color: accent, roughness: 0.38, metalness: 0.38 }),
+        joint: new THREE.MeshStandardMaterial({ color: 0x34373b, roughness: 0.28, metalness: 0.88 }),
+        actuator: new THREE.MeshStandardMaterial({ color: 0xb98f4c, roughness: 0.3, metalness: 0.95 }),
+        dark: new THREE.MeshStandardMaterial({ color: 0x16171a, roughness: 0.5, metalness: 0.45 }),
+        // glowing stereo-camera lens (bright) + emissive trim strips (softer)
         lens: new THREE.MeshStandardMaterial({
-            color: 0x10131a, roughness: 0.3, metalness: 0.2,
-            emissive: 0x2288ff, emissiveIntensity: 0.9,
+            color: 0x080b10, roughness: 0.22, metalness: 0.2,
+            emissive: glow, emissiveIntensity: 1.7,
+        }),
+        glow: new THREE.MeshStandardMaterial({
+            color: 0x0a0d12, roughness: 0.4, metalness: 0.3,
+            emissive: glow, emissiveIntensity: 1.15,
         }),
     };
 }
@@ -120,7 +131,7 @@ export function createWalker(site, terrain, obstacles, spec) {
     mesh.position.set(site.spawn.x + spec.spawnOffset.x, 0,
         site.spawn.z + spec.spawnOffset.z);
 
-    const mats = walkerMaterials();
+    const mats = walkerMaterials(spec.livery);
     const d = spec.legDims;
     const dims = {
         L1: d.L1, L2: d.L2,
