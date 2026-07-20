@@ -143,7 +143,9 @@ export function createWalker(site, terrain, obstacles, spec) {
         mesh.add(chain.hipMount);
         return {
             ...ls, ...chain,
-            plant: new THREE.Vector3(),
+            plant: new THREE.Vector3(),     // world stance lock
+            cmd: new THREE.Vector3(),       // last commanded foot world pos
+            swingFrom: new THREE.Vector3(), // world foot pos at swing start
             planted: false,
             prevStance: false,
         };
@@ -210,19 +212,8 @@ export function createWalker(site, terrain, obstacles, spec) {
         leg.tibia.rotation.x = -theta2;
     }
 
-    /** Stance plant: home offset + a FULL step-half lead along _fwd
-        — MUST equal the swing arc's endpoint (Wave 12 lesson: a
-        shorter lead runs out of reach mid-stance and skates). */
-    function plantFoot(leg) {
-        leg.plant.set(
-            mesh.position.x + _lat.x * leg.homeLx + _fwd.x * (leg.homeLz - spec.stepHalf),
-            0,
-            mesh.position.z + _lat.z * leg.homeLx + _fwd.z * (leg.homeLz - spec.stepHalf)
-        );
-        leg.plant.y = groundAt(leg.plant.x, leg.plant.z);
-    }
-
-    /** Idle plant: foot settles at its home point under the body. */
+    /** Idle plant: foot settles at its home point under the body,
+        and cmd tracks it so a walk-start captures continuity. */
     function plantIdle(leg) {
         leg.plant.set(
             mesh.position.x + _lat.x * leg.homeLx + _fwd.x * leg.homeLz,
@@ -230,23 +221,37 @@ export function createWalker(site, terrain, obstacles, spec) {
             mesh.position.z + _lat.z * leg.homeLx + _fwd.z * leg.homeLz
         );
         leg.plant.y = groundAt(leg.plant.x, leg.plant.z);
+        leg.cmd.copy(leg.plant);
+        // Seed the swing origin too: a leg whose cycle BEGINS in swing
+        // (stride 0) never sees a release edge, so without this its
+        // swingFrom stays at world-origin and the foot flails out of reach.
+        leg.swingFrom.copy(leg.plant);
     }
 
-    function solveLeg(leg) {
-        if (leg.planted) {
-            // world-locked in x/z, re-sampling its own ground height
-            leg.plant.y = groundAt(leg.plant.x, leg.plant.z);
+    /** Stance holds the world-locked plant; swing lerps the foot from
+        its lift-off point (swingFrom, captured on release) to a home
+        point a stepHalf ahead in the travel direction, arcing over a
+        sin() lift that peaks MID-swing. The next plant is captured
+        from `cmd` at touchdown, so the planted foot is exactly where
+        the swing left it — skate is impossible by construction (the
+        Wave 12 humanoid recomputed the plant and slammed the foot). */
+    function solveLeg(leg, stance, swingProg, travelSign) {
+        if (stance) {
+            leg.plant.y = groundAt(leg.plant.x, leg.plant.z); // conform
+            leg.cmd.copy(leg.plant);
             solveChain(leg, leg.plant.x, leg.plant.y, leg.plant.z);
         } else {
-            const s = Math.sin(stride + leg.phase);
-            const swingT = (s + 1) / 2;
-            const lift = spec.swingLift * Math.sin(swingT * Math.PI);
-            const c = Math.cos(stride + leg.phase);
-            const sx = mesh.position.x + _lat.x * leg.homeLx
-                + _fwd.x * (leg.homeLz + spec.stepHalf * c);
-            const sz = mesh.position.z + _lat.z * leg.homeLx
-                + _fwd.z * (leg.homeLz + spec.stepHalf * c);
-            solveChain(leg, sx, groundAt(sx, sz) + lift, sz);
+            const lead = leg.homeLz + travelSign * spec.stepHalf;
+            const tx = mesh.position.x + _lat.x * leg.homeLx + _fwd.x * lead;
+            const tz = mesh.position.z + _lat.z * leg.homeLx + _fwd.z * lead;
+            const gy = groundAt(tx, tz);
+            const k = swingProg;
+            const cx = leg.swingFrom.x + (tx - leg.swingFrom.x) * k;
+            const cz = leg.swingFrom.z + (tz - leg.swingFrom.z) * k;
+            const baseY = leg.swingFrom.y + (gy - leg.swingFrom.y) * k;
+            const y = baseY + spec.swingLift * Math.sin(swingProg * Math.PI);
+            leg.cmd.set(cx, y, cz);
+            solveChain(leg, cx, y, cz);
         }
     }
 
@@ -277,6 +282,8 @@ export function createWalker(site, terrain, obstacles, spec) {
         const moving = Math.abs(input.throttle) > 0.05;
         if (moving) stride += dt * spec.strideRate * Math.abs(speed) / spec.walkSpeed;
         walkAmt += ((moving ? 1 : 0) - walkAmt) * Math.min(1, 8 * dt);
+        // Foot lands a stepHalf ahead in the direction of travel.
+        const travelSign = speed < 0 ? -1 : 1;
 
         _fwd.set(Math.sin(heading), 0, Math.cos(heading));
         _lat.set(Math.cos(heading), 0, -Math.sin(heading));
@@ -297,19 +304,28 @@ export function createWalker(site, terrain, obstacles, spec) {
         mesh.position.y += Math.abs(Math.sin(stride)) * spec.bobAmp * walkAmt;
         mesh.updateWorldMatrix(true, false);
 
+        const TAU = Math.PI * 2;
         const turning = Math.abs(input.steer) > 0.05;
         for (const leg of legs) {
-            const stance = Math.sin(stride + leg.phase) < 0;
+            // tm in [0,2π): first half (sin>0) swings, second half stances.
+            const tm = ((stride + leg.phase) % TAU + TAU) % TAU;
+            const stance = tm >= Math.PI;
+            const swingProg = stance ? 0 : tm / Math.PI; // 0→1 over the swing
             if (moving) {
-                // heel-strike edge: world-lock for the whole stance
-                if (!leg.prevStance && stance) { plantFoot(leg); leg.planted = true; }
-                if (leg.prevStance && !stance) leg.planted = false;
+                // Release edge: remember where the foot lifts off, so the
+                // swing lerp starts exactly there (no jump at lift-off).
+                if (leg.prevStance && !stance) leg.swingFrom.copy(leg.cmd);
+                // Touchdown edge: lock the plant at the foot's actual
+                // commanded position (no jump at set-down = no skate).
+                if (!leg.prevStance && stance) { leg.plant.copy(leg.cmd); leg.planted = true; }
             } else if (!leg.planted || turning) {
                 plantIdle(leg);
                 leg.planted = true;
             }
             leg.prevStance = stance;
-            solveLeg(leg);
+            // Idle: hold the idle plant (treat as stance). Moving: honour
+            // the gait's stance/swing split.
+            solveLeg(leg, moving ? stance : true, swingProg, travelSign);
         }
     }
 
