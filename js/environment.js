@@ -108,6 +108,24 @@ export function createEnvironment(scene) {
     const hemi = new THREE.HemisphereLight(0xcf9d76, 0x3a2418, 0.75);
     scene.add(hemi);
 
+    // Plan 26: turn the sun into a shadow caster (desktop-gated by main.js).
+    // The sun already tracks the camera in update() — pos = cam + SUN_DIR*1000,
+    // target = cam — so this orthographic shadow frustum rides with the player,
+    // keeping crisp shadows in a `radius`-metre band around the active unit
+    // regardless of where they are on a multi-km site.
+    function configureShadows({ mapSize = 2048, radius = 90 } = {}) {
+        sun.castShadow = true;
+        sun.shadow.mapSize.set(mapSize, mapSize);
+        const c = sun.shadow.camera; // OrthographicCamera
+        c.left = -radius; c.right = radius; c.top = radius; c.bottom = -radius;
+        // Receiver band sits ~1000 away along the ray; bracket generously so
+        // terrain relief + tall units stay inside the depth range.
+        c.near = 400; c.far = 1600;
+        c.updateProjectionMatrix();
+        sun.shadow.bias = -0.0004;   // standard receivers (rocks/units)
+        sun.shadow.normalBias = 0.08;
+    }
+
     // Cycle phase chosen so the boot-time sun elevation continues the
     // original hand-placed morning vector (no visible pop at start).
     const phase0 = Math.asin((SUN_DIR.y - ELEV_BIAS) / ELEV_AMP);
@@ -154,7 +172,7 @@ export function createEnvironment(scene) {
     }
 
     return {
-        update, daylight, toggleSol,
+        update, daylight, toggleSol, configureShadows, sun,
         get cycling() { return cycling; },
         // Wave 9.6: the sol-cycle phase in radians, monotonic while cycling.
         // mars-clock.js dresses it as Mars local time — noon is the sun's

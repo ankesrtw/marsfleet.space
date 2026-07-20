@@ -68,14 +68,27 @@ export async function loadTerrain(site, quality) {
         // Per-site albedo tint: grayscale source imagery (Jezero's CTX
         // ortho) gets a Mars-rust multiply; real-color sources use white.
         uTint: { value: new THREE.Color(site.tint ?? 0xffffff) },
+        // Plan 26: single-sun shadow receive. The terrain is a fully custom
+        // ShaderMaterial (lights:false) so it can't use three's automatic
+        // shadow chunks without cloning the shared uniforms (which the
+        // day/night cycle mutates in place). Instead we sample the sun's ONE
+        // directional shadow map by hand: main.js feeds sun.shadow.map/matrix
+        // each frame. uShadowIntensity 0 = fully disabled (mobile / night).
+        uShadowMap: { value: null },
+        uShadowMatrix: { value: new THREE.Matrix4() },
+        uShadowIntensity: { value: 0.0 },
+        uShadowBias: { value: 0.0009 },
+        uShadowTexel: { value: 1.0 / 2048.0 },
     };
 
     const vertexShader = /* glsl */ `
             uniform sampler2D uHeightmap;
             uniform float uElevMin, uElevRange, uTexel, uWorldStep, uWorldSize;
+            uniform mat4 uShadowMatrix;
             varying vec2 vUv;
             varying vec3 vNormal;
             varying float vViewDist;
+            varying vec4 vShadowCoord;
 
             // RG-packed 16-bit decode: (R*256 + G) / 65535, in 0..1.
             // Matches texelFetchBilinear() on the CPU exactly.
@@ -111,21 +124,51 @@ export async function loadTerrain(site, quality) {
                 // so the v-difference sign flips into world space here.
                 vNormal = normalize(vec3(hL - hR, 2.0 * uWorldStep, hU - hD));
 
+                // Sun shadow-map coordinate. sun.shadow.matrix already bakes
+                // the NDC->[0,1] remap, so vShadowCoord.xyz is UV+depth in
+                // [0,1] directly (w=1 for the orthographic sun). displaced is
+                // true world-space, which is what the shadow matrix expects.
+                vShadowCoord = uShadowMatrix * vec4(displaced, 1.0);
+
                 vec4 mv = viewMatrix * vec4(displaced, 1.0);
                 vViewDist = -mv.z;
                 gl_Position = projectionMatrix * mv;
             }
         `;
     const fragmentShader = /* glsl */ `
+            #include <packing>
             uniform sampler2D uAlbedo;
             uniform sampler2D uDetail;
             uniform vec3 uTint;
             uniform vec3 uSunDir;
             uniform vec3 uFogColor;
             uniform float uFogDensity;
+            uniform sampler2D uShadowMap;
+            uniform float uShadowIntensity, uShadowBias, uShadowTexel;
             varying vec2 vUv;
             varying vec3 vNormal;
             varying float vViewDist;
+            varying vec4 vShadowCoord;
+
+            // 3x3 PCF against the sun's packed-depth shadow map. Returns a
+            // sun-visibility factor in [0,1]: 1 = fully lit. Fragments outside
+            // the shadow frustum (units are only near the camera) read lit.
+            float sunShadow() {
+                if (uShadowIntensity <= 0.0) return 1.0;
+                vec3 sc = vShadowCoord.xyz / vShadowCoord.w;
+                if (sc.x < 0.0 || sc.x > 1.0 || sc.y < 0.0 || sc.y > 1.0 || sc.z > 1.0) return 1.0;
+                float lit = 0.0;
+                for (int i = -1; i <= 1; i++) {
+                    for (int j = -1; j <= 1; j++) {
+                        vec2 off = vec2(float(i), float(j)) * uShadowTexel;
+                        float d = unpackRGBAToDepth(texture2D(uShadowMap, sc.xy + off));
+                        lit += (sc.z - uShadowBias <= d) ? 1.0 : 0.0;
+                    }
+                }
+                lit /= 9.0;
+                return mix(1.0, lit, uShadowIntensity);
+            }
+
             void main() {
                 vec3 albedo = texture2D(uAlbedo, vUv).rgb * uTint;
 
@@ -156,7 +199,10 @@ export async function loadTerrain(site, quality) {
                 vec3 n = normalize(vNormal);
                 float diff = max(dot(n, uSunDir), 0.0);
                 float dayAmt = smoothstep(-0.10, 0.20, uSunDir.y);
-                vec3 lit = albedo * ((0.12 + 0.26 * dayAmt) + 0.85 * diff);
+                // Shadow the DIRECT sun term only — ambient (skylight + dust
+                // bounce) still fills shadowed ground, so cast shadows read as
+                // warm-dark Mars shade, never pure black.
+                vec3 lit = albedo * ((0.12 + 0.26 * dayAmt) + 0.85 * diff * sunShadow());
 
                 // Dust haze, same params as scene.fog on standard materials.
                 float fogAmt = 1.0 - exp(-uFogDensity * uFogDensity * vViewDist * vViewDist);

@@ -184,6 +184,14 @@ async function startGame(site) {
     // punchy specular highlights instead of a flat, blown-out sheen.
     renderer.toneMapping = THREE.ACESFilmicToneMapping;
     renderer.toneMappingExposure = 1.05;
+    renderer.outputColorSpace = THREE.SRGBColorSpace; // explicit (plan 26)
+    // Plan 26: sun shadows are desktop-only (mobile is OOM-sensitive, plan 24).
+    // shadowMap.enabled is a no-op cost when no light casts, but we gate it too.
+    const SHADOWS = !QUALITY.coarse;
+    if (SHADOWS) {
+        renderer.shadowMap.enabled = true;
+        renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+    }
 
     const scene = new THREE.Scene();
     scene.background = FOG.color; // only visible beyond the sky dome
@@ -823,6 +831,47 @@ async function startGame(site) {
         renderer.setSize(window.innerWidth, window.innerHeight);
     });
 
+    // ---- Plan 26: sun shadows (desktop only) ----
+    // Flag every unit/prop mesh as a caster; the terrain receives via its own
+    // shader sampler (js/terrain.js) and rocks receive natively. Sky dome and
+    // terrain never cast (huge, and terrain self-shadow is handled in-shader).
+    const SHADOW_MAP_SIZE = 2048;
+    const SHADOW_STRENGTH = 0.62; // how dark cast shadows go (ambient still fills)
+    function applyShadowCasters(root) {
+        root.traverse((o) => {
+            if (!o.isMesh && !o.isInstancedMesh) return;
+            const n = o.name || '';
+            if (n === 'sky' || n === 'terrain' || n.startsWith('terrain-')) return;
+            o.castShadow = true;
+        });
+    }
+    // Re-swept a few times over the first ~2s so async GLB reveals (lab station)
+    // pick up casting too, not just the synchronous procedural units.
+    let shadowSweeps = SHADOWS ? 5 : 0;
+    if (SHADOWS) {
+        env.configureShadows({ mapSize: SHADOW_MAP_SIZE, radius: 90 });
+        rocks.mesh.receiveShadow = true;
+        applyShadowCasters(scene);
+        terrain.uniforms.uShadowTexel.value = 1 / SHADOW_MAP_SIZE;
+    }
+    // Feed the sun's shadow map/matrix into the terrain's hand-rolled sampler
+    // each frame (the map only exists after the first render; matrix mutates in
+    // place). Intensity tracks daylight so shadows fade out through dusk/night.
+    let shadowSweepTimer = 0;
+    function updateShadows(dt) {
+        if (!SHADOWS) return;
+        const sm = env.sun.shadow;
+        if (sm.map) {
+            terrain.uniforms.uShadowMap.value = sm.map.texture;
+            terrain.uniforms.uShadowMatrix.value = sm.matrix;
+            terrain.uniforms.uShadowIntensity.value = SHADOW_STRENGTH * env.daylight();
+        }
+        if (shadowSweeps > 0) {
+            shadowSweepTimer += dt;
+            if (shadowSweepTimer >= 0.4) { shadowSweepTimer = 0; shadowSweeps--; applyShadowCasters(scene); }
+        }
+    }
+
     const timer = new THREE.Timer(); // Clock is deprecated in three 0.185+
     const prevPos = new THREE.Vector3().copy(rover.position);
     let teleAccum = 0;
@@ -857,6 +906,7 @@ async function startGame(site) {
                 terrain.update(pos.x, pos.z); // clipmap detail under the descent
                 camRig.update(pos, heading, 'fly');
                 env.update(camera, dt);
+                updateShadows(dt);
                 renderer.render(scene, camera);
                 if (!intro.active) { intro.dispose(); lab.stationGroup.visible = true; hud.setIntroActive(false); camRig.setDistance(12); intro = null; }
                 return;
@@ -1441,6 +1491,7 @@ async function startGame(site) {
 
         camRig.update(active.unit.position, active.unit.heading, active.kind);
         env.update(camera, dt);
+        updateShadows(dt);
         rocks.update(active.unit.position);
 
         renderer.render(scene, camera);
