@@ -8,6 +8,28 @@ Files (dependency graph):
   addons/utils/BufferGeometryUtils.js imports 'three'
   addons/utils/SkeletonUtils.js       imports 'three'
 
+  --- post-processing pipeline (plan 26, grounded graphics pass) ---
+  addons/postprocessing/EffectComposer.js   composer + HalfFloat targets
+  addons/postprocessing/Pass.js             base Pass + FullScreenQuad
+  addons/postprocessing/RenderPass.js       scene -> composer target
+  addons/postprocessing/ShaderPass.js       generic full-screen shader (vignette)
+  addons/postprocessing/MaskPass.js         EffectComposer dep
+  addons/postprocessing/GTAOPass.js         ground-truth ambient occlusion (desktop)
+  addons/postprocessing/UnrealBloomPass.js  thresholded bloom (metal sun-glint)
+  addons/postprocessing/OutputPass.js       ACES tone-map + sRGB at chain end
+  addons/shaders/CopyShader.js              EffectComposer/ShaderPass dep
+  addons/shaders/GTAOShader.js              + PoissonDenoiseShader.js (GTAO deps)
+  addons/shaders/PoissonDenoiseShader.js    GTAO denoise
+  addons/shaders/LuminosityHighPassShader.js UnrealBloom dep
+  addons/shaders/OutputShader.js            OutputPass dep
+  addons/shaders/VignetteShader.js          ShaderPass vignette
+  addons/math/SimplexNoise.js               GTAO noise dep
+
+  These 15 were extracted via `npm pack three@0.185.1` (jsm/), dependency
+  closure computed by following relative imports only. All import 'three'
+  (importmap) or sibling addon files — zero CDN. Verified: every import
+  resolves on disk + all parse as valid ES modules (plan 26, wave 1).
+
 To upgrade: re-fetch the SAME set at the new version (mind that three.module.js
 is a re-export — three.core.js must come with it), then re-run the offline
 verify (scratchpad/verify_offline2.py: boots with zero external requests).

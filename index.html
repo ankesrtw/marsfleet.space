@@ -29,7 +29,9 @@
          instead of a CDN, so the game runs fully offline and can be bundled into
          the native Android app (Capacitor, plan 19). Relative paths resolve both on
          the web and inside the app's WebView. Dep graph = core + GLTFLoader
-         (+ BufferGeometryUtils, SkeletonUtils). See vendor/three/VERSION.txt. -->
+         (+ BufferGeometryUtils, SkeletonUtils) + post-processing pipeline
+         (EffectComposer/GTAO/UnrealBloom/OutputPass, plan 26).
+         See vendor/three/VERSION.txt. -->
     <script type="importmap">
     {
       "imports": {
