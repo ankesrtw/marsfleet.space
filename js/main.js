@@ -185,9 +185,16 @@ async function startGame(site) {
     renderer.toneMapping = THREE.ACESFilmicToneMapping;
     renderer.toneMappingExposure = 1.05;
     renderer.outputColorSpace = THREE.SRGBColorSpace; // explicit (plan 26)
-    // Plan 26: sun shadows are desktop-only (mobile is OOM-sensitive, plan 24).
-    // shadowMap.enabled is a no-op cost when no light casts, but we gate it too.
-    const SHADOWS = !QUALITY.coarse;
+    // Plan 26: sun shadows (desktop-only; mobile is OOM-sensitive, plan 24).
+    // GATED OFF by default: the full pipeline works (casters render into the
+    // 2048 map, terrain has a hand-rolled PCF sampler), but cast shadows do
+    // NOT show under SwiftShader (the headless verify GPU) — a known quirk
+    // sampling a shadow render-target texture inside a custom ShaderMaterial.
+    // Couldn't confirm on a real GPU from here, so it's off to avoid shipping
+    // an unverified per-pixel cost. Flip to `!QUALITY.coarse` to test on real
+    // hardware; when off, updateShadows() no-ops and the terrain sampler
+    // early-returns at intensity 0 (zero overhead).
+    const SHADOWS = false;
     if (SHADOWS) {
         renderer.shadowMap.enabled = true;
         renderer.shadowMap.type = THREE.PCFSoftShadowMap;

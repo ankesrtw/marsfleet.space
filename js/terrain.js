@@ -77,7 +77,11 @@ export async function loadTerrain(site, quality) {
         uShadowMap: { value: null },
         uShadowMatrix: { value: new THREE.Matrix4() },
         uShadowIntensity: { value: 0.0 },
-        uShadowBias: { value: 0.0009 },
+        // Terrain never casts into the shadow map (only units/rocks do), so
+        // there's no self-shadow acne to bias against — keep this small so
+        // low objects' contact shadows stay attached. Tied to the ~450m
+        // depth span set in environment.js configureShadows().
+        uShadowBias: { value: 0.0004 },
         uShadowTexel: { value: 1.0 / 2048.0 },
     };
 

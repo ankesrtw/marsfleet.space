@@ -118,12 +118,16 @@ export function createEnvironment(scene) {
         sun.shadow.mapSize.set(mapSize, mapSize);
         const c = sun.shadow.camera; // OrthographicCamera
         c.left = -radius; c.right = radius; c.top = radius; c.bottom = -radius;
-        // Receiver band sits ~1000 away along the ray; bracket generously so
-        // terrain relief + tall units stay inside the depth range.
-        c.near = 400; c.far = 1600;
+        // The sun sits 1000 along the ray from the camera-tracked target, so
+        // every caster/receiver in the `radius` band is ~1000±radius deep.
+        // Bracket TIGHTLY (not 400..1600): the shadow map's depth precision is
+        // spread across near..far, so a wide range turns any reasonable bias
+        // into ~1m of depth slop that erases low objects' contact shadows
+        // (a tall mast's long shadow survives, a rover's does not). ~450m span.
+        c.near = 800; c.far = 1250;
         c.updateProjectionMatrix();
-        sun.shadow.bias = -0.0004;   // standard receivers (rocks/units)
-        sun.shadow.normalBias = 0.08;
+        sun.shadow.bias = -0.0002;   // standard receivers (rocks/units)
+        sun.shadow.normalBias = 0.05;
     }
 
     // Cycle phase chosen so the boot-time sun elevation continues the
