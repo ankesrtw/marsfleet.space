@@ -26,6 +26,7 @@ export function createHud(rootEl, { site, onSwitchUnit, onCollect, onToggleSfx, 
             <div class="mars-hud__top">
                 <button class="mars-btn mars-btn--switch" id="mc-switch">SWITCH UNIT<span class="mars-btn__hint">[TAB]</span></button>
                 <div class="mars-hud__unit" id="mc-active-unit">ROVER</div>
+                <button class="mars-hud__dossier" id="mc-dossier-thumb" data-visible="false" aria-label="Unit dossier — tap to enlarge"><span class="mars-hud__dossier-glyph">⤢</span></button>
                 <button class="mars-btn mars-btn--nv" id="mc-nv">NV<span class="mars-btn__hint">[N]</span></button>
                 <div class="mars-hud__drop" id="mc-drop">
                     <button class="mars-btn mars-btn--drop" id="mc-drop-btn">OVERLAYS ▾</button>
@@ -44,6 +45,16 @@ export function createHud(rootEl, { site, onSwitchUnit, onCollect, onToggleSfx, 
                 <button class="mars-btn mars-btn--sfx" id="mc-sfx">SFX ${sfxEnabled ? 'ON' : 'OFF'}</button>
             </div>
             <div class="mars-hud__nv-overlay" id="mc-nv-overlay" data-visible="false"></div>
+            <div class="mars-dossier-lightbox" id="mc-dossier-lightbox" data-open="false" role="dialog" aria-label="Unit dossier">
+                <figure class="mars-dossier-lightbox__fig">
+                    <img id="mc-dossier-img" alt="">
+                    <figcaption>
+                        <b id="mc-dossier-title"></b>
+                        <span id="mc-dossier-blurb"></span>
+                    </figcaption>
+                </figure>
+                <button class="mars-dossier-lightbox__close" id="mc-dossier-close" aria-label="Close">✕</button>
+            </div>
             <div class="mars-hud__rotate" id="mc-rotate" aria-hidden="true">
                 <div class="mars-hud__rotate-card">
                     <div class="mars-hud__rotate-glyph">⟳</div>
@@ -211,6 +222,12 @@ export function createHud(rootEl, { site, onSwitchUnit, onCollect, onToggleSfx, 
                     and sites.</p>
                 </div>
                 <div class="mars-menu__section">
+                    <h3>FLEET DOSSIER</h3>
+                    <div class="mars-menu__dossier" id="mc-dossier-list"></div>
+                    <p class="mars-menu__note">Concept renders for the legged walkers (plan 24). Tap a card
+                    — or the dossier chip beside the active unit's name — to enlarge.</p>
+                </div>
+                <div class="mars-menu__section">
                     <h3>SURVEY IMAGING</h3>
                     <div class="mars-menu__photos" id="mc-photo-album">
                         <p class="mars-menu__lab-empty">No survey images yet — fly the recon drone over a
@@ -244,6 +261,8 @@ export function createHud(rootEl, { site, onSwitchUnit, onCollect, onToggleSfx, 
                         <li>Switch unit — TAB · Collect — E · Menu — M</li>
                         <li>Humanoid + outpost-flagged sample — E starts a timed core drill (~4.5 s). Moving cancels it; the rover's arm still collects instantly</li>
                         <li>Van — walk the humanoid within 4 m, E to board (only the humanoid can drive it) · E again to dismount</li>
+                        <li>Strider (quad walker) — WASD or left stick. Trot gait, high slope tolerance: takes grades the rover bogs on. No jump — sure-footed, not springy</li>
+                        <li>Arachne (octopod walker) — WASD or left stick. Eight legs, four always planted: the fleet's near-slope-proof crawler, slow but steady</li>
                         <li>Van deploy — V (or the DEPLOY BASE button): panels out, the van becomes a field chargepad + tether anchor. V again packs up</li>
                         <li>Night vision — N (or the NV button): an image intensifier for driving after dark, when the terrain is otherwise nearly black. The HUD stays in its own colours</li>
                         <li>Lift drone — hover low over a cache container, E to sling it, fly to the FIELD LAB pad, E to deliver</li>
@@ -377,6 +396,72 @@ export function createHud(rootEl, { site, onSwitchUnit, onCollect, onToggleSfx, 
             return fig;
         }));
     }
+
+    // ---- FLEET DOSSIER (plan 24) --------------------------------------
+    // Concept renders for the legged walkers. Keyed by the unit name
+    // setActiveUnit() receives; extend the catalog to give any unit a
+    // dossier chip + lightbox card. Paths are static game assets.
+    const DOSSIERS = {
+        Strider: {
+            img: 'assets/dossier/strider.jpg',
+            title: 'STRIDER — Quadruped Walker',
+            blurb: 'Spot/ANYmal-class four-legged frame. Trot gait, high slope '
+                + 'tolerance: takes grades the rover bogs on.',
+        },
+        Arachne: {
+            img: 'assets/dossier/arachne.jpg',
+            title: 'ARACHNE — Octopod Walker',
+            blurb: 'Eight radial legs, four always planted. The fleet\'s '
+                + 'near-slope-proof crawler — slow, steady, near-untippable.',
+        },
+    };
+    const dossierThumb = rootEl.querySelector('#mc-dossier-thumb');
+    const dossierListEl = rootEl.querySelector('#mc-dossier-list');
+    const lightbox = rootEl.querySelector('#mc-dossier-lightbox');
+    const lightboxImg = rootEl.querySelector('#mc-dossier-img');
+    const lightboxTitle = rootEl.querySelector('#mc-dossier-title');
+    const lightboxBlurb = rootEl.querySelector('#mc-dossier-blurb');
+    let activeDossierKey = null;
+
+    function openDossier(key) {
+        const d = DOSSIERS[key];
+        if (!d) return;
+        lightboxImg.src = d.img;
+        lightboxImg.alt = d.title;
+        lightboxTitle.textContent = d.title;
+        lightboxBlurb.textContent = d.blurb;
+        lightbox.dataset.open = 'true';
+    }
+    function closeDossier() { lightbox.dataset.open = 'false'; }
+
+    dossierThumb.addEventListener('click', () => activeDossierKey && openDossier(activeDossierKey));
+    rootEl.querySelector('#mc-dossier-close').addEventListener('click', closeDossier);
+    // Tap the backdrop (not the figure) to dismiss.
+    lightbox.addEventListener('click', (e) => { if (e.target === lightbox) closeDossier(); });
+    // Esc closes the lightbox first (before any menu/game handler sees it).
+    document.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape' && lightbox.dataset.open === 'true') {
+            e.stopPropagation();
+            closeDossier();
+        }
+    }, true);
+
+    // Menu cards — one per catalogued dossier, click to enlarge.
+    dossierListEl.replaceChildren(...Object.entries(DOSSIERS).map(([key, d]) => {
+        const card = document.createElement('button');
+        card.className = 'mars-menu__dossier-card';
+        card.type = 'button';
+        const img = document.createElement('img');
+        img.src = d.img;
+        img.alt = d.title;
+        img.loading = 'lazy';
+        const cap = document.createElement('span');
+        cap.textContent = d.title;
+        card.append(img, cap);
+        card.addEventListener('click', () => openDossier(key));
+        return card;
+    }));
+
     const solBtn = rootEl.querySelector('#mc-sol');
     solBtn.addEventListener('click', () => {
         const on = onToggleSol ? onToggleSol() : true;
@@ -701,6 +786,12 @@ export function createHud(rootEl, { site, onSwitchUnit, onCollect, onToggleSfx, 
 
     function setActiveUnit(name) {
         unitLabel.textContent = name.toUpperCase();
+        // Dossier chip: show only for units that have one (plan 24 walkers).
+        activeDossierKey = DOSSIERS[name] ? name : null;
+        dossierThumb.dataset.visible = String(!!activeDossierKey);
+        if (activeDossierKey) {
+            dossierThumb.style.backgroundImage = `url('${DOSSIERS[name].img}')`;
+        }
     }
 
     /** Full action label ("COLLECT: Rochette", "SLING: … CACHE",

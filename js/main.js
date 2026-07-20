@@ -9,6 +9,8 @@ import { createRover } from './rover.js';
 import { createDrone } from './drone.js';
 import { createHumanoid } from './humanoid.js';
 import { createVan } from './van.js';
+import { createStrider } from './strider.js';
+import { createArachne } from './arachne.js';
 import { createFog } from './fog.js';
 import { createSamples } from './samples.js';
 import { createHud } from './hud.js';
@@ -238,7 +240,11 @@ async function startGame(site) {
     });
     const humanoid = createHumanoid(site, terrain, colliders.forUnit('humanoid'));
     const van = createVan(site, terrain, colliders.forUnit('van'));
-    scene.add(rover.mesh, recon.mesh, lift.mesh, humanoid.mesh, van.mesh);
+    // Plan 24 walkers: quad + octopod, fully procedural (no GLB).
+    const strider = createStrider(site, terrain, colliders.forUnit('strider'));
+    const arachne = createArachne(site, terrain, colliders.forUnit('arachne'));
+    scene.add(rover.mesh, recon.mesh, lift.mesh, humanoid.mesh, van.mesh,
+        strider.mesh, arachne.mesh);
     // Obstacle footprints (radius mirrors each unit's own BODY_RADIUS /
     // bodyRadius); alt() gates unit-vs-unit checks to overlapping bands.
     // Wave 12: while the humanoid rides inside the van its collider is off
@@ -256,6 +262,8 @@ async function startGame(site) {
     const vanDeck = colliders.addDeck(van.position.x, van.position.z, 1.9, van.roofHeight, 1.3, 'van');
     colliders.register('recon', { position: recon.position, radius: 0.7, alt: () => recon.alt });
     colliders.register('lift', { position: lift.position, radius: 1.2, alt: () => lift.alt });
+    colliders.register('strider', { position: strider.position, radius: 0.55, alt: () => 0 });
+    colliders.register('arachne', { position: arachne.position, radius: 0.95, alt: () => 0 });
 
     const samples = createSamples(site, terrain);
     scene.add(samples.group);
@@ -338,6 +346,8 @@ async function startGame(site) {
     effects.addShadow(lift.mesh, 1.0, true);
     effects.addShadow(humanoid.mesh, 0.5);
     effects.addShadow(van.mesh, 2.4);
+    effects.addShadow(strider.mesh, 0.8);
+    effects.addShadow(arachne.mesh, 1.3);
     const waypoint = createWaypoint(scene, terrain);
     const sound = createSound();
 
@@ -422,6 +432,8 @@ async function startGame(site) {
         { name: 'Lift Drone', unit: lift, kind: 'fly', charge: 100, odo: 0, drainRate: 0.11 },
         { name: 'Humanoid', unit: humanoid, kind: 'ground', charge: 100, odo: 0, drainRate: 0.07, stowed: false },
         { name: 'Van', unit: van, kind: 'ground', charge: 100, odo: 0, drainRate: 0.10 },
+        { name: 'Strider', unit: strider, kind: 'ground', charge: 100, odo: 0, drainRate: 0.06 },
+        { name: 'Arachne', unit: arachne, kind: 'ground', charge: 100, odo: 0, drainRate: 0.08 },
     ];
     const SOLAR_RATE = 0.25;     // %/s recharge while not driving (~7 min
                                  // full charge in daylight — proportional
@@ -563,6 +575,8 @@ async function startGame(site) {
     rover.update(0, { throttle: 0, steer: 0 });
     humanoid.update(0, { throttle: 0, steer: 0 });
     van.update(0, { throttle: 0, steer: 0 });
+    strider.update(0, { throttle: 0, steer: 0 });
+    arachne.update(0, { throttle: 0, steer: 0 });
 
     // Orbit chase-cam (mouse drag / touch drag to orbit, wheel / pinch to
     // zoom, double-click to recenter); snapped to spawn.
@@ -595,7 +609,7 @@ async function startGame(site) {
     // Debug/E2E handle (also used by the sampleHeight ground-truth check;
     // renderer/scene/camera exposed so tests on software-GL boxes can pause
     // the loop and capture canvas pixels via a same-task render+toDataURL).
-    window.__mc = { site, terrain, rover, drone: recon, recon, lift, humanoid, van, samples, renderer, scene, camera, camRig, units, env, effects, waypoint, sound, rocks, lab, sling, analysis, outposts, fog, colliders, missions, hazardZones, weather, dustDevils, wind, chargepads, comms, baseList, marsClock, setNightVision, get nightVision() { return nightVision; }, get intro() { return intro; }, hologram, photos, tryPhoto, vanCargo };
+    window.__mc = { site, terrain, rover, drone: recon, recon, lift, humanoid, van, strider, arachne, samples, renderer, scene, camera, camRig, units, env, effects, waypoint, sound, rocks, lab, sling, analysis, outposts, fog, colliders, missions, hazardZones, weather, dustDevils, wind, chargepads, comms, baseList, marsClock, setNightVision, get nightVision() { return nightVision; }, get intro() { return intro; }, hologram, photos, tryPhoto, vanCargo };
 
     function applyUnitMode() {
         const active = units[activeIndex];
