@@ -20,7 +20,7 @@
 import { isTouchDevice } from './touch.js';
 import { M_PER_DEG, SOL_MS } from './sites.js';
 
-export function createHud(rootEl, { site, onSwitchUnit, onCollect, onToggleSfx, sfxEnabled = true, onCycleGear, gear = 'G2', onToggleSol, solOn = true, onToggleLanding, onCommandAlt, onReset, onSkipIntro, onSkipMission, onReplayIntro, onStartMission, missions = [], onSetOverlayMode, onTravel, onToggleNv, onReplayHologram, onVanDeploy, onPhoto }) {
+export function createHud(rootEl, { site, onSwitchUnit, onCollect, onToggleSfx, sfxEnabled = true, onCycleGear, gear = 'G2', onToggleSol, solOn = true, onToggleLanding, onCommandAlt, onReset, onSkipIntro, onSkipMission, onReplayIntro, onStartMission, missions = [], onSetOverlayMode, onTravel, onToggleNv, onReplayHologram, onVanDeploy, onPhoto, onToggleConsent, consentOn = true, privacyUrl = '/privacy.html' }) {
     rootEl.innerHTML = `
         <div class="mars-hud">
             <div class="mars-hud__top">
@@ -154,6 +154,10 @@ export function createHud(rootEl, { site, onSwitchUnit, onCollect, onToggleSfx, 
                     <button class="mars-btn" id="mc-nv-menu">NIGHT VISION OFF</button>
                     <button class="mars-btn mars-btn--reset" id="mc-reset">RESET RUN</button>
                     <button class="mars-btn" id="mc-replay-intro">▶ LANDING INTRO</button>
+                    <button class="mars-btn" id="mc-analytics">ANALYTICS ${consentOn ? 'ON' : 'OFF'}</button>
+                    <p class="mars-menu__note">Anonymous analytics &amp; crash diagnostics — no account, no
+                    location, no ads — help us improve Mars Sim. Turn them off here anytime.
+                    <a id="mc-privacy-link" href="${privacyUrl}" target="_blank" rel="noopener">Privacy &amp; data ›</a></p>
                     <p class="mars-menu__note">GEAR (HUD button or G) time-compresses speed per unit:
                     rover REAL = the true 4.2 cm/s, G1 ×50, G2 ×150, G3 ×400; drones G1 = real scale
                     (10 / 6 m/s), G2 ×2, G3 ×4. SOL CYCLE runs a 40-min day/night — lock it for
@@ -310,6 +314,14 @@ export function createHud(rootEl, { site, onSwitchUnit, onCollect, onToggleSfx, 
     sfxBtn.addEventListener('click', () => {
         const on = onToggleSfx ? onToggleSfx() : false;
         sfxBtn.textContent = `SFX ${on ? 'ON' : 'OFF'}`;
+    });
+    // Analytics consent toggle (plan 24) — same pattern as SFX: main.js owns
+    // the state (persists it + starts/stops collection) and returns the new
+    // value so the label follows it.
+    const analyticsBtn = rootEl.querySelector('#mc-analytics');
+    analyticsBtn.addEventListener('click', () => {
+        const on = onToggleConsent ? onToggleConsent() : consentOn;
+        analyticsBtn.textContent = `ANALYTICS ${on ? 'ON' : 'OFF'}`;
     });
     const gearBtn = rootEl.querySelector('#mc-gear');
     gearBtn.addEventListener('click', () => {

@@ -215,6 +215,10 @@ function exportPrefs(siteIds) {
             const key = localStorage.key(i);
             if (!key || !key.startsWith(`${NS}-`)) continue;
             if (key === MIGRATED_FLAG || key === `${NS}-site`) continue;
+            // Device-local telemetry state (plan 24) — the anonymous install id
+            // and analytics-consent flag must never propagate to another device
+            // via the player's cloud save.
+            if (key === `${NS}-anon-id` || key === `${NS}-tele-consent`) continue;
             if (isPerSite(key)) continue;
             prefs[key.slice(NS.length + 1)] = localStorage.getItem(key);
         }

@@ -34,6 +34,7 @@ import { createComms } from './comms.js';
 import { createMarsClock } from './mars-clock.js';
 import { createLabHologram } from './hologram.js';
 import { createPhotos, MIN_ALT as PHOTO_MIN_ALT } from './photos.js';
+import { createTelemetry, privacyUrl } from './telemetry.js';
 
 // Lift-drone logistics interaction envelope (see lab.js):
 const SLING_ALT = 8;      // m AGL — hover this low (or sit landed: alt 0
@@ -114,7 +115,22 @@ function createMarsEnvMap(renderer) {
     return rt.texture;
 }
 
+// Anonymous, consent-gated analytics (plan 24). One instance per page load —
+// OPEN MISSION MAP is a full nav, so each load is naturally its own session.
+// track() is a no-op while consent is off; nothing is sent otherwise.
+const telemetry = createTelemetry();
+
 async function boot() {
+    telemetry.track('app_open');
+    // Lightweight web-side crash signal (native crashes go to Play Vitals).
+    window.addEventListener('error', (e) => telemetry.track('js_error', {
+        msg: String(e.message || '').slice(0, 300),
+        src: String(e.filename || '').slice(0, 200), line: e.lineno || 0,
+    }));
+    window.addEventListener('unhandledrejection', (e) => telemetry.track('js_error', {
+        msg: String((e.reason && e.reason.message) || e.reason || 'unhandledrejection').slice(0, 300),
+    }));
+
     // One-time: fold any pre-hub GLOBAL save into the last-played site's
     // namespace before anything reads per-site state (saves.js).
     migrateLegacySaves();
@@ -156,6 +172,9 @@ function enterSite(site) {
 async function startGame(site) {
     const QUALITY = qualityFor(site);
     const canvas = document.getElementById('mc-canvas');
+    // WebGL context loss is the direct signal for OOM / heavy-mesh crashes on
+    // low-end devices (plan 24) — report it before the frame goes black.
+    canvas.addEventListener('webglcontextlost', () => telemetry.noteContextLost());
     const renderer = new THREE.WebGLRenderer({ canvas, antialias: QUALITY.terrainSegments > 128 });
     renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
     renderer.setSize(window.innerWidth, window.innerHeight);
@@ -357,6 +376,7 @@ async function startGame(site) {
             // on the same frame just reads as a double-tap.
         },
         onComplete: () => {
+            telemetry.track('mission_complete', { site: site.id, allComplete: missions.allComplete() });
             hud.setMissions(missions.menuEntries());
             // Wave 7 capstone: the site's last mission raises the HQ.
             if (missions.allComplete()) {
@@ -462,6 +482,11 @@ async function startGame(site) {
             if (cur) missions.skip(cur.missionId);
         },
         onReplayIntro: () => startIntro(),
+        // Analytics consent (plan 24): flip + persist, return the new state
+        // so the MENU label follows it.
+        onToggleConsent: () => telemetry.setConsent(!telemetry.consent),
+        consentOn: telemetry.consent,
+        privacyUrl: privacyUrl(),
         onReplayHologram: () => hologram.replay(),
         onStartMission: (id) => startMission(id),
         missions: missions.menuEntries(),
@@ -732,6 +757,7 @@ async function startGame(site) {
                 return;
             }
             samples.collect(sample);
+            telemetry.track('sample_collected', { site: site.id, sample: sample.id });
             hud.setInventory(samples.inventory, deliveredIds, analysis.analyzedIds);
             sound.collect();
             missions.advance('collect');
@@ -786,7 +812,19 @@ async function startGame(site) {
     const timer = new THREE.Timer(); // Clock is deprecated in three 0.185+
     const prevPos = new THREE.Vector3().copy(rover.position);
     let teleAccum = 0;
+    // Open the analytics session now the scene is built and the loop is about
+    // to run — loadMs ≈ boot-to-interactive. session_start carries device +
+    // GPU + quality tier; session_end (on tab-hide) carries the perf summary.
+    telemetry.track('site_enter', { site: site.id });
+    telemetry.startSession({
+        site: site.id,
+        quality: QUALITY.coarse ? 'mobile' : 'desktop',
+        segments: QUALITY.terrainSegments,
+        loadMs: Math.round(performance.now()),
+    });
+
     renderer.setAnimationLoop(() => {
+        telemetry.frame();
         timer.update();
         const dt = Math.min(timer.getDelta(), 0.1);
 
