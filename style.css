@@ -30,6 +30,23 @@ html, body {
     width: 100%;
     height: 100%;
     display: block;
+    /* Plan 26: subtle cinematic colour grade (screen-space, same canvas-filter
+       route as night vision — this project has no EffectComposer by design).
+       A light contrast/saturation lift + a hair of warmth. Kept gentle so the
+       real-DEM Mars palette still reads true. NV's #mc-canvas.is-nv rule has
+       higher specificity and fully replaces this filter, so the two never mix. */
+    filter: saturate(1.09) contrast(1.05) brightness(1.02);
+}
+
+/* Plan 26: cinematic vignette — focuses the frame, sits above the canvas and
+   below the HUD, and is pointer-transparent so it never blocks controls. */
+#mc-vignette {
+    position: absolute;
+    inset: 0;
+    z-index: 5;
+    pointer-events: none;
+    background: radial-gradient(ellipse 82% 82% at 50% 46%,
+            transparent 58%, rgba(18, 7, 3, 0.32) 100%);
 }
 
 /* ---- Night vision (Wave 9.7) ----

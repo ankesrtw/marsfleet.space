@@ -1202,47 +1202,11 @@ async function startGame(site) {
         hologram.update(dt, active.unit.position,
             (text) => hud.setObjective(`▸ ${text}`),
             () => hud.setObjective(null));
-        // Wave 9.5: humanoid EVA tether — anchor is the nearest chargepad
-        // or the rover, whichever is closer and within TETHER_LENGTH (80m).
-        // If no anchor found within range, the tether is detached.
-        const hu = humanoid;
-        const hp = hu.position;
-        if (humanoidStowed) {
-            // Riding in the van: no EVA, no tether.
-            hu.setTether(null);
-            effects.updateTether(null, null);
-        } else {
-            let tetherAnchor = null;
-            // Check rover first (both move, so the rover is the more dynamic anchor)
-            const roverDist = rover.position.distanceTo(hp);
-            if (roverDist <= 80) tetherAnchor = rover.position;
-            // Then check nearest chargepad (static anchor — fallback)
-            const nearestPad = chargepads.nearestTo(hp.x, hp.z);
-            if (nearestPad) {
-                const padDist = Math.hypot(nearestPad.x - hp.x, nearestPad.z - hp.z);
-                if (!tetherAnchor || padDist < roverDist) {
-                    if (padDist <= 80) tetherAnchor = new THREE.Vector3(
-                        nearestPad.x,
-                        terrain.sampleHeight(nearestPad.x, nearestPad.z)
-                            + colliders.deckHeight(nearestPad.x, nearestPad.z),
-                        nearestPad.z);
-                }
-            }
-            // Wave 12: deployed van is a mobile tether anchor
-            if (van.deployed && van.padPos) {
-                const vanDist = Math.hypot(van.position.x - hp.x, van.position.z - hp.z);
-                if (vanDist <= 80 && (!tetherAnchor || vanDist < roverDist
-                    && (!nearestPad || vanDist < Math.hypot(nearestPad.x - hp.x, nearestPad.z - hp.z)))) {
-                    tetherAnchor = van.position.clone();
-                }
-            }
-            hu.setTether(tetherAnchor);
-            if (tetherAnchor && active.unit === hu) {
-                effects.updateTether(hu.tetherPoint, tetherAnchor, hu.tetherTaut);
-            } else {
-                effects.updateTether(null, null);
-            }
-        }
+        // Plan 26: the Wave 9.5 EVA safety tether is REMOVED — the mobile
+        // repair van makes a fixed anchor line unnecessary, so the humanoid
+        // roams free (no speed clamp). tetherAnchor stays null in humanoid.js
+        // (never set), so its tension clamp is inert; just keep the line hidden.
+        effects.updateTether(null, null);
 
         effects.update(dt, active, speedNow, env.daylight());
         // Wave 12.17: survey-camera cone under the recon while it's the
@@ -1328,8 +1292,6 @@ async function startGame(site) {
             hud.setHazard({ type: 'rover-down', pct: recPct });
         } else if (active.unit === rover && rover.bogMeter > 0.3) {
             hud.setHazard({ type: 'sinking' });
-        } else if (active.unit === humanoid && humanoid.tetherTaut) {
-            hud.setHazard({ type: 'tether-taut' });
         } else {
             hud.setHazard(active.unit.inHazard
                 ?? (weather.intensity > 0.15 ? { type: 'dust-storm' } : null));

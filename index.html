@@ -86,6 +86,9 @@
 
     <div id="game-root" hidden>
         <canvas id="mc-canvas"></canvas>
+        <!-- Plan 26: cinematic vignette (screen-space, CSS overlay — above the
+             canvas, below the HUD, never eats input). -->
+        <div id="mc-vignette" aria-hidden="true"></div>
         <div id="mc-hud"></div>
         <div id="mc-touch-move" class="mars-touch-zone mars-touch-zone--left"></div>
         <div id="mc-touch-look" class="mars-touch-zone mars-touch-zone--right"></div>
