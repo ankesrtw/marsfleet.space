@@ -294,7 +294,7 @@ export function createHud(rootEl, { site, onSwitchUnit, onCollect, onToggleSfx, 
                         <li>Switch unit — TAB · Collect — E · Menu — M</li>
                         <li>Humanoid + outpost-flagged sample — E starts a timed core drill (~4.5 s). Moving cancels it; the rover's arm still collects instantly</li>
                         <li>Van — walk the humanoid within 4 m, E to board (only the humanoid can drive it) · E again to dismount</li>
-                        <li>Ongak (quad walker) — WASD or left stick. Trot gait, high slope tolerance: takes grades the rover bogs on. No jump — sure-footed, not springy</li>
+                        <li>Gratbot (quad walker) — WASD or left stick. Trot gait, high slope tolerance: takes grades the rover bogs on. No jump — sure-footed, not springy</li>
                         <li>Makadane (octopod walker) — WASD or left stick. Eight legs, four always planted: the fleet's near-slope-proof crawler, slow but steady</li>
                         <li>Van deploy — V (or the DEPLOY BASE button): panels out, the van becomes a field chargepad. V again packs up</li>
                         <li>Soundtrack — B play/pause · [ and ] previous/next track · the ♪ button opens the full ONGAK player</li>
@@ -509,11 +509,12 @@ export function createHud(rootEl, { site, onSwitchUnit, onCollect, onToggleSfx, 
     // setActiveUnit() receives; extend the catalog to give any unit a
     // dossier chip + lightbox card. Paths are static game assets.
     const DOSSIERS = {
-        Ongak: {
-            img: 'assets/dossier/ongak.jpg',
-            title: 'ONGAK — Quadruped Walker',
+        Gratbot: {
+            img: 'assets/dossier/gratbot.jpg',
+            title: 'GRATBOT — Quadruped Walker',
             blurb: 'Spot/ANYmal-class four-legged frame. Trot gait, high slope '
-                + 'tolerance: takes grades the rover bogs on.',
+                + 'tolerance: takes grades the rover bogs on. Named for the '
+                + 'German Grat — a mountain ridge.',
         },
         Makadane: {
             img: 'assets/dossier/makadane.jpg',

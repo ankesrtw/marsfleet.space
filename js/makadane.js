@@ -17,7 +17,7 @@
    directional travel.
 
    Cool livery (teal facets + cyan glow) with emissive rim + mast
-   sensor, deliberately contrasting Ongak's warm palette so the two
+   sensor, deliberately contrasting Gratbot's warm palette so the two
    walkers read as distinct machines, not identical procedural kit.
    Stereo-camera mast forward (−Z), whip-antenna cluster aft.
    ============================================================ */

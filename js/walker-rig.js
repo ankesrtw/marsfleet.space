@@ -1,7 +1,7 @@
 /* ============================================================
    walker-rig.js — shared legged-robot locomotion (plan 24).
 
-   One rig engine for every multi-leg walker (Ongak quad,
+   One rig engine for every multi-leg walker (Gratbot quad,
    Makadane octopod). Generalizes the humanoid's Wave 12.2 foot-IK
    from 2 hardcoded bone legs to an N-entry leg array on a
    PROCEDURAL articulated chain (hip yaw → femur pitch → tibia

@@ -1,10 +1,15 @@
 /* ============================================================
-   ongak.js — ONGAK, the quadruped walker (plan 24; renamed +
-   polished plan 26).
+   gratbot.js — GRATBOT, the quadruped walker (plan 24; polished
+   plan 26; renamed plan 27).
 
-   Spot/ANYmal-class four-legged robot: the fleet's steep-slope
-   specialist. Sagittal (non-yaw) legs in a trot gait — diagonal
-   pairs in antiphase — with the reference image's X-stance:
+   "Grat" is the German for a mountain ridge — this is the fleet's
+   steep-slope specialist and the name now says so. (It carried the
+   name ONGAK through plans 25-26; plan 27 gave that name, which
+   means *music*, to the soundtrack companion it actually describes.
+   Before that it was STRIDER.)
+
+   Spot/ANYmal-class four-legged robot. Sagittal (non-yaw) legs in a
+   trot gait — diagonal pairs in antiphase — with the X-stance:
    front knees bulge forward, hind knees bulge back.
 
    Warm livery (burnt-orange accents + amber glow) with emissive
@@ -21,7 +26,7 @@ import { createWalker } from './walker-rig.js';
 // (slowest, near slope-proof). Slope factor floor .45 vs the
 // humanoid's .3 — legs keep more speed on a grade than boots.
 const SPEC = {
-    name: 'ongak',
+    name: 'gratbot',
     // Warm identity: burnt-orange accents, amber sensor glow.
     livery: { accent: 0xd4762e, glow: 0xffae42 },
     spawnOffset: { x: -10, z: 7 },
@@ -167,6 +172,6 @@ function build(mats) {
     return { body, legs };
 }
 
-export function createOngak(site, terrain, obstacles) {
+export function createGratbot(site, terrain, obstacles) {
     return createWalker(site, terrain, obstacles, SPEC);
 }
