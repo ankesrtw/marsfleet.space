@@ -10,6 +10,7 @@ import { createDrone } from './drone.js';
 import { createHumanoid } from './humanoid.js';
 import { createVan } from './van.js';
 import { createOngak } from './ongak.js';
+import { createMusic } from './music.js';
 import { createMakadane } from './makadane.js';
 import { createFog } from './fog.js';
 import { createSamples } from './samples.js';
@@ -365,6 +366,12 @@ async function startGame(site) {
     effects.addShadow(makadane.mesh, 1.3);
     const waypoint = createWaypoint(scene, terrain);
     const sound = createSound();
+    // Plan 27: the Ongak soundtrack. Shares sound.js's AudioContext but runs
+    // its own bus, so the SFX toggle and the music are independent. Silent
+    // until the first user gesture unlocks audio (autoplay policy).
+    // (the HUD subscribes to it below — `hud` does not exist yet here, and
+    // the manifest fetch can resolve before it does.)
+    const music = createMusic(sound);
 
     // Wave 9.5: Ariana hologram at the FIELD LAB — an AI-character
     // projection that plays a scripted dialog on first approach. She
@@ -534,7 +541,21 @@ async function startGame(site) {
             sound.switchUnit();
             return deploying;
         },
+        // Plan 27 soundtrack transport. main.js owns the engine; the HUD
+        // panel is a pure view that re-renders from the onChange below.
+        onMusicToggle: () => music.toggle(),
+        onMusicNext: () => music.next(),
+        onMusicPrev: () => music.prev(),
+        onMusicSelect: (i) => music.select(i),
+        onMusicVolume: (v) => music.setVolume(v),
     });
+
+    const refreshMusic = () => hud.setMusic({
+        tracks: music.tracks, index: music.index,
+        playing: music.playing, volume: music.volume,
+    });
+    music.onChange(refreshMusic);
+    refreshMusic();
 
     // Night vision (Wave 9.7): main.js owns the state because the filter goes
     // on the CANVAS, which lives outside the HUD root — and that is the point.
@@ -624,7 +645,7 @@ async function startGame(site) {
     // Debug/E2E handle (also used by the sampleHeight ground-truth check;
     // renderer/scene/camera exposed so tests on software-GL boxes can pause
     // the loop and capture canvas pixels via a same-task render+toDataURL).
-    window.__mc = { site, terrain, rover, drone: recon, recon, lift, humanoid, van, ongak, makadane, samples, renderer, scene, camera, camRig, units, env, effects, waypoint, sound, rocks, lab, sling, analysis, outposts, fog, colliders, missions, hazardZones, weather, dustDevils, wind, chargepads, comms, baseList, marsClock, setNightVision, get nightVision() { return nightVision; }, get intro() { return intro; }, hologram, photos, tryPhoto, vanCargo };
+    window.__mc = { site, terrain, rover, drone: recon, recon, lift, humanoid, van, ongak, makadane, samples, renderer, scene, camera, camRig, units, env, effects, waypoint, sound, rocks, lab, sling, analysis, outposts, fog, colliders, missions, hazardZones, weather, dustDevils, wind, chargepads, comms, baseList, marsClock, setNightVision, get nightVision() { return nightVision; }, get intro() { return intro; }, hologram, photos, tryPhoto, vanCargo, music };
 
     function applyUnitMode() {
         const active = units[activeIndex];
@@ -1226,6 +1247,9 @@ async function startGame(site) {
         const windHere = wind.sample(active.unit.position.x, active.unit.position.z);
         sound.update(active.name, Math.min(1, engineNorm),
             Math.hypot(windHere.vx, windHere.vz) / 20); // /WIND_PEAK — 1.0 at storm max
+        // Plan 27: VU meter. setMusicLevel early-outs while the panel is
+        // closed, so the analyser read only happens when something shows it.
+        hud.setMusicLevel(music.level(), music.beat());
 
         // Wave 12 digging: humanoid cores outpost-flagged samples.
         if (active.unit === humanoid && humanoid.digging) {
@@ -1484,6 +1508,10 @@ function setupKeyboard() {
         if (e.code === 'KeyM' || e.code === 'Escape') document.dispatchEvent(new CustomEvent('mc-menu'));
         if (e.code === 'KeyV') document.dispatchEvent(new CustomEvent('mc-van-deploy'));
         if (e.code === 'KeyP') document.dispatchEvent(new CustomEvent('mc-photo'));
+        // Plan 27 soundtrack: B play/pause, [ / ] previous/next track.
+        if (e.code === 'KeyB') document.dispatchEvent(new CustomEvent('mc-music-toggle'));
+        if (e.code === 'BracketLeft') document.dispatchEvent(new CustomEvent('mc-music-prev'));
+        if (e.code === 'BracketRight') document.dispatchEvent(new CustomEvent('mc-music-next'));
     });
     return keys;
 }
@@ -1567,5 +1595,8 @@ document.addEventListener('mc-menu', () => {
 // `units`/`van` — they are startGame locals.)
 document.addEventListener('mc-van-deploy', () => document.getElementById('mc-van')?.click());
 document.addEventListener('mc-photo', () => document.getElementById('mc-photo')?.click());
+document.addEventListener('mc-music-toggle', () => document.getElementById('mc-music-play')?.click());
+document.addEventListener('mc-music-prev', () => document.getElementById('mc-music-prev')?.click());
+document.addEventListener('mc-music-next', () => document.getElementById('mc-music-next')?.click());
 
 boot();

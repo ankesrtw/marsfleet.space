@@ -1,0 +1,7 @@
+[
+  { "id": "dust-vigil",    "title": "Dust Vigil",    "mood": "AMBIENT",   "src": "synth:vigil" },
+  { "id": "red-drift",     "title": "Red Drift",     "mood": "SYNTHWAVE", "src": "synth:drift" },
+  { "id": "olympus-line",  "title": "Olympus Line",  "mood": "DRIVING",   "src": "synth:olympus" },
+  { "id": "signal-lost",   "title": "Signal Lost",   "mood": "TENSION",   "src": "synth:lost" },
+  { "id": "return-vector", "title": "Return Vector", "mood": "HOPEFUL",   "src": "synth:vector" }
+]

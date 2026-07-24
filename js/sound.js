@@ -18,6 +18,10 @@ export function createSound() {
     let drill = null;       // { osc, gain } — Wave 12 digging drill whine
     let windBed = null;     // wind-loop gain node (Wave 6: rides real wind)
     let enabled = localStorage.getItem(LS_KEY) !== 'off';
+    // Plan 27: music.js waits here for the context. ONE AudioContext for the
+    // whole game (one autoplay unlock, one hardware voice), but music builds
+    // its own bus straight to destination — see ctx/onReady below.
+    const readyCbs = [];
 
     function unlock() {
         if (ctx) return;
@@ -32,6 +36,10 @@ export function createSound() {
         } catch {
             ctx = null; // no audio available — stay silent forever
         }
+        if (ctx) {
+            for (const cb of readyCbs) { try { cb(ctx); } catch { /* one bad subscriber must not kill the rest */ } }
+        }
+        readyCbs.length = 0;
     }
     window.addEventListener('pointerdown', unlock, { once: true });
     window.addEventListener('keydown', unlock, { once: true });
@@ -160,6 +168,16 @@ export function createSound() {
     return {
         update,
         toggle,
+        /** Plan 27 — WebAudio handle for music.js. The SAME context (one
+            autoplay unlock for the whole game), but music must NOT hang off
+            `master`: the SFX toggle would mute the soundtrack with it. Callers
+            build their own bus to ctx.destination. Fires immediately if the
+            context already exists, else on the first user gesture. */
+        onReady(cb) {
+            if (ctx) cb(ctx);
+            else readyCbs.push(cb);
+        },
+        get ctx() { return ctx; },
         /** Wave 12: drilling sound — intensity 0..1 rides the dig progress bar. */
         drill(intensity) {
             if (!ctx || !drill) return;

@@ -1635,6 +1635,176 @@ html, body {
 }
 
 /* ============================================================
+   ONGAK soundtrack player (plan 27). Opens from the ♪ button in
+   the top bar. Left-middle: the right rail is fully spoken for
+   (minimap / compass / GPS / telemetry) and the inventory owns
+   bottom-left, so this floats clear of both.
+   ============================================================ */
+.mars-hud__music {
+    position: absolute;
+    left: 12px;
+    top: 50%;
+    transform: translateY(-50%);
+    width: 208px;
+    max-height: 70vh;
+    overflow-y: auto;
+    display: none;
+    flex-direction: column;
+    gap: 8px;
+    background: rgba(20, 12, 8, 0.88);
+    border: 1px solid #7a4f30;
+    border-radius: 8px;
+    padding: 10px;
+    font-family: 'SF Mono', ui-monospace, Menlo, Consolas, monospace;
+    font-size: 0.68rem;
+    pointer-events: auto;
+    z-index: 16;
+}
+
+.mars-hud__music[data-open="true"] {
+    display: flex;
+}
+
+.mars-music__head {
+    display: flex;
+    align-items: baseline;
+    gap: 6px;
+}
+
+.mars-music__head b {
+    color: #e0b95e;
+    letter-spacing: 0.08em;
+    font-weight: 600;
+    flex: 1;
+    /* long AI-generated track titles must not stretch the panel */
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.mars-music__head span {
+    opacity: 0.6;
+    font-size: 0.58rem;
+    letter-spacing: 0.1em;
+}
+
+.mars-music__close {
+    background: none;
+    border: none;
+    color: #b9a894;
+    cursor: pointer;
+    padding: 0 2px;
+    font-size: 0.75rem;
+}
+
+.mars-music__close:hover {
+    color: #f2ece3;
+}
+
+/* VU meter — bars scale from the bottom, driven per frame by
+   setMusicLevel(). transform only: no layout on the hot path. */
+.mars-music__meter {
+    display: flex;
+    align-items: flex-end;
+    gap: 3px;
+    height: 26px;
+}
+
+.mars-music__meter i {
+    flex: 1;
+    height: 100%;
+    background: linear-gradient(to top, #7a4f30, #e0b95e);
+    border-radius: 1px;
+    transform: scaleY(0.08);
+    transform-origin: bottom;
+    transition: transform 60ms linear;
+}
+
+.mars-music__transport {
+    display: flex;
+    gap: 4px;
+}
+
+.mars-music__transport .mars-btn {
+    flex: 1;
+    justify-content: center;
+    padding: 5px 4px;
+}
+
+.mars-btn--play {
+    flex: 2 !important;
+}
+
+.mars-music__vol {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    opacity: 0.75;
+    letter-spacing: 0.08em;
+}
+
+.mars-music__vol input {
+    flex: 1;
+    accent-color: #e0b95e;
+}
+
+.mars-music__list {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+}
+
+.mars-music__list .mars-btn {
+    width: 100%;
+    justify-content: flex-start;
+    padding: 5px 8px;
+    font-size: 0.65rem;
+}
+
+.mars-music__list li[data-active="true"] .mars-btn {
+    border-color: #e0b95e;
+    color: #e0b95e;
+}
+
+.mars-music__list li[data-active="true"] .mars-btn::before {
+    content: "▸ ";
+}
+
+.mars-music__note {
+    margin: 0;
+    opacity: 0.5;
+    font-size: 0.58rem;
+    line-height: 1.4;
+}
+
+.mars-menu__music {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 6px;
+}
+
+.mars-menu__music b {
+    color: #e0b95e;
+    flex: 1;
+}
+
+/* Mobile: a centered sheet — a 208px rail on the left collides with
+   the MOVE joystick zone on a phone. */
+@media (max-width: 899px), (pointer: coarse) {
+    .mars-hud__music {
+        left: 50%;
+        top: 50%;
+        transform: translate(-50%, -50%);
+        width: min(280px, calc(100vw - 32px));
+        max-height: 78vh;
+    }
+}
+
+/* ============================================================
    Site Hub — the 3D Mars globe (plan 22-B/C). Fullscreen canvas
    with a non-blocking UI overlay; pin cards / reset buttons are
    added by later steps. Shares the sim's palette (gold #e0b95e,

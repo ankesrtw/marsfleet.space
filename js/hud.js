@@ -20,7 +20,7 @@
 import { isTouchDevice } from './touch.js';
 import { M_PER_DEG, SOL_MS } from './sites.js';
 
-export function createHud(rootEl, { site, onSwitchUnit, onCollect, onToggleSfx, sfxEnabled = true, onCycleGear, gear = 'G2', onToggleSol, solOn = true, onToggleLanding, onCommandAlt, onReset, onSkipIntro, onSkipMission, onReplayIntro, onStartMission, missions = [], onSetOverlayMode, onTravel, onToggleNv, onReplayHologram, onVanDeploy, onPhoto, onToggleConsent, consentOn = true, privacyUrl = '/privacy.html' }) {
+export function createHud(rootEl, { site, onSwitchUnit, onCollect, onToggleSfx, sfxEnabled = true, onCycleGear, gear = 'G2', onToggleSol, solOn = true, onToggleLanding, onCommandAlt, onReset, onSkipIntro, onSkipMission, onReplayIntro, onStartMission, missions = [], onSetOverlayMode, onTravel, onToggleNv, onReplayHologram, onVanDeploy, onPhoto, onToggleConsent, consentOn = true, privacyUrl = '/privacy.html', onMusicToggle, onMusicNext, onMusicPrev, onMusicSelect, onMusicVolume }) {
     rootEl.innerHTML = `
         <div class="mars-hud">
             <div class="mars-hud__top">
@@ -42,6 +42,7 @@ export function createHud(rootEl, { site, onSwitchUnit, onCollect, onToggleSfx, 
                     </div>
                 </div>
                 <button class="mars-btn mars-btn--menu" id="mc-menu-btn">MENU<span class="mars-btn__hint">[M]</span></button>
+                <button class="mars-btn mars-btn--music-open" id="mc-music-btn">♪<span class="mars-btn__hint">ONGAK</span></button>
                 <button class="mars-btn mars-btn--sfx" id="mc-sfx">SFX ${sfxEnabled ? 'ON' : 'OFF'}</button>
             </div>
             <div class="mars-hud__nv-overlay" id="mc-nv-overlay" data-visible="false"></div>
@@ -129,6 +130,27 @@ export function createHud(rootEl, { site, onSwitchUnit, onCollect, onToggleSfx, 
                 <button class="mars-btn mars-btn--land" id="mc-land">TAKE OFF<span class="mars-btn__hint">[L]</span></button>
                 <button class="mars-btn mars-btn--photo" id="mc-photo" data-visible="false">PHOTO<span class="mars-btn__hint">[P]</span></button>
             </div>
+            <div class="mars-hud__music" id="mc-music" data-open="false">
+                <div class="mars-music__head">
+                    <b id="mc-music-title">—</b>
+                    <span id="mc-music-mood"></span>
+                    <button class="mars-music__close" id="mc-music-close" aria-label="Close music player">✕</button>
+                </div>
+                <div class="mars-music__meter" id="mc-music-meter" aria-hidden="true">
+                    <i></i><i></i><i></i><i></i><i></i><i></i><i></i>
+                </div>
+                <div class="mars-music__transport">
+                    <button class="mars-btn" id="mc-music-prev" aria-label="Previous track">◀◀</button>
+                    <button class="mars-btn mars-btn--play" id="mc-music-play">▶ PLAY<span class="mars-btn__hint">[B]</span></button>
+                    <button class="mars-btn" id="mc-music-next" aria-label="Next track">▶▶</button>
+                </div>
+                <label class="mars-music__vol">VOL
+                    <input type="range" id="mc-music-vol" min="0" max="100" step="1" value="50" aria-label="Music volume">
+                </label>
+                <ul class="mars-music__list" id="mc-music-list"></ul>
+                <p class="mars-music__note" id="mc-music-note">ONGAK carries the speaker — park it and the
+                soundtrack stays where you left it.</p>
+            </div>
             <div class="mars-hud__inventory" id="mc-inventory">
                 <div class="mars-hud__inventory-title">SAMPLES <span id="mc-inv-count">0</span></div>
                 <div class="mars-hud__inventory-title">LAB <span id="mc-lab-count">0/0</span></div>
@@ -180,6 +202,17 @@ export function createHud(rootEl, { site, onSwitchUnit, onCollect, onToggleSfx, 
                     The clock on the minimap reads that cycle as Mars local time (noon = the sun at
                     apex, so it can never disagree with the sky), counting up from the real sol this
                     site's rover is on today. LOCK appears there while the cycle is frozen.</p>
+                </div>
+                <div class="mars-menu__section">
+                    <h3>ONGAK — SOUNDTRACK</h3>
+                    <div class="mars-menu__music" id="mc-menu-music">
+                        <b id="mc-menu-music-title">—</b>
+                        <button class="mars-btn" id="mc-menu-music-play">▶ PLAY</button>
+                    </div>
+                    <p class="mars-menu__note">ONGAK is the fleet's music companion — it follows the unit you
+                    are driving, or PARKS and keeps playing where you left it. The soundtrack is synthesized
+                    live in the browser (nothing to download) and plays on through unit switches. Full player:
+                    the ♪ button, top right. Keys — B play/pause, [ and ] previous/next track.</p>
                 </div>
                 <div class="mars-menu__section">
                     <h3>MISSIONS</h3>
@@ -264,6 +297,7 @@ export function createHud(rootEl, { site, onSwitchUnit, onCollect, onToggleSfx, 
                         <li>Ongak (quad walker) — WASD or left stick. Trot gait, high slope tolerance: takes grades the rover bogs on. No jump — sure-footed, not springy</li>
                         <li>Makadane (octopod walker) — WASD or left stick. Eight legs, four always planted: the fleet's near-slope-proof crawler, slow but steady</li>
                         <li>Van deploy — V (or the DEPLOY BASE button): panels out, the van becomes a field chargepad. V again packs up</li>
+                        <li>Soundtrack — B play/pause · [ and ] previous/next track · the ♪ button opens the full ONGAK player</li>
                         <li>Night vision — N (or the NV button): an image intensifier for driving after dark, when the terrain is otherwise nearly black. The HUD stays in its own colours</li>
                         <li>Lift drone — hover low over a cache container, E to sling it, fly to the FIELD LAB pad, E to deliver</li>
                         <li>Delivered caches auto-analyze on the lab edge node — findings land in the SCIENCE ARCHIVE</li>
@@ -360,6 +394,79 @@ export function createHud(rootEl, { site, onSwitchUnit, onCollect, onToggleSfx, 
         vanBtn.dataset.visible = String(state != null);
         if (state) vanBtn.firstChild.textContent =
             state === 'packup' ? 'PACK UP BASE' : 'DEPLOY BASE';
+    }
+
+    // Plan 27: Ongak soundtrack player. The panel is a view over music.js —
+    // it holds no state of its own, it re-renders from setMusic(). Every
+    // control routes out to main.js, which owns the engine.
+    const musicPanel = rootEl.querySelector('#mc-music');
+    const musicEls = {
+        title: rootEl.querySelector('#mc-music-title'),
+        mood: rootEl.querySelector('#mc-music-mood'),
+        play: rootEl.querySelector('#mc-music-play'),
+        list: rootEl.querySelector('#mc-music-list'),
+        vol: rootEl.querySelector('#mc-music-vol'),
+        meter: rootEl.querySelector('#mc-music-meter'),
+        menuTitle: rootEl.querySelector('#mc-menu-music-title'),
+        menuPlay: rootEl.querySelector('#mc-menu-music-play'),
+    };
+    const musicBars = [...musicEls.meter.querySelectorAll('i')];
+    rootEl.querySelector('#mc-music-btn').addEventListener('click', () => toggleMusicPanel());
+    rootEl.querySelector('#mc-music-close').addEventListener('click', () => toggleMusicPanel(false));
+    musicEls.play.addEventListener('click', () => onMusicToggle?.());
+    musicEls.menuPlay.addEventListener('click', () => onMusicToggle?.());
+    rootEl.querySelector('#mc-music-prev').addEventListener('click', () => onMusicPrev?.());
+    rootEl.querySelector('#mc-music-next').addEventListener('click', () => onMusicNext?.());
+    musicEls.vol.addEventListener('input', () => onMusicVolume?.(musicEls.vol.value / 100));
+
+    function toggleMusicPanel(force) {
+        const open = force ?? musicPanel.dataset.open !== 'true';
+        musicPanel.dataset.open = String(open);
+        return open;
+    }
+
+    /** Re-render the player from engine state:
+        { tracks: [{id,title,mood}], index, playing, volume }. */
+    function setMusic({ tracks = [], index = 0, playing = false, volume = 0.5 }) {
+        const cur = tracks[index];
+        musicEls.title.textContent = cur?.title ?? '—';
+        musicEls.mood.textContent = cur?.mood ?? '';
+        const label = playing ? '❚❚ PAUSE' : '▶ PLAY';
+        musicEls.play.firstChild.textContent = label;
+        musicEls.menuPlay.textContent = label;
+        musicEls.menuTitle.textContent = cur ? `${cur.title}${playing ? '' : ' — paused'}` : '—';
+        if (document.activeElement !== musicEls.vol) musicEls.vol.value = String(Math.round(volume * 100));
+        // Rebuild the list only when the track set itself changed — the
+        // manifest can land after boot, but selection changes must not
+        // thrash the DOM on every play/pause.
+        const sig = tracks.map((t) => t.id).join('|');
+        if (musicEls.list.dataset.sig !== sig) {
+            musicEls.list.dataset.sig = sig;
+            musicEls.list.innerHTML = '';
+            tracks.forEach((t, i) => {
+                const li = document.createElement('li');
+                const btn = document.createElement('button');
+                btn.className = 'mars-btn';
+                btn.textContent = t.title;
+                btn.addEventListener('click', () => onMusicSelect?.(i));
+                li.appendChild(btn);
+                musicEls.list.appendChild(li);
+            });
+        }
+        [...musicEls.list.children].forEach((li, i) => {
+            li.dataset.active = String(i === index);
+        });
+    }
+
+    /** Per-frame VU from the engine's analyser. Only the bar heights move —
+        no layout, no text writes. */
+    function setMusicLevel(level, beat = 0) {
+        if (musicPanel.dataset.open !== 'true') return;
+        for (let i = 0; i < musicBars.length; i++) {
+            // stagger the bars so the meter reads as a spectrum, not a slab
+            const k = Math.max(0, level * (1 - Math.abs(i - musicBars.length / 2) / musicBars.length) * 2.2 + beat * 0.25);
+            musicBars[i].style.transform = `scaleY(${Math.min(1, 0.08 + k).toFixed(3)})`;
+        }
     }
 
     // Wave 12.13: recon survey imaging — PHOTO button in the dronectl
@@ -1104,5 +1211,6 @@ export function createHud(rootEl, { site, onSwitchUnit, onCollect, onToggleSfx, 
         setMissions, setOverlayMode, setTelemetry, setMenuOpen, isMenuOpen, toast, guide, setOutposts,
         setDronePanel, setDroneState, setGear, setBases, setGps, setMarsClock, setNightVision,
         setVanButton, setPhotoButton, setPhotoAlbum,
+        setMusic, setMusicLevel, toggleMusicPanel,
     };
 }
