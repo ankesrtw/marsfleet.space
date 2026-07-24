@@ -1748,6 +1748,20 @@ html, body {
     accent-color: #e0b95e;
 }
 
+/* Makadane rock action — sits above the gear/van button slot so it can
+   coexist with the COLLECT prompt (both can be live at once). */
+.mars-hud__rock {
+    position: absolute;
+    bottom: max(64px, calc(env(safe-area-inset-bottom) + 58px));
+    left: 50%;
+    transform: translateX(-50%);
+    z-index: 15;
+}
+
+.mars-hud__rock[data-visible="false"] {
+    display: none;
+}
+
 .mars-music__bot {
     display: flex;
     gap: 4px;

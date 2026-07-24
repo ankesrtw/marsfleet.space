@@ -157,6 +157,97 @@ function build(mats) {
     return { body, legs };
 }
 
-export function createMakadane(site, terrain, obstacles) {
-    return createWalker(site, terrain, obstacles, SPEC);
+// Plan 27 — rock handling.
+export const MAKADANE_CLIMB_R = 1.3;  // steps over everything but true boulders
+const GRAB_RANGE = 3.2;               // m from the deck centre
+const CARRY_MAX_R = 1.1;              // biggest rock the clamp closes on
+const CARRY_SPEED = 0.75;             // laden walk-speed penalty
+// The two legs that hold the load. Leg 0 sits at azimuth π/8 (just off the
+// forward mast) and 7 at −π/8, so this pair straddles the front. Removing 2
+// of 8 from the alternating tetrapod still leaves ≥3 planted.
+const GRIP_LEGS = [0, 7];
+
+/**
+ * The octopod plus its rock-handling rig. Wraps the shared walker so the
+ * carry state lives with the unit that has it, not in walker-rig.js —
+ * Gratbot has no clamp and should not carry the concept.
+ */
+export function createMakadane(site, terrain, obstacles, rocks = null) {
+    const walker = createWalker(site, terrain, obstacles, SPEC);
+
+    let carried = null;      // the rock record in the clamp
+    let carriedMesh = null;
+
+    /** The rock in reach, or null. Used for the HUD prompt too, so it must
+        stay cheap enough to call every frame. */
+    function candidate() {
+        if (carried || !rocks?.rockNear) return null;
+        const p = walker.position;
+        return rocks.rockNear(p.x, p.z, GRAB_RANGE, CARRY_MAX_R);
+    }
+
+    /** Lift the nearest rock into the clamp. Returns the record or null. */
+    function grab() {
+        const rec = candidate();
+        if (!rec) return null;
+        rocks.removeRock(rec);
+        carried = rec;
+        carriedMesh = rocks.rockMesh(rec);
+        // clamped under the forward rim, where the grip legs reach
+        carriedMesh.position.set(0, 0.3, -0.85);
+        walker.mesh.add(carriedMesh);
+        walker.holdLegs(GRIP_LEGS, { x: 0, y: -0.28, z: -0.95 });
+        walker.setSpeedScale(CARRY_SPEED);
+        return rec;
+    }
+
+    /** Set the load down in front of the unit — a real obstacle again. */
+    function drop() {
+        if (!carried) return null;
+        const p = walker.position;
+        const h = walker.heading;
+        // place it a body-length ahead (travel is along −(sin h, cos h))
+        const x = p.x - Math.sin(h) * 1.6;
+        const z = p.z - Math.cos(h) * 1.6;
+        const placed = rocks.placeRock(carried, x, z);
+        release();
+        return placed;
+    }
+
+    /** Destroy the load outright (recycled at the lab) — stays gone. */
+    function recycle() {
+        if (!carried) return null;
+        const rec = carried;
+        release();
+        return rec;
+    }
+
+    function release() {
+        if (carriedMesh) walker.mesh.remove(carriedMesh);
+        carriedMesh = null;
+        carried = null;
+        walker.holdLegs(null);
+        walker.setSpeedScale(1);
+    }
+
+    // NOT `{ ...walker }`: spreading evaluates getters once, which would
+    // freeze position/heading at their boot values and the unit would
+    // silently never appear to move. Delegate each one explicitly.
+    return {
+        mesh: walker.mesh,
+        update: walker.update,
+        teleport: walker.teleport,
+        feet: walker.feet,
+        holdLegs: walker.holdLegs,
+        setSpeedScale: walker.setSpeedScale,
+        get position() { return walker.position; },
+        get heading() { return walker.heading; },
+        get atBoundary() { return walker.atBoundary; },
+        get heldCount() { return walker.heldCount; },
+        get legCount() { return walker.legCount; },
+        get deckY() { return walker.deckY; },
+        grab, drop, recycle, candidate,
+        get carrying() { return carried; },
+        get carryRange() { return GRAB_RANGE; },
+    };
 }

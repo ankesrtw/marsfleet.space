@@ -12,7 +12,7 @@ import { createVan, VAN_CLIMB_R } from './van.js';
 import { createGratbot } from './gratbot.js';
 import { createOngak } from './ongak.js';
 import { createMusic } from './music.js';
-import { createMakadane } from './makadane.js';
+import { createMakadane, MAKADANE_CLIMB_R } from './makadane.js';
 import { createFog } from './fog.js';
 import { createSamples } from './samples.js';
 import { createHud } from './hud.js';
@@ -221,7 +221,7 @@ async function startGame(site) {
 
     const terrain = await loadTerrain(site, QUALITY);
     scene.add(terrain.mesh);
-    const rocks = createRocks(site, terrain, QUALITY);
+    const rocks = createRocks(site, terrain, QUALITY, Save(site.id));
     scene.add(rocks.mesh);
 
     // One collision world for every mover: boulders + lab structures +
@@ -259,7 +259,8 @@ async function startGame(site) {
     const van = createVan(site, terrain, colliders.forUnit('van', { climbR: VAN_CLIMB_R, probeR: 0.47 }));
     // Plan 24 walkers: quad + octopod, fully procedural (no GLB).
     const gratbot = createGratbot(site, terrain, colliders.forUnit('gratbot'));
-    const makadane = createMakadane(site, terrain, colliders.forUnit('makadane'));
+    const makadane = createMakadane(site, terrain,
+        colliders.forUnit('makadane', { climbR: MAKADANE_CLIMB_R, probeR: 0.2 }), rocks);
     // Plan 27: the music companion. Deliberately NOT in units[] — it is
     // never selected, it follows or parks (see ongak.js).
     const ongak = createOngak(site, terrain, colliders.forUnit('ongak'));
@@ -563,6 +564,7 @@ async function startGame(site) {
             hud.setOngak({ parked, spatial: ongak.spatial });
             return parked;
         },
+        onRock: () => tryRock(),
         onOngakRecall: () => {
             // Teleport it to the active unit: a parked bot left 3km back is
             // otherwise a very long walk for the player to undo.
@@ -676,7 +678,7 @@ async function startGame(site) {
     // Debug/E2E handle (also used by the sampleHeight ground-truth check;
     // renderer/scene/camera exposed so tests on software-GL boxes can pause
     // the loop and capture canvas pixels via a same-task render+toDataURL).
-    window.__mc = { site, terrain, rover, drone: recon, recon, lift, humanoid, van, gratbot, makadane, ongak, samples, renderer, scene, camera, camRig, units, env, effects, waypoint, sound, rocks, lab, sling, analysis, outposts, fog, colliders, missions, hazardZones, weather, dustDevils, wind, chargepads, comms, baseList, marsClock, setNightVision, get nightVision() { return nightVision; }, get intro() { return intro; }, hologram, photos, tryPhoto, vanCargo, music };
+    window.__mc = { site, terrain, rover, drone: recon, recon, lift, humanoid, van, gratbot, makadane, ongak, tryRock, samples, renderer, scene, camera, camRig, units, env, effects, waypoint, sound, rocks, lab, sling, analysis, outposts, fog, colliders, missions, hazardZones, weather, dustDevils, wind, chargepads, comms, baseList, marsClock, setNightVision, get nightVision() { return nightVision; }, get intro() { return intro; }, hologram, photos, tryPhoto, vanCargo, music };
 
     function applyUnitMode() {
         const active = units[activeIndex];
@@ -774,6 +776,45 @@ async function startGame(site) {
         hud.setPhotoAlbum(photos.album);
         hud.toast(`▸ IMAGE CAPTURED: ${spot.name.toUpperCase()} (${photos.capturedCount}/${photos.total})`);
         if (first) missions.advance('photo:' + spot.id);
+    }
+
+    /** Plan 27 — Makadane rock handling (X). Carrying + inside the lab dock
+        radius recycles the load for good; otherwise X grabs or sets down.
+        Cleared rocks persist per site, so a corridor opened here stays open
+        for the rover and van. */
+    function tryRock() {
+        const active = units[activeIndex];
+        if (active.unit !== makadane || active.dead) return;
+        if (makadane.carrying) {
+            const atLab = Math.hypot(makadane.position.x - lab.padPos.x,
+                makadane.position.z - lab.padPos.z) <= 16;
+            if (atLab) {
+                makadane.recycle();
+                hud.toast('⬢ ROCK RECYCLED — MASS RECLAIMED');
+                sound.deliver();
+            } else {
+                makadane.drop();
+                hud.toast('⬢ ROCK SET DOWN');
+                sound.sling();
+            }
+        } else if (makadane.grab()) {
+            hud.toast('⬢ ROCK IN CLAMP — CARRY OR RECYCLE AT THE LAB');
+            sound.sling();
+        } else {
+            hud.toast('NO ROCK IN REACH');
+        }
+        hud.setPrompt(rockPromptLabel());
+    }
+
+    /** Contextual label for the action button while Makadane is driven. */
+    function rockPromptLabel() {
+        if (units[activeIndex].unit !== makadane) return null;
+        if (makadane.carrying) {
+            const atLab = Math.hypot(makadane.position.x - lab.padPos.x,
+                makadane.position.z - lab.padPos.z) <= 16;
+            return atLab ? 'RECYCLE ROCK' : 'SET DOWN ROCK';
+        }
+        return makadane.candidate() ? 'LIFT ROCK' : null;
     }
 
     function tryCollect() {
@@ -1330,6 +1371,9 @@ async function startGame(site) {
             sound.drill(0);
         }
 
+        // Plan 27: contextual LIFT / SET DOWN / RECYCLE button for Makadane.
+        hud.setRockButton(rockPromptLabel());
+
         // Edge-of-DEM warning while the active unit pushes the boundary.
         hud.setBoundary(!!active.unit.atBoundary);
 
@@ -1566,6 +1610,7 @@ function setupKeyboard() {
         if (e.code === 'BracketLeft') document.dispatchEvent(new CustomEvent('mc-music-prev'));
         if (e.code === 'BracketRight') document.dispatchEvent(new CustomEvent('mc-music-next'));
         if (e.code === 'KeyO') document.dispatchEvent(new CustomEvent('mc-ongak-park'));
+        if (e.code === 'KeyX') document.dispatchEvent(new CustomEvent('mc-rock'));
     });
     return keys;
 }
@@ -1653,5 +1698,6 @@ document.addEventListener('mc-music-toggle', () => document.getElementById('mc-m
 document.addEventListener('mc-music-prev', () => document.getElementById('mc-music-prev')?.click());
 document.addEventListener('mc-music-next', () => document.getElementById('mc-music-next')?.click());
 document.addEventListener('mc-ongak-park', () => document.getElementById('mc-ongak-park')?.click());
+document.addEventListener('mc-rock', () => document.getElementById('mc-rock')?.click());
 
 boot();

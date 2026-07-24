@@ -20,7 +20,7 @@
 import { isTouchDevice } from './touch.js';
 import { M_PER_DEG, SOL_MS } from './sites.js';
 
-export function createHud(rootEl, { site, onSwitchUnit, onCollect, onToggleSfx, sfxEnabled = true, onCycleGear, gear = 'G2', onToggleSol, solOn = true, onToggleLanding, onCommandAlt, onReset, onSkipIntro, onSkipMission, onReplayIntro, onStartMission, missions = [], onSetOverlayMode, onTravel, onToggleNv, onReplayHologram, onVanDeploy, onPhoto, onToggleConsent, consentOn = true, privacyUrl = '/privacy.html', onMusicToggle, onMusicNext, onMusicPrev, onMusicSelect, onMusicVolume, onOngakPark, onOngakRecall }) {
+export function createHud(rootEl, { site, onSwitchUnit, onCollect, onToggleSfx, sfxEnabled = true, onCycleGear, gear = 'G2', onToggleSol, solOn = true, onToggleLanding, onCommandAlt, onReset, onSkipIntro, onSkipMission, onReplayIntro, onStartMission, missions = [], onSetOverlayMode, onTravel, onToggleNv, onReplayHologram, onVanDeploy, onPhoto, onToggleConsent, consentOn = true, privacyUrl = '/privacy.html', onMusicToggle, onMusicNext, onMusicPrev, onMusicSelect, onMusicVolume, onOngakPark, onOngakRecall, onRock }) {
     rootEl.innerHTML = `
         <div class="mars-hud">
             <div class="mars-hud__top">
@@ -102,6 +102,7 @@ export function createHud(rootEl, { site, onSwitchUnit, onCollect, onToggleSfx, 
             <div class="mars-hud__prompt" id="mc-prompt" hidden>
                 <button class="mars-btn mars-btn--collect" id="mc-collect">COLLECT<span class="mars-btn__hint">[E]</span></button>
             </div>
+            <button class="mars-btn mars-hud__rock" id="mc-rock" data-visible="false">LIFT ROCK<span class="mars-btn__hint">[X]</span></button>
             <div class="mars-hud__boundary" id="mc-boundary" data-visible="false">⚠ OUT OF MISSION DIRECTIVES — RETURN TO SURVEY ZONE</div>
             <div class="mars-hud__hazard" id="mc-hazard" data-visible="false"></div>
             <div class="mars-hud__toast" id="mc-toast" data-visible="false"></div>
@@ -299,7 +300,8 @@ export function createHud(rootEl, { site, onSwitchUnit, onCollect, onToggleSfx, 
                         <li>Humanoid + outpost-flagged sample — E starts a timed core drill (~4.5 s). Moving cancels it; the rover's arm still collects instantly</li>
                         <li>Van — walk the humanoid within 4 m, E to board (only the humanoid can drive it) · E again to dismount</li>
                         <li>Gratbot (quad walker) — WASD or left stick. Trot gait, high slope tolerance: takes grades the rover bogs on. No jump — sure-footed, not springy</li>
-                        <li>Makadane (octopod walker) — WASD or left stick. Eight legs, four always planted: the fleet's near-slope-proof crawler, slow but steady</li>
+                        <li>Makadane (octopod walker) — WASD or left stick. Eight legs, four always planted: the fleet's near-slope-proof crawler, slow but steady. It CLIMBS over rocks that stop everything else</li>
+                        <li>Makadane rocks — X lifts a rock within 3.2 m into the clamp (two legs leave the gait to hold it, and you walk slower). X again sets it down as a real obstacle; X inside the FIELD LAB dock recycles it for good. Cleared rocks stay cleared, so you can open a driving corridor for the rover and van</li>
                         <li>Van deploy — V (or the DEPLOY BASE button): panels out, the van becomes a field chargepad. V again packs up</li>
                         <li>Soundtrack — B play/pause · [ and ] previous/next track · the ♪ button opens the full ONGAK player</li>
                         <li>Night vision — N (or the NV button): an image intensifier for driving after dark, when the terrain is otherwise nearly black. The HUD stays in its own colours</li>
@@ -938,6 +940,19 @@ export function createHud(rootEl, { site, onSwitchUnit, onCollect, onToggleSfx, 
         }
     }
 
+    // Plan 27: Makadane's rock action. Its own button (X), not the collect
+    // slot — the octopod can be in reach of a sample AND a rock at once.
+    const rockBtn = rootEl.querySelector('#mc-rock');
+    rockBtn.addEventListener('click', () => onRock?.());
+    let lastRockLabel = null;
+    /** label: null hides the button; a string shows it with that label. */
+    function setRockButton(label) {
+        if (label === lastRockLabel) return;   // fed per frame — keep DOM writes real
+        lastRockLabel = label;
+        rockBtn.dataset.visible = String(label != null);
+        if (label != null) rockBtn.firstChild.textContent = label;
+    }
+
     const labList = rootEl.querySelector('#mc-lab-list');
     const labCount = rootEl.querySelector('#mc-lab-count');
 
@@ -1236,6 +1251,6 @@ export function createHud(rootEl, { site, onSwitchUnit, onCollect, onToggleSfx, 
         setMissions, setOverlayMode, setTelemetry, setMenuOpen, isMenuOpen, toast, guide, setOutposts,
         setDronePanel, setDroneState, setGear, setBases, setGps, setMarsClock, setNightVision,
         setVanButton, setPhotoButton, setPhotoAlbum,
-        setMusic, setMusicLevel, toggleMusicPanel, setOngak,
+        setMusic, setMusicLevel, toggleMusicPanel, setOngak, setRockButton,
     };
 }

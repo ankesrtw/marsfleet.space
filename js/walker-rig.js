@@ -166,6 +166,13 @@ export function createWalker(site, terrain, obstacles, spec) {
     let stride = 0;
     let walkAmt = 0;
     let atBoundary = false;
+    // Plan 27: leg indices pulled OUT of the gait to hold a grip pose
+    // (Makadane clamping a rock). The octopod's alternating tetrapod keeps
+    // 4 of 8 planted, so removing 2 still leaves >= 3 down — the "always
+    // planted" guarantee survives.
+    let heldLegs = null;
+    let gripLocal = { x: 0, y: -0.25, z: -0.75 };
+    let speedScale = 1;   // <1 while carrying a load
     const bound = site.worldSize / 2 - EDGE_MARGIN;
 
     const _fwd = new THREE.Vector3();   // body +Z in world
@@ -179,8 +186,23 @@ export function createWalker(site, terrain, obstacles, spec) {
     const _local = new THREE.Vector3();
     const _hipInv = new THREE.Matrix4();
 
+    /** Exact ground for FEET — they plant on the real rock top. */
     function groundAt(x, z) {
         return terrain.sampleGroundHeight(x, z) + (obstacles?.deckHeight?.(x, z) ?? 0);
+    }
+
+    // Plan 27: the BODY does not get the exact value. With rocks folded into
+    // deckHeight (climbR units), the deck under the body centre steps from 0
+    // to the full rock height in one frame and the chassis pops. This is a
+    // rate limit that ACCUMULATES toward the target — a per-frame lerp
+    // toward a moving target never converges (the Wave 12 landmine).
+    let deckY = 0;
+    const DECK_RATE = 2.5;  // m/s of vertical follow
+    function bodyGroundAt(x, z, dt) {
+        const raw = obstacles?.deckHeight?.(x, z) ?? 0;
+        if (dt <= 0) deckY = raw;                     // boot: seat instantly
+        else deckY += THREE.MathUtils.clamp(raw - deckY, -DECK_RATE * dt, DECK_RATE * dt);
+        return terrain.sampleGroundHeight(x, z) + deckY;
     }
 
     /** 3-DOF analytic solve: optional coxa yaw toward the target,
@@ -260,7 +282,13 @@ export function createWalker(site, terrain, obstacles, spec) {
             const cx = leg.swingFrom.x + (tx - leg.swingFrom.x) * k;
             const cz = leg.swingFrom.z + (tz - leg.swingFrom.z) * k;
             const baseY = leg.swingFrom.y + (gy - leg.swingFrom.y) * k;
-            const y = baseY + spec.swingLift * Math.sin(swingProg * Math.PI);
+            // Plan 27: clear what is actually there. A fixed arc drags the
+            // foot straight through the side of any rock taller than
+            // swingLift; scaling with the step-up makes a clamber read as a
+            // clamber instead of a foot phasing through stone.
+            const climb = Math.max(0, gy - leg.swingFrom.y);
+            const lift = spec.swingLift + climb * 0.75;
+            const y = baseY + lift * Math.sin(swingProg * Math.PI);
             leg.cmd.set(cx, y, cz);
             solveChain(leg, cx, y, cz);
         }
@@ -272,7 +300,7 @@ export function createWalker(site, terrain, obstacles, spec) {
         const normal = terrain.sampleGroundNormal(mesh.position.x, mesh.position.z);
         const slopeMag = 1 - normal.y;
         const speedFactor = Math.max(spec.minSpeedFactor, 1 - slopeMag * spec.slopeK);
-        const speed = input.throttle * spec.walkSpeed * speedFactor;
+        const speed = input.throttle * spec.walkSpeed * speedFactor * speedScale;
 
         let nx = mesh.position.x + Math.sin(heading) * speed * dt;
         let nz = mesh.position.z + Math.cos(heading) * speed * dt;
@@ -288,7 +316,7 @@ export function createWalker(site, terrain, obstacles, spec) {
             mesh.position.x = nx;
             mesh.position.z = nz;
         }
-        mesh.position.y = groundAt(mesh.position.x, mesh.position.z);
+        mesh.position.y = bodyGroundAt(mesh.position.x, mesh.position.z, dt);
 
         const moving = Math.abs(input.throttle) > 0.05;
         if (moving) stride += dt * spec.strideRate * Math.abs(speed) / spec.walkSpeed;
@@ -317,7 +345,19 @@ export function createWalker(site, terrain, obstacles, spec) {
 
         const TAU = Math.PI * 2;
         const turning = Math.abs(input.steer) > 0.05;
-        for (const leg of legs) {
+        for (let li = 0; li < legs.length; li++) {
+            const leg = legs[li];
+            // Held legs leave the gait entirely and reach for a fixed
+            // body-local grip point — the clamp holding the carried rock.
+            if (heldLegs?.has(li)) {
+                const gx = mesh.position.x + _lat.x * gripLocal.x + _fwd.x * gripLocal.z;
+                const gz = mesh.position.z + _lat.z * gripLocal.x + _fwd.z * gripLocal.z;
+                const gy = mesh.position.y + gripLocal.y;
+                leg.cmd.set(gx, gy, gz);
+                leg.planted = false;   // re-plant properly when released
+                solveChain(leg, gx, gy, gz);
+                continue;
+            }
             // tm in [0,2π): first half (sin>0) swings, second half stances.
             const tm = ((stride + leg.phase) % TAU + TAU) % TAU;
             const stance = tm >= Math.PI;
@@ -350,6 +390,18 @@ export function createWalker(site, terrain, obstacles, spec) {
         get position() { return mesh.position; },
         get heading() { return heading; },
         get atBoundary() { return atBoundary; },
+        /** Pull legs out of the gait into a grip pose (null = all walk).
+            `local` overrides where the grip sits in body space. */
+        holdLegs(indices, local = null) {
+            heldLegs = indices ? new Set(indices) : null;
+            if (local) gripLocal = local;
+        },
+        get heldCount() { return heldLegs ? heldLegs.size : 0; },
+        get legCount() { return legs.length; },
+        /** Load penalty on walk speed (1 = unladen). */
+        setSpeedScale(k) { speedScale = k; },
+        /** E2E probe: smoothed body deck height over rocks. */
+        get deckY() { return deckY; },
         /** E2E probe: world-space foot tip positions (anti-skate,
             terrain-conform assertions). Fresh vectors on purpose. */
         feet() {

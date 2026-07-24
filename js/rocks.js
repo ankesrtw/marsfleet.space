@@ -27,7 +27,25 @@ const RADIUS = 350;       // m window around the unit
 const ROCKS_PER_CELL_MAX = 2;
 const REBUILD_DIST = 60;  // m of travel before re-scatter
 
-export function createRocks(site, terrain, quality) {
+export function createRocks(site, terrain, quality, save = null) {
+    // Plan 27 — Makadane rock handling. Two persisted deltas over the
+    // deterministic field, both applied INSIDE cellRocks() so rendering and
+    // collision can never disagree about what is there:
+    //   cleared  ids the octopod carried off / recycled — gone for good
+    //   placed   rocks it set back down somewhere else — real obstacles again
+    // Cleared boulders staying cleared is the whole point of the unit: it
+    // opens driving corridors the rover and van could not take.
+    const cleared = new Set(save?.get('cleared-rocks', []) ?? []);
+    const placed = save?.get('placed-rocks', []) ?? [];
+    // placed rocks bucketed by cell, so cellRocks stays O(few)
+    const placedByCell = new Map();
+    function bucket(rec) {
+        const key = `${Math.floor(rec.x / CELL)}:${Math.floor(rec.z / CELL)}`;
+        if (!placedByCell.has(key)) placedByCell.set(key, []);
+        placedByCell.get(key).push(rec);
+    }
+    for (const rec of placed) bucket(rec);
+
     const cellsAcross = Math.floor((RADIUS * 2) / CELL);
     const budget = cellsAcross * cellsAcross * ROCKS_PER_CELL_MAX;
     const dense = (quality.terrainSegments || 256) > 128;
@@ -75,9 +93,12 @@ export function createRocks(site, terrain, quality) {
         for (let k = 0; k < n; k++) {
             const x = (cx + rand()) * CELL;
             const z = (cz + rand()) * CELL;
-            if (Math.abs(x) > half || Math.abs(z) > half) continue;
+            // NOTE: the rand() calls below must run even when this rock is
+            // skipped, or the PRNG stream shifts and the rest of the cell
+            // moves. Build it first, decide afterwards.
             const s = 0.1 + Math.pow(rand(), 3.4) * 2.2;
-            rocks.push({
+            const rec = {
+                id: `${cx}:${cz}:${k}`,
                 x, z,
                 sx: s * (0.7 + rand() * 0.6),
                 sy: s * (0.45 + rand() * 0.4),
@@ -85,8 +106,13 @@ export function createRocks(site, terrain, quality) {
                 rx: rand() * 0.5,
                 ry: rand() * Math.PI * 2,
                 rz: rand() * 0.5,
-            });
+            };
+            if (Math.abs(x) > half || Math.abs(z) > half) continue;
+            if (cleared.has(rec.id)) continue;   // carried off by Makadane
+            rocks.push(rec);
         }
+        const extra = placedByCell.get(`${cx}:${cz}`);
+        if (extra) for (const rec of extra) rocks.push(rec);
         return rocks;
     }
 
@@ -208,5 +234,69 @@ export function createRocks(site, terrain, quality) {
         }
     }
 
-    return { mesh, update, collides, rockTop };
+    /** Nearest rock to (x, z) within `range` whose radius is <= maxR — the
+        pick-up query. Returns the full record (including id) or null. */
+    function rockNear(x, z, range, maxR) {
+        let best = null;
+        let bestD = range;
+        for (const r of nearRocks(x, z, _near)) {
+            const rockR = Math.max(r.sx, r.sz);
+            if (rockR > maxR || rockR < RIDEABLE_MIN_RADIUS) continue;
+            const d = Math.hypot(x - r.x, z - r.z);
+            if (d < bestD) { bestD = d; best = r; }
+        }
+        // nearRocks reuses a scratch array — hand back a copy, since the
+        // caller holds this across frames while carrying it.
+        return best ? { ...best } : null;
+    }
+
+    function persist() {
+        save?.set('cleared-rocks', [...cleared]);
+        save?.set('placed-rocks', placed);
+    }
+
+    /** Lift a rock out of the world. Placed rocks are dropped from the
+        placed list; procedural ones go on the cleared list. Either way the
+        next scatter() and every collision query stop seeing it. */
+    function removeRock(rec) {
+        if (!rec) return false;
+        const i = placed.findIndex((r) => r.id === rec.id);
+        if (i >= 0) {
+            placed.splice(i, 1);
+            placedByCell.clear();
+            for (const r of placed) bucket(r);
+        } else {
+            cleared.add(rec.id);
+        }
+        persist();
+        scatter(lastX, lastZ);   // re-render without it, immediately
+        return true;
+    }
+
+    /** Set a carried rock down at (x, z) — a real obstacle again. */
+    function placeRock(rec, x, z) {
+        const copy = { ...rec, id: `p:${Date.now().toString(36)}:${placed.length}`, x, z };
+        placed.push(copy);
+        bucket(copy);
+        persist();
+        scatter(lastX, lastZ);
+        return copy;
+    }
+
+    /** A standalone mesh matching a rock record — the carried-rock visual.
+        Shares this module's geometry + material so a rock in the octopod's
+        grip looks like the one it was lifted from. */
+    function rockMesh(rec) {
+        const m = new THREE.Mesh(geo, mat);
+        m.scale.set(rec.sx, rec.sy, rec.sz);
+        m.rotation.set(rec.rx, rec.ry, rec.rz);
+        return m;
+    }
+
+    return {
+        mesh, update, collides, rockTop,
+        rockNear, removeRock, placeRock, rockMesh,
+        get clearedCount() { return cleared.size; },
+        get placedCount() { return placed.length; },
+    };
 }
