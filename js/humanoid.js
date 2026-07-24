@@ -73,13 +73,18 @@ const DIG_SECS = 4.5;
 
 // Wave 12.2 foot IK: two-bone analytic IK per leg (law of cosines).
 // Stance-phase feet are world-locked — the anti-skate guarantee.
+// FEMUR/TIBIA are the GLB's raw bone lengths (L_Calf and L_Foot sit at
+// (0, .208, 0) and (0, .259, 0) in their parents) — model units, NOT
+// metres; solveLegIk scales them up by the model's world scale.
 const FEMUR = 0.208;
 const TIBIA = 0.259;
 const FOOT_SPACING = 0.12; // m — lateral offset per foot from body center
 const STEP_HALF = 0.35;  // m — half-step reach in body-local space
 const SWING_LIFT = 0.25; // m — foot rises this high during swing arc
-const MAX_BEND = 2.3;    // rad — knee can't hyperextend past this
+const ANKLE_H = 0.12;    // m — ankle bone height above the sole, world scale
 const USE_IK = true;     // toggle flag per plan: easy fallback to swing-only
+// Both leg bones extend along their own local +Y in this rig.
+const BONE_AXIS = new THREE.Vector3(0, 1, 0);
 
 // Wave 12.4 Apollo lope: above ~0.7 m/s a normal walk is unstable at
 // 0.38 g — the Apollo crews spontaneously switched to a bounding lope.
@@ -159,40 +164,95 @@ export function createHumanoid(site, terrain, obstacles) {
     let prevLStance = false;
     let prevRStance = false;
     let ikWasActive = false; // restore bind pose once when IK switches off
-    const _ikFoot = new THREE.Vector3();
-    const _ikParentInv = new THREE.Matrix4();
-    const _ikThighQ = new THREE.Quaternion();
-    const _ikCalfQ = new THREE.Quaternion();
+    const _ikTarget = new THREE.Vector3();
+    const _hipW = new THREE.Vector3();
+    const _kneeW = new THREE.Vector3();
+    const _toFoot = new THREE.Vector3();
+    const _legU = new THREE.Vector3();   // hip→foot unit vector
+    const _poleW = new THREE.Vector3();  // in-plane "forward" (knee pole)
+    const _femurDir = new THREE.Vector3();
+    const _tibiaDir = new THREE.Vector3();
+    const _scaleV = new THREE.Vector3();
+    const _parentQ = new THREE.Quaternion();
+    const _thighQ = new THREE.Quaternion();
+    const _aimQ = new THREE.Quaternion();
+    const _aimDelta = new THREE.Quaternion();
+    const _aimParentInv = new THREE.Quaternion();
+    const _aimDir = new THREE.Vector3();
 
-    /** Two-bone analytic IK — law-of-cosines solve in the thigh bone's
-        parent-local space, leaving the thigh and calf quaternion
-        rotations to apply on top of bind pose in _ikThighQ/_ikCalfQ.
-        Works in the forward/up plane (parent-local Z-forward, Y-up). */
-    function solveIk(thighBone, targetWorldX, targetWorldY, targetWorldZ) {
+    /** Re-aim one bone so its bone-axis points along `dir` (world), by the
+        MINIMAL rotation from where bind already points. Applying the delta
+        on top of the bind world pose keeps the bind twist intact, so we
+        never have to know how the exporter oriented the bone's local axes. */
+    function aimBone(bone, bind, parentQ, dir) {
+        _aimQ.copy(parentQ).multiply(bind);              // bind pose, in world
+        _aimDir.copy(BONE_AXIS).applyQuaternion(_aimQ).normalize();
+        _aimDelta.setFromUnitVectors(_aimDir, dir);
+        _aimQ.premultiply(_aimDelta);                    // aimed, in world
+        _aimParentInv.copy(parentQ).invert();
+        bone.quaternion.copy(_aimParentInv).multiply(_aimQ);
+    }
+
+    /** Two-bone IK, solved in WORLD space and applied bind-relative.
+
+        Both leg bones extend along their own local +Y in this rig (the
+        GLB's L_Calf sits at (0, .208, 0) in thigh space, L_Foot at
+        (0, .259, 0) in calf space), so the solve only needs each bone's
+        direction — aimBone() handles the rest without assuming anything
+        about the bind frames' orientation.
+
+        This replaces an analytic solve that computed its angles in the
+        PELVIS's local frame but applied them about each BONE's local X.
+        Those frames don't coincide (L_Thigh's bind is a ~180° X-flip, and
+        the bind knee is already pre-bent ~0.335 rad), so the applied
+        rotation was both mis-signed and offset. Worse, its hip term
+        atan2(b·sin γ, a + b·cos γ) ran to ~π as the leg straightened
+        (FEMUR < TIBIA makes a + b·cos γ go negative near full extension) —
+        and a STANDING leg is at full extension, so every idle frame
+        snapped the thigh 180° and threw the legs up over the back. */
+    function solveLegIk(thighBone, calfBone, thighBind, calfBind, target) {
         const parent = thighBone.parent;
         parent.updateWorldMatrix(true, false);
-        _ikParentInv.copy(parent.matrixWorld).invert();
-        const hipLocal = thighBone.position;
+        parent.getWorldQuaternion(_parentQ);
+        thighBone.updateWorldMatrix(false, false);
+        _hipW.setFromMatrixPosition(thighBone.matrixWorld);
 
-        _ikFoot.set(targetWorldX, targetWorldY, targetWorldZ);
-        _ikFoot.applyMatrix4(_ikParentInv);
+        // Bone lengths are in raw model units; the model carries a uniform
+        // scale from models.js, so lift them into world meters.
+        const s = _scaleV.setFromMatrixScale(thighBone.matrixWorld).x || 1;
+        const femur = FEMUR * s, tibia = TIBIA * s;
 
-        const dz = _ikFoot.z - hipLocal.z;
-        const dy = hipLocal.y - _ikFoot.y; // positive = foot below hip
-        const R = Math.sqrt(dz * dz + dy * dy);
-        const maxR = FEMUR + TIBIA;
-        const minR = Math.abs(FEMUR - TIBIA);
-        const r = THREE.MathUtils.clamp(R, minR, maxR);
+        _toFoot.copy(target).sub(_hipW);
+        const dist = _toFoot.length();
+        if (dist < 1e-5) return;
+        // Stay just inside the singularities: dead-straight and fully
+        // folded both make the bend plane undefined.
+        const reach = THREE.MathUtils.clamp(
+            dist, Math.abs(femur - tibia) + 1e-4, (femur + tibia) * 0.999);
+        _legU.copy(_toFoot).divideScalar(dist);
 
-        const a = FEMUR, b = TIBIA;
-        const cosKnee = (a * a + b * b - r * r) / (2 * a * b);
-        const knee = Math.acos(THREE.MathUtils.clamp(cosKnee, -1, 1));
-        const calfAngle = Math.max(-MAX_BEND, Math.min(MAX_BEND, -(Math.PI - knee)));
-        const hipAngle = Math.atan2(dz, dy)
-            - Math.atan2(b * Math.sin(knee), a + b * Math.cos(knee));
+        // Knee pole: the in-plane component of body-forward. Bending the
+        // femur toward it keeps the knee leading forward — a human knee
+        // cannot hinge backward, and this fixes the bend side without any
+        // cross-product handedness to get wrong.
+        _poleW.copy(_fwd).addScaledVector(_legU, -_fwd.dot(_legU));
+        if (_poleW.lengthSq() < 1e-8) {
+            _poleW.set(0, 0, 1).addScaledVector(_legU, -_legU.z);
+        }
+        _poleW.normalize();
 
-        _ikThighQ.setFromAxisAngle(_axis, hipAngle);
-        _ikCalfQ.setFromAxisAngle(_axis, calfAngle);
+        const cosBeta = THREE.MathUtils.clamp(
+            (reach * reach + femur * femur - tibia * tibia) / (2 * reach * femur), -1, 1);
+        const beta = Math.acos(cosBeta); // femur ∠ from the hip→foot line
+        _femurDir.copy(_legU).multiplyScalar(Math.cos(beta))
+            .addScaledVector(_poleW, Math.sin(beta));
+        _kneeW.copy(_hipW).addScaledVector(_femurDir, femur);
+        _tibiaDir.copy(target).sub(_kneeW).normalize();
+
+        aimBone(thighBone, thighBind, _parentQ, _femurDir);
+        // The calf hangs off the thigh, whose world pose we just changed.
+        _thighQ.copy(_parentQ).multiply(thighBone.quaternion);
+        aimBone(calfBone, calfBind, _thighQ, _tibiaDir);
     }
 
     function groundAt(x, z) {
@@ -226,16 +286,18 @@ export function createHumanoid(site, terrain, obstacles) {
     function solveLeg(thigh, calf, planted, plant, phase, lateral) {
         if (planted) {
             plant.y = groundAt(plant.x, plant.z);
-            solveIk(thigh.bone, plant.x, plant.y, plant.z);
+            _ikTarget.copy(plant);
         } else {
             const swingT = (Math.sin(stride + phase) + 1) / 2; // 0→1 over swing
             const lift = SWING_LIFT * Math.sin(swingT * Math.PI);
             const sx = mesh.position.x + _fwd.x * (STEP_HALF * Math.cos(stride + phase)) + _right.x * lateral;
             const sz = mesh.position.z + _fwd.z * (STEP_HALF * Math.cos(stride + phase)) + _right.z * lateral;
-            solveIk(thigh.bone, sx, groundAt(sx, sz) + lift, sz);
+            _ikTarget.set(sx, groundAt(sx, sz) + lift, sz);
         }
-        thigh.bone.quaternion.copy(thigh.bind).multiply(_ikThighQ);
-        calf.bone.quaternion.copy(calf.bind).multiply(_ikCalfQ);
+        // Plant points are SOLE positions but the IK drives the ankle bone,
+        // which rides ANKLE_H above the sole — without this the boots sink.
+        _ikTarget.y += ANKLE_H;
+        solveLegIk(thigh.bone, calf.bone, thigh.bind, calf.bind, _ikTarget);
     }
 
     function update(dt, input) {

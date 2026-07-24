@@ -12,10 +12,13 @@ import { attachUnitModel } from './models.js';
 import { createWheelRig } from './wheels.js';
 
 // NASA's SEV/MMSEV — the real vehicle this silhouette copies — drives
-// ~10 km/h on the flat: 2.6 m/s. Slower than the rover's arcade gears,
-// double a walking pace, so the "drive out and deploy" loop stays a
-// commitment without being a chore.
-const VAN_SPEED = 2.6;         // m/s
+// ~10 km/h on the flat (2.6 m/s), but at real scale that read as a crawl:
+// barely 1.8x the 1.4 m/s walk, and below the rover's slowest usable gear
+// (G1 = 2.1 m/s), so driving out felt slower than walking there. 5.5 m/s
+// (~20 km/h) is a time-compressed cruise in the same spirit as the rover's
+// GEARS — ~4x walking pace, still well under the rover's G2 (6.3 m/s), so
+// "drive out and deploy" stays a commitment without being a chore.
+const VAN_SPEED = 5.5;         // m/s
 const TURN_RATE = 2.0;         // rad/s
 const SLOPE_K = 1.5;           // torquier than the rover's 3.0
 const MIN_SPEED_FACTOR = 0.20; // keeps climbing where the rover stalls
