@@ -36,9 +36,13 @@ import { Save } from './saves.js';
 const MISSIONS = {
     tutorial: {
         id: 'tutorial',
-        title: 'FIRST MISSION — TUTORIAL',
+        title: 'FIRST MISSION — REPORT TO ARIANA',
         autostart: true,
         steps: [
+            // Plan 28: the sol opens at the field lab. Ariana (the lab
+            // hologram) briefs you before anything else — main.js advances
+            // this the moment her dialog triggers on approach.
+            { type: 'action', id: 'report-ariana', text: 'REPORT TO ARIANA AT THE FIELD LAB FOR BRIEFING' },
             { type: 'action', id: 'drive', text: 'DRIVE TO THE NEAREST BEACON' },
             { type: 'action', id: 'collect', text: 'PRESS E TO COLLECT THE SAMPLE' },
             { type: 'action', id: 'switch', text: 'PRESS TAB TO SWITCH TO THE LIFT DRONE' },

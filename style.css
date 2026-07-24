@@ -1762,9 +1762,40 @@ html, body {
     display: none;
 }
 
+/* Plan 28: DANCE button — rides just above the rock button slot, warm-lit
+   so it reads as a "for fun" control rather than another mission verb. */
+.mars-hud__dance {
+    position: absolute;
+    bottom: max(104px, calc(env(safe-area-inset-bottom) + 98px));
+    left: 50%;
+    transform: translateX(-50%);
+    z-index: 15;
+    border-color: #d98cc4;
+    color: #f0c8e6;
+}
+
+.mars-hud__dance[data-visible="false"] {
+    display: none;
+}
+
+.mars-hud__dance[data-on="true"] {
+    background: rgba(217, 140, 196, 0.22);
+    border-color: #f0a8dc;
+    color: #ffd8f2;
+}
+
 .mars-music__bot {
     display: flex;
     gap: 4px;
+    align-items: center;
+    flex-wrap: wrap;
+}
+
+.mars-music__bot-state {
+    flex-basis: 100%;
+    font-size: 0.64rem;
+    letter-spacing: 0.06em;
+    color: #e0b95e;
 }
 
 .mars-music__bot .mars-btn {
@@ -1774,8 +1805,8 @@ html, body {
     font-size: 0.62rem;
 }
 
-/* parked reads as the "held" state, like the van's PACK UP */
-#mc-ongak-park[data-parked="true"] {
+/* deployed reads as the "held" state, like the van's PACK UP */
+#mc-ongak-deploy[data-deployed="true"] {
     border-color: #e0b95e;
     color: #e0b95e;
 }

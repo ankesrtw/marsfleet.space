@@ -388,6 +388,9 @@ async function startGame(site) {
     const holoSpot = new THREE.Vector3(lab.stationPos.x + 3.2, 0, lab.stationPos.z + 5.6);
     holoSpot.y = terrain.sampleHeight(holoSpot.x, holoSpot.z);
     const hologram = createLabHologram(scene, holoSpot);
+    // Plan 28: rising-edge latch for the opening "report to Ariana" mission
+    // step — set once, so re-approaching her later doesn't re-fire it.
+    let arianaBriefed = false;
 
     // Wave 12.13: recon survey imaging — named photo targets, captured
     // frames filed in the menu album (photos.js).
@@ -483,6 +486,11 @@ async function startGame(site) {
     const VAN_CARGO_R = 6;       // m — roll this close to auto-load
     const VAN_DELIVER_R = 12;    // m from the lab pad center to unload
     const vanCargo = [];         // container objects riding in the bay
+    // Plan 28 Ongak courier
+    const ONGAK_PARCEL_R = 6;    // m — how close Ongak must be to grab a cache
+    const ONGAK_DELIVER_R = 10;  // m from the lab pad to auto-drop its parcel
+    const ONGAK_DOCK_R = 7;      // m — Ongak is "docked" with its host inside this
+    let ongakHost = gratbot;     // the unit Ongak trails (initially Gratbot)
     const RESTART_CHARGE = 10;   // empty units stay dead until this
     const NIGHT_DRAIN_K = 0.5;   // cold-night heater tax: +50% drain at full dark
     const STORM_FOG_K = 8;       // FOG.density multiplier span at storm peak
@@ -555,23 +563,33 @@ async function startGame(site) {
         onMusicPrev: () => music.prev(),
         onMusicSelect: (i) => music.select(i),
         onMusicVolume: (v) => music.setVolume(v),
-        // FOLLOW / PARK — the companion's only two verbs.
-        onOngakPark: () => {
-            const parked = ongak.togglePark();
-            hud.toast(parked
-                ? '♪ ONGAK PARKED — SPEAKER HOLDS POSITION'
+        // Plan 28: ONGAK is a BOUND companion — it trails one host (Gratbot
+        // at boot), you CALL it to whatever you're driving, DEPLOY it to hold
+        // station, and PARCEL small caches with it.
+        onOngakCall: () => {
+            ongakHost = units[activeIndex].unit;
+            ongak.setDeployed(false);
+            const p = ongakHost.position;
+            // A companion left 3km back is a long trail-in; if it's far, drop
+            // it beside the host so it ARRIVES, then it trails the last bit.
+            if (Math.hypot(ongak.position.x - p.x, ongak.position.z - p.z) > 80) {
+                ongak.teleport(p.x + 4, p.z + 4);
+            }
+            hud.toast(`♪ ONGAK CALLED TO ${units[activeIndex].name.toUpperCase()}`);
+            refreshOngak();
+        },
+        onOngakDeploy: () => {
+            const deployed = ongak.toggleDeploy();
+            hud.toast(deployed
+                ? '♪ ONGAK DEPLOYED — SPEAKER HOLDS POSITION'
                 : '♪ ONGAK FOLLOWING');
-            hud.setOngak({ parked, spatial: ongak.spatial });
-            return parked;
+            refreshOngak();
+            return deployed;
         },
+        onOngakParcel: () => tryParcel(),
+        onDance: () => toggleDance(),
+        onDanceMove: (i) => setDanceMove(i),
         onRock: () => tryRock(),
-        onOngakRecall: () => {
-            // Teleport it to the active unit: a parked bot left 3km back is
-            // otherwise a very long walk for the player to undo.
-            const p = units[activeIndex].unit.position;
-            ongak.teleport(p.x + 3, p.z + 3);
-            hud.toast('♪ ONGAK RECALLED');
-        },
     });
 
     // Plan 27: route the music bus through Ongak's panner. Registered AFTER
@@ -579,7 +597,7 @@ async function startGame(site) {
     // first — setOutput needs the analyser to exist.
     sound.onReady(() => {
         ongak.attachAudio(music);
-        hud.setOngak({ parked: ongak.parked, spatial: ongak.spatial });
+        refreshOngak();
     });
 
     const refreshMusic = () => hud.setMusic({
@@ -588,6 +606,85 @@ async function startGame(site) {
     });
     music.onChange(refreshMusic);
     refreshMusic();
+
+    /** Push the companion's full state to the HUD (host name, deployed,
+        cargo, spatial audio) — the panel is a pure view, so one call after
+        any change keeps it honest. */
+    function refreshOngak() {
+        hud.setOngak({
+            host: unitName(ongakHost),
+            deployed: ongak.deployed,
+            spatial: ongak.spatial,
+            cargo: ongak.hasCargo ? (ongak.cargo?.name ?? 'PARCEL') : null,
+        });
+    }
+    const unitName = (u) => units.find((e) => e.unit === u)?.name ?? 'GRATBOT';
+
+    /** ONGAK courier: load the nearest field cache, or set down what it holds.
+        Auto-delivery at the lab happens in the frame loop, so this verb is
+        only ever LOAD / field-RELEASE. */
+    function tryParcel() {
+        if (ongak.hasCargo) {
+            const c = ongak.dropCargo();
+            c.state = 'field';
+            c.mesh.visible = true;
+            c.mesh.position.set(ongak.position.x,
+                terrain.sampleHeight(ongak.position.x, ongak.position.z)
+                + colliders.deckHeight(ongak.position.x, ongak.position.z) + 0.28,
+                ongak.position.z);
+            c.mesh.rotation.set(0, c.mesh.rotation.y, 0);
+            sound.sling();
+            hud.toast('♪ PARCEL SET DOWN');
+        } else {
+            const c = samples.nearestContainer(ongak.position, ONGAK_PARCEL_R);
+            if (!c) { hud.toast('♪ NO CACHE IN ONGAK’S REACH'); return; }
+            c.state = 'cargo';
+            c.mesh.visible = false;      // stowed in the cradle
+            ongak.loadCargo(c);
+            sound.sling();
+            hud.toast(`♪ PARCEL LOADED: ${c.name.toUpperCase()}`);
+        }
+        refreshOngak();
+    }
+
+    /** Gratbot dances only while it is the active unit, ONGAK is docked with
+        it (host = Gratbot and within ONGAK_DOCK_R), and music is playing —
+        the coupling the two ship with is what powers the dance floor. */
+    function danceEligible() {
+        return units[activeIndex].unit === gratbot
+            && ongakHost === gratbot
+            && !ongak.hasCargo
+            && Math.hypot(ongak.position.x - gratbot.position.x,
+                ongak.position.z - gratbot.position.z) <= ONGAK_DOCK_R
+            && music.playing;
+    }
+
+    function toggleDance() {
+        if (gratbot.dancing) {
+            gratbot.setDance(false);
+            hud.setDance({ on: false });
+            hud.toast('▸ GRATBOT — DANCE OFF');
+            return;
+        }
+        if (!danceEligible()) {
+            hud.toast(music.playing
+                ? '▸ DOCK ONGAK WITH GRATBOT TO DANCE'
+                : '▸ START THE MUSIC TO DANCE');
+            return;
+        }
+        gratbot.setDance(true);
+        hud.setDance({ on: true, move: gratbot.danceMove });
+        hud.toast('▸ GRATBOT — DANCE ON · KEYS 1-5 FOR MOVES');
+    }
+
+    function setDanceMove(i) {
+        if (!gratbot.dancing) return;
+        gratbot.setDanceMove(i);
+        hud.setDance({ on: true, move: gratbot.danceMove });
+    }
+    // Digit 1-5 carry the move index in the event detail — routed straight to
+    // the in-scope handler (there is no per-move HUD button to click).
+    document.addEventListener('mc-dance-move', (e) => setDanceMove(e.detail));
 
     // Night vision (Wave 9.7): main.js owns the state because the filter goes
     // on the CANVAS, which lives outside the HUD root — and that is the point.
@@ -645,7 +742,11 @@ async function startGame(site) {
     van.update(0, { throttle: 0, steer: 0 });
     gratbot.update(0, { throttle: 0, steer: 0 });
     makadane.update(0, { throttle: 0, steer: 0 });
-    ongak.update(0, null);
+    // Plan 28: ONGAK ships DOCKED beside Gratbot — re-seat it there now that
+    // Gratbot has grounded, so the two start the sol together (the dance
+    // coupling reads as intentional from frame zero).
+    ongak.teleport(gratbot.position.x + 2.5, gratbot.position.z + 2.5);
+    ongak.update(0, ongakHost.position);
 
     // Orbit chase-cam (mouse drag / touch drag to orbit, wheel / pinch to
     // zoom, double-click to recenter); snapped to spawn.
@@ -678,7 +779,7 @@ async function startGame(site) {
     // Debug/E2E handle (also used by the sampleHeight ground-truth check;
     // renderer/scene/camera exposed so tests on software-GL boxes can pause
     // the loop and capture canvas pixels via a same-task render+toDataURL).
-    window.__mc = { site, terrain, rover, drone: recon, recon, lift, humanoid, van, gratbot, makadane, ongak, tryRock, samples, renderer, scene, camera, camRig, units, env, effects, waypoint, sound, rocks, lab, sling, analysis, outposts, fog, colliders, missions, hazardZones, weather, dustDevils, wind, chargepads, comms, baseList, marsClock, setNightVision, get nightVision() { return nightVision; }, get intro() { return intro; }, hologram, photos, tryPhoto, vanCargo, music };
+    window.__mc = { site, terrain, rover, drone: recon, recon, lift, humanoid, van, gratbot, makadane, ongak, tryRock, tryParcel, toggleDance, setDanceMove, danceEligible, get ongakHost() { return ongakHost; }, set ongakHost(u) { ongakHost = u; }, get active() { return units[activeIndex]; }, samples, renderer, scene, camera, camRig, units, env, effects, waypoint, sound, rocks, lab, sling, analysis, outposts, fog, colliders, missions, hazardZones, weather, dustDevils, wind, chargepads, comms, baseList, marsClock, setNightVision, get nightVision() { return nightVision; }, get intro() { return intro; }, hologram, photos, tryPhoto, vanCargo, music };
 
     function applyUnitMode() {
         const active = units[activeIndex];
@@ -1118,6 +1219,15 @@ async function startGame(site) {
         // from treating that same deck as ground.)
         const prevVanDeckX = vanDeck.x;
         const prevVanDeckZ = vanDeck.z;
+        // Plan 28: dance is only valid while docked with a playing Ongak —
+        // re-check every frame so driving off, deploying the speaker, pausing
+        // the music or calling Ongak away all end the dance cleanly. Feed the
+        // beat clock to Gratbot so its choreography stays locked to music.js.
+        if (gratbot.dancing && !danceEligible()) {
+            gratbot.setDance(false);
+            hud.setDance({ on: false });
+        }
+        if (active.unit === gratbot) input.beats = music.beats();
         active.unit.update(dt, input);
         // Wave 12: the idle van also keeps simulating — it grounds itself
         // on the terrain at boot and its deploy animation finishes even if
@@ -1151,12 +1261,32 @@ async function startGame(site) {
                 u.unit.update(dt, { forward: 0, strafe: 0, turn: 0, climb: 0 });
             }
         }
-        // Plan 27: Ongak is outside units[], so it never gets an update from
-        // the loop above — it tracks whoever IS active. Parked, it holds and
-        // the panner lets the soundtrack fade behind you as you drive off.
-        ongak.update(dt, active.unit.position);
+        // Plan 27/28: Ongak is outside units[], so it never gets an update
+        // from the loop above — it trails its HOST (Gratbot by default, or
+        // whatever you CALLed it to). Deployed, it holds and the panner lets
+        // the soundtrack fade behind you as you drive off.
+        ongak.update(dt, ongakHost.position);
         ongak.syncAudio(music.ctx, camera);
         ongak.pulse(music.level(), music.beat());
+        // Plan 28 courier: a laden Ongak that reaches the field lab drops its
+        // parcel on the pad automatically (the van bulk-deliver idiom, one at
+        // a time). Works whether it walked there trailing you or was deployed
+        // on the pad — either way the sample enters the analysis queue.
+        if (ongak.hasCargo
+            && Math.hypot(ongak.position.x - lab.padPos.x,
+                ongak.position.z - lab.padPos.z) <= ONGAK_DELIVER_R) {
+            const c = ongak.dropCargo();
+            c.mesh.visible = true;       // lab.deliver parks it on the pad
+            lab.deliver(c);
+            deliveredIds.add(c.id);
+            analysis.enqueue(c);
+            hud.setLab(lab.delivered.length, site.samples.length);
+            hud.setInventory(samples.inventory, deliveredIds, analysis.analyzedIds);
+            sound.deliver();
+            missions.advance('deliver');
+            hud.toast(`♪ ONGAK DELIVERED ${c.name.toUpperCase()} TO THE LAB`);
+            refreshOngak();
+        }
 
         // Plan 27: the van rode over a pebble — dust off that wheel, a thump,
         // a camera jolt, and a nudge to the rollover gauge. van.js queues the
@@ -1317,6 +1447,13 @@ async function startGame(site) {
         hologram.update(dt, active.unit.position,
             (text) => hud.setObjective(`▸ ${text}`),
             () => hud.setObjective(null));
+        // Plan 28: the opening mission is "report to Ariana for briefing" —
+        // completed the instant her dialog triggers on approach (hologram.seen
+        // rises once). The briefing then plays as the objective feed.
+        if (!arianaBriefed && hologram.seen) {
+            arianaBriefed = true;
+            missions.advance('report-ariana');
+        }
         // Plan 26: the Wave 9.5 EVA safety tether is REMOVED — the mobile
         // repair van makes a fixed anchor line unnecessary, so the humanoid
         // roams free (no speed clamp). tetherAnchor stays null in humanoid.js
@@ -1373,6 +1510,12 @@ async function startGame(site) {
 
         // Plan 27: contextual LIFT / SET DOWN / RECYCLE button for Makadane.
         hud.setRockButton(rockPromptLabel());
+
+        // Plan 28: the DANCE button appears only when the dance is actually
+        // available (Gratbot active, Ongak docked, music playing) or already
+        // running — so it never invites a press that would just toast a
+        // refusal.
+        hud.setDanceButton(gratbot.dancing || danceEligible());
 
         // Edge-of-DEM warning while the active unit pushes the boundary.
         hud.setBoundary(!!active.unit.atBoundary);
@@ -1609,7 +1752,14 @@ function setupKeyboard() {
         if (e.code === 'KeyB') document.dispatchEvent(new CustomEvent('mc-music-toggle'));
         if (e.code === 'BracketLeft') document.dispatchEvent(new CustomEvent('mc-music-prev'));
         if (e.code === 'BracketRight') document.dispatchEvent(new CustomEvent('mc-music-next'));
-        if (e.code === 'KeyO') document.dispatchEvent(new CustomEvent('mc-ongak-park'));
+        // Plan 28: O deploy/follow, C call to active unit, J parcel, K dance
+        // toggle, 1-5 pick a dance move.
+        if (e.code === 'KeyO') document.dispatchEvent(new CustomEvent('mc-ongak-deploy'));
+        if (e.code === 'KeyC') document.dispatchEvent(new CustomEvent('mc-ongak-call'));
+        if (e.code === 'KeyJ') document.dispatchEvent(new CustomEvent('mc-ongak-parcel'));
+        if (e.code === 'KeyK') document.dispatchEvent(new CustomEvent('mc-dance'));
+        if (/^Digit[1-5]$/.test(e.code)) document.dispatchEvent(
+            new CustomEvent('mc-dance-move', { detail: Number(e.code.slice(5)) - 1 }));
         if (e.code === 'KeyX') document.dispatchEvent(new CustomEvent('mc-rock'));
     });
     return keys;
@@ -1697,7 +1847,10 @@ document.addEventListener('mc-photo', () => document.getElementById('mc-photo')?
 document.addEventListener('mc-music-toggle', () => document.getElementById('mc-music-play')?.click());
 document.addEventListener('mc-music-prev', () => document.getElementById('mc-music-prev')?.click());
 document.addEventListener('mc-music-next', () => document.getElementById('mc-music-next')?.click());
-document.addEventListener('mc-ongak-park', () => document.getElementById('mc-ongak-park')?.click());
+document.addEventListener('mc-ongak-deploy', () => document.getElementById('mc-ongak-deploy')?.click());
+document.addEventListener('mc-ongak-call', () => document.getElementById('mc-ongak-call')?.click());
+document.addEventListener('mc-ongak-parcel', () => document.getElementById('mc-ongak-parcel')?.click());
+document.addEventListener('mc-dance', () => document.getElementById('mc-dance')?.click());
 document.addEventListener('mc-rock', () => document.getElementById('mc-rock')?.click());
 
 boot();

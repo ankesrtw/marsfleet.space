@@ -1,5 +1,5 @@
 /* ============================================================
-   ongak.js — ONGAK, the music companion (plan 27).
+   ongak.js — ONGAK, the music companion (plan 27; plan 28 rework).
 
    音楽 (ongaku) = music. The name went to the quadruped in plan 25;
    plan 27 gave the quadruped a name that describes it (GRATBOT) and
@@ -8,24 +8,33 @@
    Ongak is deliberately NOT in the unit switch cycle. A unit you
    select but cannot usefully drive — one that only changes tracks —
    makes the cycle longer and the unit hollow. It is a companion
-   instead, with two verbs:
+   instead. Plan 28 makes it a BOUND companion rather than one that
+   trails whatever you happen to be driving:
 
-     FOLLOW  trails the active unit at ~4m, terrain-hugging
-     PARK    holds position and keeps playing
+     HOST    it trails one nominated unit (initially GRATBOT — the
+             two ship docked, which is what unlocks Gratbot's dance).
+     CALL    re-hosts it to the active unit; it travels over and
+             trails that one instead.
+     DEPLOY  holds position and keeps playing (un-deploy resumes the
+             host trail).
+     PARCEL  it carries one small sample cache and auto-drops it at
+             the field lab — a slow courier for the sample loop.
 
    Which is why it is worth having a body at all: the music bus routes
-   through a PannerNode pinned to this bot, so parking it at base and
-   driving away FADES the soundtrack behind you, and recalling it
-   swells it back. A HUD checkbox cannot do that.
+   through a PannerNode pinned to this bot, so deploying it at base and
+   driving away FADES the soundtrack behind you, and calling it back
+   swells it in. A HUD checkbox cannot do that.
 
    Movement is a simple seek with a stop band (no gait, no legs — it
    hovers on a repulsor skirt), which keeps it cheap next to the two
-   walkers it shares the site with.
+   walkers it shares the site with. The HOST identity itself lives in
+   main.js (which owns the unit list); this module only seeks the point
+   it is handed each frame and holds when deployed.
    ============================================================ */
 
 import * as THREE from 'three';
 
-const FOLLOW_DIST = 4.2;    // m — trailing distance from the active unit
+const FOLLOW_DIST = 4.2;    // m — trailing distance from the host unit
 const STOP_BAND = 1.1;      // m of slack before it bothers moving (anti-jitter)
 const MAX_SPEED = 7.0;      // m/s — must out-run the rover's G2 to keep up
 const ACCEL = 6.0;          // m/s^2
@@ -33,9 +42,10 @@ const TURN_RATE = 3.2;      // rad/s
 const HOVER_H = 0.55;       // m — skirt clearance over local ground
 const BOB_AMP = 0.06;
 const BODY_RADIUS = 0.6;
+const CARRY_SPEED = 0.8;    // laden speed multiplier (a parcel slows it)
 // Spatial audio falloff. refDistance = full volume inside the follow
 // distance; maxDistance is where it bottoms out. Linear (not inverse) so
-// "park it at base and drive out" fades predictably instead of dropping
+// "deploy it at base and drive out" fades predictably instead of dropping
 // off a cliff in the first ten metres.
 const AUDIO_REF = 6;
 const AUDIO_MAX = 140;
@@ -43,7 +53,10 @@ const AUDIO_MAX = 140;
 export function createOngak(site, terrain, obstacles) {
     const mesh = new THREE.Group();
     mesh.name = 'ongak';
-    mesh.position.set(site.spawn.x + 3, 0, site.spawn.z + 6);
+    // Ship DOCKED beside Gratbot (its spawnOffset is {-10, 7}); a metre or
+    // two off so the two aren't co-located. main.js re-seats it exactly once
+    // grounded, but this puts it in the right postcode from frame zero.
+    mesh.position.set(site.spawn.x - 8, 0, site.spawn.z + 8);
 
     const mats = {
         panel: new THREE.MeshStandardMaterial({ color: 0xe8e2d6, roughness: 0.44, metalness: 0.3 }),
@@ -94,6 +107,19 @@ export function createOngak(site, terrain, obstacles) {
     sub.position.y = 0.38;
     mesh.add(sub);
 
+    // ---- parcel cradle: a small crate clamped under the skirt --------
+    // Hidden until it carries something (plan 28 courier role). Amber-lit
+    // so a loaded Ongak reads as loaded at a glance, the makadane idiom.
+    const crate = new THREE.Group();
+    const box = new THREE.Mesh(new THREE.BoxGeometry(0.26, 0.2, 0.26), mats.panel);
+    crate.add(box);
+    const crateBand = new THREE.Mesh(new THREE.BoxGeometry(0.28, 0.05, 0.28), mats.glow);
+    crateBand.position.y = 0.02;
+    crate.add(crateBand);
+    crate.position.set(0, 0.2, 0.34);   // slung off the tail, under the skirt
+    crate.visible = false;
+    mesh.add(crate);
+
     // whip antenna + tip beacon (matches the fleet's silhouette language)
     const whip = new THREE.Mesh(new THREE.CylinderGeometry(0.006, 0.006, 0.5, 6), mats.dark);
     whip.position.set(0.22, 1.13, 0.16);
@@ -103,10 +129,11 @@ export function createOngak(site, terrain, obstacles) {
     mesh.add(beacon);
 
     let heading = site.spawn.heading;
-    let parked = false;
+    let deployed = false;
     let speed = 0;
     let bob = 0;
     let panner = null;
+    let cargo = null;   // one small sample container, or null
 
     const _fwd = new THREE.Vector3();
 
@@ -172,12 +199,13 @@ export function createOngak(site, terrain, obstacles) {
     }
 
     /**
-     * dt, followPos: the active unit's position (null = nothing to follow).
-     * Parked bots hold station; following bots seek a point FOLLOW_DIST
+     * dt, followPos: the host unit's position (null = nothing to follow).
+     * Deployed bots hold station; following bots seek a point FOLLOW_DIST
      * short of the target so they trail rather than crowd it.
      */
     function update(dt, followPos) {
-        if (!parked && followPos) {
+        const maxSpeed = cargo ? MAX_SPEED * CARRY_SPEED : MAX_SPEED;
+        if (!deployed && followPos) {
             const dx = followPos.x - mesh.position.x;
             const dz = followPos.z - mesh.position.z;
             const dist = Math.hypot(dx, dz);
@@ -190,7 +218,7 @@ export function createOngak(site, terrain, obstacles) {
                     + Math.PI * 2) % (Math.PI * 2) - Math.PI;
                 const turn = THREE.MathUtils.clamp(diff, -TURN_RATE * dt, TURN_RATE * dt);
                 heading += turn;
-                const cap = Math.min(MAX_SPEED, want * 1.6);
+                const cap = Math.min(maxSpeed, want * 1.6);
                 speed = Math.min(cap, speed + ACCEL * dt);
             } else {
                 speed = Math.max(0, speed - ACCEL * 1.5 * dt);
@@ -238,16 +266,34 @@ export function createOngak(site, terrain, obstacles) {
         mesh, update, attachAudio, syncAudio, pulse,
         get position() { return mesh.position; },
         get heading() { return heading; },
-        get parked() { return parked; },
+        get deployed() { return deployed; },
         get spatial() { return !!panner; },
-        /** Flip FOLLOW/PARK; returns true when now parked. */
-        togglePark() {
-            parked = !parked;
-            return parked;
+        get hasCargo() { return !!cargo; },
+        get cargo() { return cargo; },
+        /** Flip DEPLOY (hold here) / follow; returns true when now deployed. */
+        toggleDeploy() {
+            deployed = !deployed;
+            return deployed;
         },
+        /** Force one or the other (CALL un-deploys so it resumes trailing). */
+        setDeployed(v) { deployed = !!v; },
         teleport(x, z) {
             mesh.position.set(x, groundAt(x, z) + HOVER_H, z);
             speed = 0;
+        },
+        /** Stow one small container in the cradle. Returns false if full. */
+        loadCargo(container) {
+            if (cargo) return false;
+            cargo = container;
+            crate.visible = true;
+            return true;
+        },
+        /** Empty the cradle (delivery / field release). Returns the container. */
+        dropCargo() {
+            const c = cargo;
+            cargo = null;
+            crate.visible = false;
+            return c;
         },
     };
 }

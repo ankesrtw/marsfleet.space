@@ -173,6 +173,15 @@ export function createWalker(site, terrain, obstacles, spec) {
     let heldLegs = null;
     let gripLocal = { x: 0, y: -0.25, z: -0.75 };
     let speedScale = 1;   // <1 while carrying a load
+    // Plan 28: beat-synced dance (Gratbot only, gated in main.js on Ongak
+    // being docked + music playing). The choreography plants every foot at
+    // its idle home on the ground and moves the BODY — the analytic IK then
+    // bends the legs to keep the feet down, which is exactly a robot dancing
+    // in place. `danceMove` picks one of five; the beat phase arrives per
+    // frame as input.beats so the dance stays locked to music.js's clock.
+    let danceOn = false;
+    let danceMove = 0;
+    const DANCE_MOVES = 5;
     const bound = site.worldSize / 2 - EDGE_MARGIN;
 
     const _fwd = new THREE.Vector3();   // body +Z in world
@@ -183,6 +192,7 @@ export function createWalker(site, terrain, obstacles, spec) {
     const _pitchQ = new THREE.Quaternion();
     const _rollQ = new THREE.Quaternion();
     const _tiltQ = new THREE.Quaternion();
+    const _danceQ = new THREE.Quaternion();
     const _local = new THREE.Vector3();
     const _hipInv = new THREE.Matrix4();
 
@@ -294,6 +304,75 @@ export function createWalker(site, terrain, obstacles, spec) {
         }
     }
 
+    /** Beat-synced dance-in-place. Called from update() instead of the gait
+        loop when danceOn and the unit is stationary. `beats` is elapsed
+        beats (float) from music.js. It leaves _fwd/_lat/_right (heading
+        frame) and the terrain-tilt quaternion already set by update(); it
+        adds a body bounce + rotation offset, then plants the feet at their
+        heading-relative homes so the IK bends the legs under the moving
+        body. Feet stay on the ground except where a move lifts them. */
+    function poseDance(beats) {
+        const w = beats * Math.PI * 2;         // one cycle per beat
+        const barPh = (beats / 4) * Math.PI * 2; // one cycle per 4/4 bar
+        // hop: a sharp 0→1→0 peaking ON the beat (phase 0)
+        const hop = Math.max(0, Math.sin(w + Math.PI / 2));
+        let dY = 0, yaw = 0, roll = 0, pitch = 0;
+        const lift = new Array(legs.length).fill(0);
+        switch (danceMove) {
+            case 0: // BOB — four-on-the-floor bounce
+                dY = 0.11 * hop;
+                pitch = 0.03 * Math.sin(w);
+                break;
+            case 1: // SWAY — roll side to side across the bar
+                roll = 0.30 * Math.sin(barPh);
+                dY = 0.04 * (0.5 + 0.5 * Math.sin(w));
+                break;
+            case 2: // SPIN — the chassis twists over the bar (feet stay put,
+                // so the legs wind up — the "screw" look)
+                yaw = 0.55 * Math.sin(barPh);
+                dY = 0.05 * hop;
+                break;
+            case 3: { // WAVE — front paws lift and reach, alternating each beat
+                const evenBeat = Math.floor(beats) % 2 === 0;
+                const frac = beats - Math.floor(beats);
+                const paw = 0.42 * Math.sin(frac * Math.PI);
+                for (let i = 0; i < legs.length; i++) {
+                    if (legs[i].homeLz < 0) {               // a front leg
+                        const left = legs[i].homeLx < 0;
+                        if (left === evenBeat) lift[i] = paw;
+                    }
+                }
+                dY = 0.03 * hop;
+                break;
+            }
+            default: { // HOP-TWIST — bigger bounce with a yaw kick
+                dY = 0.19 * hop;
+                yaw = 0.22 * Math.sin(barPh * 2);
+                pitch = 0.09 * hop;
+            }
+        }
+
+        mesh.position.y += dY;
+        _yawQ.setFromAxisAngle(_up, yaw);
+        _pitchQ.setFromAxisAngle(_right, -pitch);
+        _rollQ.setFromAxisAngle(_fwd, -roll);
+        _danceQ.copy(_yawQ).multiply(_pitchQ).multiply(_rollQ);
+        mesh.quaternion.multiply(_danceQ);   // compose onto the tilt/heading pose
+        mesh.updateWorldMatrix(true, false);
+
+        for (let li = 0; li < legs.length; li++) {
+            const leg = legs[li];
+            const fx = mesh.position.x + _lat.x * leg.homeLx + _fwd.x * leg.homeLz;
+            const fz = mesh.position.z + _lat.z * leg.homeLx + _fwd.z * leg.homeLz;
+            const fy = groundAt(fx, fz) + lift[li];
+            leg.plant.set(fx, groundAt(fx, fz), fz);
+            leg.planted = true;
+            leg.prevStance = true;
+            leg.cmd.set(fx, fy, fz);
+            solveChain(leg, fx, fy, fz);
+        }
+    }
+
     function update(dt, input) {
         heading += input.steer * spec.turnRate * dt;
 
@@ -342,6 +421,10 @@ export function createWalker(site, terrain, obstacles, spec) {
         else mesh.quaternion.slerp(_tiltQ, 1 - Math.exp(-10 * dt));
         mesh.position.y += Math.abs(Math.sin(stride)) * spec.bobAmp * walkAmt;
         mesh.updateWorldMatrix(true, false);
+
+        // Plan 28: dance owns the pose while stopped. Driving overrides it —
+        // the dance resumes the moment you let go of the stick.
+        if (danceOn && !moving) { poseDance(input.beats ?? 0); return; }
 
         const TAU = Math.PI * 2;
         const turning = Math.abs(input.steer) > 0.05;
@@ -400,6 +483,16 @@ export function createWalker(site, terrain, obstacles, spec) {
         get legCount() { return legs.length; },
         /** Load penalty on walk speed (1 = unladen). */
         setSpeedScale(k) { speedScale = k; },
+        /** Plan 28 dance mode. `setDance(false)` snaps legs back to a fresh
+            plant so the gait re-captures continuity cleanly. */
+        setDance(on) {
+            danceOn = !!on;
+            if (!on) for (const leg of legs) leg.planted = false;
+        },
+        setDanceMove(i) { danceMove = ((i % DANCE_MOVES) + DANCE_MOVES) % DANCE_MOVES; },
+        get dancing() { return danceOn; },
+        get danceMove() { return danceMove; },
+        get danceMoveCount() { return DANCE_MOVES; },
         /** E2E probe: smoothed body deck height over rocks. */
         get deckY() { return deckY; },
         /** E2E probe: world-space foot tip positions (anti-skate,

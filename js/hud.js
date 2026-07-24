@@ -20,7 +20,7 @@
 import { isTouchDevice } from './touch.js';
 import { M_PER_DEG, SOL_MS } from './sites.js';
 
-export function createHud(rootEl, { site, onSwitchUnit, onCollect, onToggleSfx, sfxEnabled = true, onCycleGear, gear = 'G2', onToggleSol, solOn = true, onToggleLanding, onCommandAlt, onReset, onSkipIntro, onSkipMission, onReplayIntro, onStartMission, missions = [], onSetOverlayMode, onTravel, onToggleNv, onReplayHologram, onVanDeploy, onPhoto, onToggleConsent, consentOn = true, privacyUrl = '/privacy.html', onMusicToggle, onMusicNext, onMusicPrev, onMusicSelect, onMusicVolume, onOngakPark, onOngakRecall, onRock }) {
+export function createHud(rootEl, { site, onSwitchUnit, onCollect, onToggleSfx, sfxEnabled = true, onCycleGear, gear = 'G2', onToggleSol, solOn = true, onToggleLanding, onCommandAlt, onReset, onSkipIntro, onSkipMission, onReplayIntro, onStartMission, missions = [], onSetOverlayMode, onTravel, onToggleNv, onReplayHologram, onVanDeploy, onPhoto, onToggleConsent, consentOn = true, privacyUrl = '/privacy.html', onMusicToggle, onMusicNext, onMusicPrev, onMusicSelect, onMusicVolume, onOngakCall, onOngakDeploy, onOngakParcel, onDance, onDanceMove, onRock }) {
     rootEl.innerHTML = `
         <div class="mars-hud">
             <div class="mars-hud__top">
@@ -103,6 +103,7 @@ export function createHud(rootEl, { site, onSwitchUnit, onCollect, onToggleSfx, 
                 <button class="mars-btn mars-btn--collect" id="mc-collect">COLLECT<span class="mars-btn__hint">[E]</span></button>
             </div>
             <button class="mars-btn mars-hud__rock" id="mc-rock" data-visible="false">LIFT ROCK<span class="mars-btn__hint">[X]</span></button>
+            <button class="mars-btn mars-hud__dance" id="mc-dance" data-visible="false" data-on="false">DANCE<span class="mars-btn__hint">[K]</span></button>
             <div class="mars-hud__boundary" id="mc-boundary" data-visible="false">⚠ OUT OF MISSION DIRECTIVES — RETURN TO SURVEY ZONE</div>
             <div class="mars-hud__hazard" id="mc-hazard" data-visible="false"></div>
             <div class="mars-hud__toast" id="mc-toast" data-visible="false"></div>
@@ -149,12 +150,15 @@ export function createHud(rootEl, { site, onSwitchUnit, onCollect, onToggleSfx, 
                     <input type="range" id="mc-music-vol" min="0" max="100" step="1" value="50" aria-label="Music volume">
                 </label>
                 <div class="mars-music__bot">
-                    <button class="mars-btn" id="mc-ongak-park">FOLLOWING<span class="mars-btn__hint">[O]</span></button>
-                    <button class="mars-btn" id="mc-ongak-recall">RECALL</button>
+                    <b class="mars-music__bot-state" id="mc-ongak-state">▶ GRATBOT</b>
+                    <button class="mars-btn" id="mc-ongak-call">CALL<span class="mars-btn__hint">[C]</span></button>
+                    <button class="mars-btn" id="mc-ongak-deploy">DEPLOY<span class="mars-btn__hint">[O]</span></button>
+                    <button class="mars-btn" id="mc-ongak-parcel">PARCEL<span class="mars-btn__hint">[J]</span></button>
                 </div>
                 <ul class="mars-music__list" id="mc-music-list"></ul>
-                <p class="mars-music__note" id="mc-music-note">ONGAK carries the speaker — park it and the
-                soundtrack stays where you left it.</p>
+                <p class="mars-music__note" id="mc-music-note">ONGAK carries the speaker. CALL brings it to the
+                unit you're driving; DEPLOY leaves it playing where it stands; PARCEL ferries one cache to the
+                lab. Docked with GRATBOT, press K to make it dance (1-5 pick a move).</p>
             </div>
             <div class="mars-hud__inventory" id="mc-inventory">
                 <div class="mars-hud__inventory-title">SAMPLES <span id="mc-inv-count">0</span></div>
@@ -214,10 +218,12 @@ export function createHud(rootEl, { site, onSwitchUnit, onCollect, onToggleSfx, 
                         <b id="mc-menu-music-title">—</b>
                         <button class="mars-btn" id="mc-menu-music-play">▶ PLAY</button>
                     </div>
-                    <p class="mars-menu__note">ONGAK is the fleet's music companion — it follows the unit you
-                    are driving, or PARKS and keeps playing where you left it. The soundtrack is synthesized
-                    live in the browser (nothing to download) and plays on through unit switches. Full player:
-                    the ♪ button, top right. Keys — B play/pause, [ and ] previous/next track.</p>
+                    <p class="mars-menu__note">ONGAK is the fleet's music companion. It ships docked with GRATBOT
+                    and trails it; CALL (C) sends it to whatever you're driving, DEPLOY (O) leaves it playing
+                    where it stands, and PARCEL (J) has it ferry one sample cache to the field lab. Docked with
+                    GRATBOT you can make GRATBOT dance (K, then 1-5 for moves). The soundtrack is synthesized
+                    live in the browser — its own Mars Sim playlist, nothing to download — and plays on through
+                    unit switches. Full player: the ♪ button, top right. Keys — B play/pause, [ and ] prev/next.</p>
                 </div>
                 <div class="mars-menu__section">
                     <h3>MISSIONS</h3>
@@ -304,6 +310,8 @@ export function createHud(rootEl, { site, onSwitchUnit, onCollect, onToggleSfx, 
                         <li>Makadane rocks — X lifts a rock within 3.2 m into the clamp (two legs leave the gait to hold it, and you walk slower). X again sets it down as a real obstacle; X inside the FIELD LAB dock recycles it for good. Cleared rocks stay cleared, so you can open a driving corridor for the rover and van</li>
                         <li>Van deploy — V (or the DEPLOY BASE button): panels out, the van becomes a field chargepad. V again packs up</li>
                         <li>Soundtrack — B play/pause · [ and ] previous/next track · the ♪ button opens the full ONGAK player</li>
+                        <li>ONGAK companion — CALL (C) it to the active unit · DEPLOY (O) to leave it playing in place · PARCEL (J) to ferry one cache to the lab. It ships docked with GRATBOT</li>
+                        <li>Dance — docked with GRATBOT and driving it, K makes GRATBOT dance to the beat; 1-5 pick the move (BOB · SWAY · SPIN · WAVE · HOP-TWIST)</li>
                         <li>Night vision — N (or the NV button): an image intensifier for driving after dark, when the terrain is otherwise nearly black. The HUD stays in its own colours</li>
                         <li>Lift drone — hover low over a cache container, E to sling it, fly to the FIELD LAB pad, E to deliver</li>
                         <li>Delivered caches auto-analyze on the lab edge node — findings land in the SCIENCE ARCHIVE</li>
@@ -425,25 +433,53 @@ export function createHud(rootEl, { site, onSwitchUnit, onCollect, onToggleSfx, 
     rootEl.querySelector('#mc-music-next').addEventListener('click', () => onMusicNext?.());
     musicEls.vol.addEventListener('input', () => onMusicVolume?.(musicEls.vol.value / 100));
 
-    const ongakParkBtn = rootEl.querySelector('#mc-ongak-park');
-    ongakParkBtn.addEventListener('click', () => {
-        const parked = onOngakPark?.();
-        if (parked != null) setOngak({ parked });
+    const ongakStateEl = rootEl.querySelector('#mc-ongak-state');
+    const ongakDeployBtn = rootEl.querySelector('#mc-ongak-deploy');
+    rootEl.querySelector('#mc-ongak-call').addEventListener('click', () => onOngakCall?.());
+    ongakDeployBtn.addEventListener('click', () => {
+        const deployed = onOngakDeploy?.();
+        if (deployed != null) setOngak({ deployed });
     });
-    rootEl.querySelector('#mc-ongak-recall').addEventListener('click', () => onOngakRecall?.());
+    rootEl.querySelector('#mc-ongak-parcel').addEventListener('click', () => onOngakParcel?.());
 
-    /** Companion state: the button reads as the CURRENT mode (what it is
-        doing), not the action — matching DEPLOY BASE / PACK UP next door.
-        `spatial` false means the browser refused a PannerNode, so the note
-        should not promise positional audio it isn't delivering. */
-    function setOngak({ parked = false, spatial = null } = {}) {
-        ongakParkBtn.firstChild.textContent = parked ? 'PARKED' : 'FOLLOWING';
-        ongakParkBtn.dataset.parked = String(parked);
+    /** Companion state line + buttons. `host` names the unit it trails;
+        `deployed` flips the button to RESUME; `cargo` (a name or null) shows
+        what it's ferrying. `spatial` false means the browser refused a
+        PannerNode — the note shouldn't promise audio it isn't delivering. */
+    let ongakState = { host: 'GRATBOT', deployed: false, cargo: null, spatial: null };
+    function setOngak(patch = {}) {
+        ongakState = { ...ongakState, ...patch };
+        const { host, deployed, cargo, spatial } = ongakState;
+        ongakStateEl.textContent = deployed
+            ? `■ DEPLOYED${cargo ? ' · ' + cargo : ''}`
+            : `▶ ${host}${cargo ? ' · ' + cargo : ''}`;
+        ongakDeployBtn.firstChild.textContent = deployed ? 'RESUME' : 'DEPLOY';
+        ongakDeployBtn.dataset.deployed = String(deployed);
+        rootEl.querySelector('#mc-ongak-parcel').firstChild.textContent = cargo ? 'DROP' : 'PARCEL';
         if (spatial === false) {
             rootEl.querySelector('#mc-music-note').textContent =
                 'ONGAK carries the speaker. (Positional audio unavailable in this browser.)';
         }
     }
+
+    // Plan 28: DANCE button — a floating control that main.js only makes
+    // visible while the dance is actually available. Click toggles; the
+    // digit keys pick a move (routed straight through main.js).
+    const danceBtn = rootEl.querySelector('#mc-dance');
+    danceBtn.addEventListener('click', () => onDance?.());
+    let lastDanceVisible = null;
+    function setDanceButton(visible) {
+        const v = String(!!visible);
+        if (v === lastDanceVisible) return;   // fed per frame — keep DOM writes real
+        lastDanceVisible = v;
+        danceBtn.dataset.visible = v;
+    }
+    const DANCE_NAMES = ['BOB', 'SWAY', 'SPIN', 'WAVE', 'HOP-TWIST'];
+    function setDance({ on = false, move = 0 } = {}) {
+        danceBtn.dataset.on = String(on);
+        danceBtn.firstChild.textContent = on ? `DANCE · ${DANCE_NAMES[move] ?? move + 1}` : 'DANCE';
+    }
+    void onDanceMove;   // digit keys are wired in main.js, not here
 
     function toggleMusicPanel(force) {
         const open = force ?? musicPanel.dataset.open !== 'true';
@@ -1252,5 +1288,6 @@ export function createHud(rootEl, { site, onSwitchUnit, onCollect, onToggleSfx, 
         setDronePanel, setDroneState, setGear, setBases, setGps, setMarsClock, setNightVision,
         setVanButton, setPhotoButton, setPhotoAlbum,
         setMusic, setMusicLevel, toggleMusicPanel, setOngak, setRockButton,
+        setDanceButton, setDance,
     };
 }
