@@ -10,6 +10,7 @@ import { createDrone } from './drone.js';
 import { createHumanoid } from './humanoid.js';
 import { createVan } from './van.js';
 import { createGratbot } from './gratbot.js';
+import { createOngak } from './ongak.js';
 import { createMusic } from './music.js';
 import { createMakadane } from './makadane.js';
 import { createFog } from './fog.js';
@@ -259,8 +260,11 @@ async function startGame(site) {
     // Plan 24 walkers: quad + octopod, fully procedural (no GLB).
     const gratbot = createGratbot(site, terrain, colliders.forUnit('gratbot'));
     const makadane = createMakadane(site, terrain, colliders.forUnit('makadane'));
+    // Plan 27: the music companion. Deliberately NOT in units[] — it is
+    // never selected, it follows or parks (see ongak.js).
+    const ongak = createOngak(site, terrain, colliders.forUnit('ongak'));
     scene.add(rover.mesh, recon.mesh, lift.mesh, humanoid.mesh, van.mesh,
-        gratbot.mesh, makadane.mesh);
+        gratbot.mesh, makadane.mesh, ongak.mesh);
     // Obstacle footprints (radius mirrors each unit's own BODY_RADIUS /
     // bodyRadius); alt() gates unit-vs-unit checks to overlapping bands.
     // Wave 12: while the humanoid rides inside the van its collider is off
@@ -280,6 +284,7 @@ async function startGame(site) {
     colliders.register('lift', { position: lift.position, radius: 1.2, alt: () => lift.alt });
     colliders.register('gratbot', { position: gratbot.position, radius: 0.55, alt: () => 0 });
     colliders.register('makadane', { position: makadane.position, radius: 0.95, alt: () => 0 });
+    colliders.register('ongak', { position: ongak.position, radius: 0.6, alt: () => 0 });
 
     const samples = createSamples(site, terrain);
     scene.add(samples.group);
@@ -363,6 +368,7 @@ async function startGame(site) {
     effects.addShadow(humanoid.mesh, 0.5);
     effects.addShadow(van.mesh, 2.4);
     effects.addShadow(gratbot.mesh, 0.8);
+    effects.addShadow(ongak.mesh, 0.7);
     effects.addShadow(makadane.mesh, 1.3);
     const waypoint = createWaypoint(scene, terrain);
     const sound = createSound();
@@ -548,6 +554,30 @@ async function startGame(site) {
         onMusicPrev: () => music.prev(),
         onMusicSelect: (i) => music.select(i),
         onMusicVolume: (v) => music.setVolume(v),
+        // FOLLOW / PARK — the companion's only two verbs.
+        onOngakPark: () => {
+            const parked = ongak.togglePark();
+            hud.toast(parked
+                ? '♪ ONGAK PARKED — SPEAKER HOLDS POSITION'
+                : '♪ ONGAK FOLLOWING');
+            hud.setOngak({ parked, spatial: ongak.spatial });
+            return parked;
+        },
+        onOngakRecall: () => {
+            // Teleport it to the active unit: a parked bot left 3km back is
+            // otherwise a very long walk for the player to undo.
+            const p = units[activeIndex].unit.position;
+            ongak.teleport(p.x + 3, p.z + 3);
+            hud.toast('♪ ONGAK RECALLED');
+        },
+    });
+
+    // Plan 27: route the music bus through Ongak's panner. Registered AFTER
+    // createMusic so music.js's own onReady (which builds the bus) runs
+    // first — setOutput needs the analyser to exist.
+    sound.onReady(() => {
+        ongak.attachAudio(music);
+        hud.setOngak({ parked: ongak.parked, spatial: ongak.spatial });
     });
 
     const refreshMusic = () => hud.setMusic({
@@ -613,6 +643,7 @@ async function startGame(site) {
     van.update(0, { throttle: 0, steer: 0 });
     gratbot.update(0, { throttle: 0, steer: 0 });
     makadane.update(0, { throttle: 0, steer: 0 });
+    ongak.update(0, null);
 
     // Orbit chase-cam (mouse drag / touch drag to orbit, wheel / pinch to
     // zoom, double-click to recenter); snapped to spawn.
@@ -645,7 +676,7 @@ async function startGame(site) {
     // Debug/E2E handle (also used by the sampleHeight ground-truth check;
     // renderer/scene/camera exposed so tests on software-GL boxes can pause
     // the loop and capture canvas pixels via a same-task render+toDataURL).
-    window.__mc = { site, terrain, rover, drone: recon, recon, lift, humanoid, van, gratbot, makadane, samples, renderer, scene, camera, camRig, units, env, effects, waypoint, sound, rocks, lab, sling, analysis, outposts, fog, colliders, missions, hazardZones, weather, dustDevils, wind, chargepads, comms, baseList, marsClock, setNightVision, get nightVision() { return nightVision; }, get intro() { return intro; }, hologram, photos, tryPhoto, vanCargo, music };
+    window.__mc = { site, terrain, rover, drone: recon, recon, lift, humanoid, van, gratbot, makadane, ongak, samples, renderer, scene, camera, camRig, units, env, effects, waypoint, sound, rocks, lab, sling, analysis, outposts, fog, colliders, missions, hazardZones, weather, dustDevils, wind, chargepads, comms, baseList, marsClock, setNightVision, get nightVision() { return nightVision; }, get intro() { return intro; }, hologram, photos, tryPhoto, vanCargo, music };
 
     function applyUnitMode() {
         const active = units[activeIndex];
@@ -1079,6 +1110,12 @@ async function startGame(site) {
                 u.unit.update(dt, { forward: 0, strafe: 0, turn: 0, climb: 0 });
             }
         }
+        // Plan 27: Ongak is outside units[], so it never gets an update from
+        // the loop above — it tracks whoever IS active. Parked, it holds and
+        // the panner lets the soundtrack fade behind you as you drive off.
+        ongak.update(dt, active.unit.position);
+        ongak.syncAudio(music.ctx, camera);
+        ongak.pulse(music.level(), music.beat());
 
         // Wave 12.16: cargo bay — the DRIVEN van auto-loads any field cache
         // it rolls up to (the humanoid crew does the loading; a driverless
@@ -1512,6 +1549,7 @@ function setupKeyboard() {
         if (e.code === 'KeyB') document.dispatchEvent(new CustomEvent('mc-music-toggle'));
         if (e.code === 'BracketLeft') document.dispatchEvent(new CustomEvent('mc-music-prev'));
         if (e.code === 'BracketRight') document.dispatchEvent(new CustomEvent('mc-music-next'));
+        if (e.code === 'KeyO') document.dispatchEvent(new CustomEvent('mc-ongak-park'));
     });
     return keys;
 }
@@ -1598,5 +1636,6 @@ document.addEventListener('mc-photo', () => document.getElementById('mc-photo')?
 document.addEventListener('mc-music-toggle', () => document.getElementById('mc-music-play')?.click());
 document.addEventListener('mc-music-prev', () => document.getElementById('mc-music-prev')?.click());
 document.addEventListener('mc-music-next', () => document.getElementById('mc-music-next')?.click());
+document.addEventListener('mc-ongak-park', () => document.getElementById('mc-ongak-park')?.click());
 
 boot();

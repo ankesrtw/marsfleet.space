@@ -20,7 +20,7 @@
 import { isTouchDevice } from './touch.js';
 import { M_PER_DEG, SOL_MS } from './sites.js';
 
-export function createHud(rootEl, { site, onSwitchUnit, onCollect, onToggleSfx, sfxEnabled = true, onCycleGear, gear = 'G2', onToggleSol, solOn = true, onToggleLanding, onCommandAlt, onReset, onSkipIntro, onSkipMission, onReplayIntro, onStartMission, missions = [], onSetOverlayMode, onTravel, onToggleNv, onReplayHologram, onVanDeploy, onPhoto, onToggleConsent, consentOn = true, privacyUrl = '/privacy.html', onMusicToggle, onMusicNext, onMusicPrev, onMusicSelect, onMusicVolume }) {
+export function createHud(rootEl, { site, onSwitchUnit, onCollect, onToggleSfx, sfxEnabled = true, onCycleGear, gear = 'G2', onToggleSol, solOn = true, onToggleLanding, onCommandAlt, onReset, onSkipIntro, onSkipMission, onReplayIntro, onStartMission, missions = [], onSetOverlayMode, onTravel, onToggleNv, onReplayHologram, onVanDeploy, onPhoto, onToggleConsent, consentOn = true, privacyUrl = '/privacy.html', onMusicToggle, onMusicNext, onMusicPrev, onMusicSelect, onMusicVolume, onOngakPark, onOngakRecall }) {
     rootEl.innerHTML = `
         <div class="mars-hud">
             <div class="mars-hud__top">
@@ -147,6 +147,10 @@ export function createHud(rootEl, { site, onSwitchUnit, onCollect, onToggleSfx, 
                 <label class="mars-music__vol">VOL
                     <input type="range" id="mc-music-vol" min="0" max="100" step="1" value="50" aria-label="Music volume">
                 </label>
+                <div class="mars-music__bot">
+                    <button class="mars-btn" id="mc-ongak-park">FOLLOWING<span class="mars-btn__hint">[O]</span></button>
+                    <button class="mars-btn" id="mc-ongak-recall">RECALL</button>
+                </div>
                 <ul class="mars-music__list" id="mc-music-list"></ul>
                 <p class="mars-music__note" id="mc-music-note">ONGAK carries the speaker — park it and the
                 soundtrack stays where you left it.</p>
@@ -418,6 +422,26 @@ export function createHud(rootEl, { site, onSwitchUnit, onCollect, onToggleSfx, 
     rootEl.querySelector('#mc-music-prev').addEventListener('click', () => onMusicPrev?.());
     rootEl.querySelector('#mc-music-next').addEventListener('click', () => onMusicNext?.());
     musicEls.vol.addEventListener('input', () => onMusicVolume?.(musicEls.vol.value / 100));
+
+    const ongakParkBtn = rootEl.querySelector('#mc-ongak-park');
+    ongakParkBtn.addEventListener('click', () => {
+        const parked = onOngakPark?.();
+        if (parked != null) setOngak({ parked });
+    });
+    rootEl.querySelector('#mc-ongak-recall').addEventListener('click', () => onOngakRecall?.());
+
+    /** Companion state: the button reads as the CURRENT mode (what it is
+        doing), not the action — matching DEPLOY BASE / PACK UP next door.
+        `spatial` false means the browser refused a PannerNode, so the note
+        should not promise positional audio it isn't delivering. */
+    function setOngak({ parked = false, spatial = null } = {}) {
+        ongakParkBtn.firstChild.textContent = parked ? 'PARKED' : 'FOLLOWING';
+        ongakParkBtn.dataset.parked = String(parked);
+        if (spatial === false) {
+            rootEl.querySelector('#mc-music-note').textContent =
+                'ONGAK carries the speaker. (Positional audio unavailable in this browser.)';
+        }
+    }
 
     function toggleMusicPanel(force) {
         const open = force ?? musicPanel.dataset.open !== 'true';
@@ -1212,6 +1236,6 @@ export function createHud(rootEl, { site, onSwitchUnit, onCollect, onToggleSfx, 
         setMissions, setOverlayMode, setTelemetry, setMenuOpen, isMenuOpen, toast, guide, setOutposts,
         setDronePanel, setDroneState, setGear, setBases, setGps, setMarsClock, setNightVision,
         setVanButton, setPhotoButton, setPhotoAlbum,
-        setMusic, setMusicLevel, toggleMusicPanel,
+        setMusic, setMusicLevel, toggleMusicPanel, setOngak,
     };
 }
