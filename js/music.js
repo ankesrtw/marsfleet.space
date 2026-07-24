@@ -32,6 +32,12 @@ const LS_VOL = 'mc-music-vol';
 const LS_ON = 'mc-music-on';
 
 const MANIFEST_URL = 'assets/music/manifest.json';
+// The SIGNAL music app ships beside the game on the same origin; its default
+// queue is the real (Suno-generated) lore soundtrack, hosted on R2 with
+// permissive CORS — so those tracks can route through our own bus and get the
+// analyser + spatial panner, exactly like the synth ones. Relative, so it
+// resolves under any base path.
+const CATALOG_URL = '../music/data/tracks-default.json';
 const TICK_MS = 25;        // scheduler wake-up
 // Notes queued ahead of the audio clock. This must exceed the WORST gap
 // between timer wake-ups, not the nominal 25ms: under load (a 2-core box at
@@ -130,6 +136,7 @@ export function createMusic(sound) {
     let scheduled = 0;     // E2E probe: total sequencer steps queued
     let fileEl = null;     // <audio> for manifest tracks that are real files
     let fileNode = null;   // MediaElementSource (one per element, never rebuilt)
+    let fileUrl = null;    // URL last requested on that element
 
     try {
         const savedVol = parseFloat(localStorage.getItem(LS_VOL));
@@ -177,26 +184,57 @@ export function createMusic(sound) {
         notify();
     });
 
-    loadManifest();
+    loadTracks();
 
-    /** Optional manifest of drop-in tracks. Anything malformed is ignored
-        wholesale — the built-in presets are the floor, and the soundtrack
-        must never depend on a file that might not ship. */
+    /** Assemble the playlist: the real SIGNAL catalog first (the scored,
+        lore-matched music), then the local manifest — which is where the
+        always-available synth presets live. Either source may fail; the
+        built-in presets are the floor, so the soundtrack can never be
+        empty and never depends on the network. */
+    async function loadTracks() {
+        const [catalog, manifest] = await Promise.all([loadCatalog(), loadManifest()]);
+        const merged = [...catalog, ...manifest];
+        if (!merged.length) return;
+        const activeId = tracks[index]?.id;
+        tracks = merged;
+        const again = tracks.findIndex((t) => t.id === activeId);
+        index = again >= 0 ? again : 0;
+        notify();
+    }
+
+    /** The SIGNAL album catalog served alongside the game (/music/data/…),
+        streamed from R2. Absolute URLs, so they bypass the assets/music/
+        prefix. Offline (or on a site without the music app) this simply
+        returns nothing and the synth presets carry the soundtrack. */
+    async function loadCatalog() {
+        try {
+            const res = await fetch(CATALOG_URL, { cache: 'no-cache' });
+            if (!res.ok) return [];
+            const data = await res.json();
+            const list = Array.isArray(data?.tracks) ? data.tracks : [];
+            return list
+                .filter((t) => t && typeof t.url === 'string' && t.url && typeof t.title === 'string')
+                .map((t) => ({
+                    id: `signal-${t.id}`,
+                    title: t.title,
+                    mood: (t.genre ?? 'SIGNAL').toUpperCase(),
+                    src: t.url,
+                }));
+        } catch { return []; }
+    }
+
+    /** Local drop-in manifest. Anything malformed is ignored wholesale. */
     async function loadManifest() {
         try {
             const res = await fetch(MANIFEST_URL, { cache: 'no-cache' });
-            if (!res.ok) return;
+            if (!res.ok) return BUILTIN.slice();
             const list = await res.json();
-            if (!Array.isArray(list) || !list.length) return;
+            if (!Array.isArray(list)) return BUILTIN.slice();
             const clean = list.filter((t) => t && typeof t.id === 'string'
-                && typeof t.title === 'string' && typeof t.src === 'string');
-            if (!clean.length) return;
-            const activeId = tracks[index]?.id;
-            tracks = clean.map((t) => ({ mood: t.mood ?? 'TRACK', ...t }));
-            const again = tracks.findIndex((t) => t.id === activeId);
-            index = again >= 0 ? again : 0;
-            notify();
-        } catch { /* offline / no manifest — built-ins stand */ }
+                && typeof t.title === 'string' && typeof t.src === 'string')
+                .map((t) => ({ mood: 'TRACK', ...t }));
+            return clean.length ? clean : BUILTIN.slice();
+        } catch { return BUILTIN.slice(); }
     }
 
     // ---- voices ------------------------------------------------------
@@ -330,7 +368,13 @@ export function createMusic(sound) {
         fileEl = new Audio();
         fileEl.loop = true;
         fileEl.preload = 'none';
+        // Required for MediaElementSource: without it the R2 stream taints
+        // the graph and the bus outputs silence rather than erroring.
         fileEl.crossOrigin = 'anonymous';
+        // A stream that cannot load (offline, R2 down, bad manifest path)
+        // must not read as "the music is broken" — drop to the first synth
+        // preset, which is always renderable.
+        fileEl.addEventListener('error', fallbackToSynth);
         if (ctx) {
             try {
                 fileNode = ctx.createMediaElementSource(fileEl);
@@ -338,6 +382,16 @@ export function createMusic(sound) {
             } catch { fileNode = null; /* fall through: element plays un-bussed */ }
         }
         return fileEl;
+    }
+
+    function fallbackToSynth() {
+        if (!playing) return;
+        const i = tracks.findIndex((t) => t.src.startsWith('synth:'));
+        if (i < 0 || i === index) return;
+        index = i;
+        stopAll();
+        startCurrent();
+        notify();
     }
 
     function stopFile() {
@@ -357,9 +411,15 @@ export function createMusic(sound) {
         } else {
             if (timer) { clearInterval(timer); timer = null; }
             const el = ensureFileEl();
-            const url = `assets/music/${t.src}`;
-            if (!el.src.endsWith(t.src)) el.src = url;
-            el.play().catch(() => { /* blocked or missing file — stays silent */ });
+            // Absolute (catalog / CDN) URLs pass through; bare filenames are
+            // local drop-ins under assets/music/.
+            const url = /^(https?:)?\/\//.test(t.src) || t.src.startsWith('/')
+                ? t.src : `assets/music/${t.src}`;
+            // Compare against what we ASKED for: el.src reads back resolved
+            // to an absolute URL, so a relative path never matches itself
+            // and the track would reload (and restart) on every play().
+            if (fileUrl !== url) { fileUrl = url; el.src = url; el.load(); }
+            el.play().catch(fallbackToSynth);
         }
     }
 
@@ -447,5 +507,17 @@ export function createMusic(sound) {
         /** E2E probe: sequencer steps queued since boot. Rises while a synth
             track plays, frozen while paused or on a file track. */
         get scheduled() { return scheduled; },
+        /** E2E probe: streaming state of the <audio> element (file tracks).
+            The element is never in the DOM, so this is the only way to see it. */
+        get fileState() {
+            if (!fileEl) return null;
+            return {
+                url: fileUrl,
+                time: fileEl.currentTime,
+                paused: fileEl.paused,
+                ready: fileEl.readyState,
+                error: fileEl.error?.code ?? null,
+            };
+        },
     };
 }

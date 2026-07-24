@@ -1,7 +1,24 @@
-# ONGAK soundtrack — drop-in tracks
+# ONGAK soundtrack — track sources
 
-`manifest.json` is the track list the in-game player reads. Every entry needs
-`id`, `title` and `src`; `mood` is the small caption beside the title.
+The in-game player builds its list from two sources, in this order:
+
+1. **The SIGNAL catalog** — `/music/data/tracks-default.json`, the same queue
+   the standalone music app plays, streamed from R2. This is the real
+   (Suno-generated) lore soundtrack: ORIGIN, ATHENA's Lullaby, ARIANA Speaks,
+   CREON Never Sleeps, and so on. R2 serves it with `Access-Control-Allow-Origin: *`,
+   so these tracks route through the game's own audio bus and get the analyser
+   and spatial panner like everything else. Requires network — offline, this
+   source silently contributes nothing.
+2. **`manifest.json` in this folder** — local drop-ins, and the home of the
+   always-available synth presets.
+
+Add tracks to the catalog by re-running `scripts/snapshot_music.sh`; add them
+to the game only by editing `manifest.json` here.
+
+## manifest.json
+
+Every entry needs `id`, `title` and `src`; `mood` is the small caption beside
+the title.
 
 `src` takes one of two forms:
 
@@ -9,6 +26,7 @@
 |---|---|
 | `synth:<preset>` | Rendered live by `js/music.js`. Presets: `vigil`, `drift`, `olympus`, `lost`, `vector`. Zero bytes, works offline. |
 | `something.mp3` | A real audio file **in this folder**, streamed through the same bus. |
+| `https://…/x.mp3` | Any absolute URL. Needs permissive CORS, or the bus goes silent instead of erroring. |
 
 So dropping in AI-generated music is a two-step job with no code change:
 
