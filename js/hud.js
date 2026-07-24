@@ -311,7 +311,7 @@ export function createHud(rootEl, { site, onSwitchUnit, onCollect, onToggleSfx, 
                         <li>Van deploy — V (or the DEPLOY BASE button): panels out, the van becomes a field chargepad. V again packs up</li>
                         <li>Soundtrack — B play/pause · [ and ] previous/next track · the ♪ button opens the full ONGAK player</li>
                         <li>ONGAK companion — CALL (C) it to the active unit · DEPLOY (O) to leave it playing in place · PARCEL (J) to ferry one cache to the lab. It ships docked with GRATBOT</li>
-                        <li>Dance — docked with GRATBOT and driving it, K makes GRATBOT dance to the beat; 1-5 pick the move (BOB · SWAY · SPIN · WAVE · HOP-TWIST)</li>
+                        <li>Dance — docked with GRATBOT and driving it, K makes GRATBOT dance to the beat; 1-5 pick the move (BOB · TWO-LEG · SPIN · WAVE · HOP-TWIST — TWO-LEG rears up on its hind legs)</li>
                         <li>Night vision — N (or the NV button): an image intensifier for driving after dark, when the terrain is otherwise nearly black. The HUD stays in its own colours</li>
                         <li>Lift drone — hover low over a cache container, E to sling it, fly to the FIELD LAB pad, E to deliver</li>
                         <li>Delivered caches auto-analyze on the lab edge node — findings land in the SCIENCE ARCHIVE</li>
@@ -474,7 +474,7 @@ export function createHud(rootEl, { site, onSwitchUnit, onCollect, onToggleSfx, 
         lastDanceVisible = v;
         danceBtn.dataset.visible = v;
     }
-    const DANCE_NAMES = ['BOB', 'SWAY', 'SPIN', 'WAVE', 'HOP-TWIST'];
+    const DANCE_NAMES = ['BOB', 'TWO-LEG', 'SPIN', 'WAVE', 'HOP-TWIST'];
     function setDance({ on = false, move = 0 } = {}) {
         danceBtn.dataset.on = String(on);
         danceBtn.firstChild.textContent = on ? `DANCE · ${DANCE_NAMES[move] ?? move + 1}` : 'DANCE';

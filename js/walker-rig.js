@@ -193,6 +193,7 @@ export function createWalker(site, terrain, obstacles, spec) {
     const _rollQ = new THREE.Quaternion();
     const _tiltQ = new THREE.Quaternion();
     const _danceQ = new THREE.Quaternion();
+    const _danceHip = new THREE.Vector3();
     const _local = new THREE.Vector3();
     const _hipInv = new THREE.Matrix4();
 
@@ -317,15 +318,22 @@ export function createWalker(site, terrain, obstacles, spec) {
         // hop: a sharp 0→1→0 peaking ON the beat (phase 0)
         const hop = Math.max(0, Math.sin(w + Math.PI / 2));
         let dY = 0, yaw = 0, roll = 0, pitch = 0;
+        let rearUp = false;   // move 1: reared on the hind legs, front paws up
         const lift = new Array(legs.length).fill(0);
         switch (danceMove) {
             case 0: // BOB — four-on-the-floor bounce
                 dY = 0.11 * hop;
                 pitch = 0.03 * Math.sin(w);
                 break;
-            case 1: // SWAY — roll side to side across the bar
-                roll = 0.30 * Math.sin(barPh);
-                dY = 0.04 * (0.5 + 0.5 * Math.sin(w));
+            case 1: // TWO-LEG — rear up on the hind legs, front paws waving.
+                // Body lifts and pitches NOSE-UP (pitch>0 raises the −Z front,
+                // derived from the _right axis rotation), so it towers rather
+                // than looking sunk into the ground; the front legs leave the
+                // stance and dangle/paw from the raised chest (handled below).
+                rearUp = true;
+                dY = 0.30 + 0.05 * hop;
+                pitch = 0.55 + 0.06 * hop;
+                yaw = 0.10 * Math.sin(barPh);   // a little sway for flair
                 break;
             case 2: // SPIN — the chassis twists over the bar (feet stay put,
                 // so the legs wind up — the "screw" look)
@@ -362,10 +370,29 @@ export function createWalker(site, terrain, obstacles, spec) {
 
         for (let li = 0; li < legs.length; li++) {
             const leg = legs[li];
+            // Rear-up: the FRONT legs leave the ground and paw from the raised
+            // hip (alternating on the beat), while the hind legs stay planted
+            // and carry the weight — the two-legged read.
+            if (rearUp && leg.homeLz < 0) {
+                leg.hipMount.updateWorldMatrix(true, false);
+                _danceHip.setFromMatrixPosition(leg.hipMount.matrixWorld);
+                const left = leg.homeLx < 0;
+                const wig = 0.16 * Math.sin(w + (left ? 0 : Math.PI));
+                const px = _danceHip.x - _fwd.x * 0.30;   // reach out front (−_fwd)
+                const pz = _danceHip.z - _fwd.z * 0.30;
+                const py = _danceHip.y - 0.30 + wig;       // dangle below the chest
+                leg.plant.set(px, py, pz);
+                leg.planted = false;
+                leg.prevStance = true;
+                leg.cmd.set(px, py, pz);
+                solveChain(leg, px, py, pz);
+                continue;
+            }
             const fx = mesh.position.x + _lat.x * leg.homeLx + _fwd.x * leg.homeLz;
             const fz = mesh.position.z + _lat.z * leg.homeLx + _fwd.z * leg.homeLz;
-            const fy = groundAt(fx, fz) + lift[li];
-            leg.plant.set(fx, groundAt(fx, fz), fz);
+            const gy = groundAt(fx, fz);
+            const fy = gy + Math.max(0, lift[li]);   // never target below ground
+            leg.plant.set(fx, gy, fz);
             leg.planted = true;
             leg.prevStance = true;
             leg.cmd.set(fx, fy, fz);
