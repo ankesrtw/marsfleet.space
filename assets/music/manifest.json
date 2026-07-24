@@ -1,7 +1,13 @@
 [
-  { "id": "dust-vigil",    "title": "Dust Vigil",    "mood": "AMBIENT",   "src": "synth:vigil" },
-  { "id": "red-drift",     "title": "Red Drift",     "mood": "SYNTHWAVE", "src": "synth:drift" },
-  { "id": "olympus-line",  "title": "Olympus Line",  "mood": "DRIVING",   "src": "synth:olympus" },
-  { "id": "signal-lost",   "title": "Signal Lost",   "mood": "TENSION",   "src": "synth:lost" },
-  { "id": "return-vector", "title": "Return Vector", "mood": "HOPEFUL",   "src": "synth:vector" }
+  { "id": "dust-vigil",    "title": "Dust Vigil",      "mood": "AMBIENT",    "src": "synth:vigil" },
+  { "id": "red-drift",     "title": "Red Drift",       "mood": "SYNTHWAVE",  "src": "synth:drift" },
+  { "id": "olympus-line",  "title": "Olympus Line",    "mood": "DRIVING",    "src": "synth:olympus" },
+  { "id": "signal-lost",   "title": "Signal Lost",     "mood": "TENSION",    "src": "synth:lost" },
+  { "id": "return-vector", "title": "Return Vector",   "mood": "HOPEFUL",    "src": "synth:vector" },
+  { "id": "perihelion",    "title": "Perihelion",      "mood": "WARM",       "src": "synth:perihelion" },
+  { "id": "ferric",        "title": "Ferric",          "mood": "INDUSTRIAL", "src": "synth:ferric" },
+  { "id": "aphelion",      "title": "Aphelion",        "mood": "BRIGHT",     "src": "synth:aphelion" },
+  { "id": "regolith",      "title": "Regolith Run",    "mood": "PERCUSSIVE", "src": "synth:regolith" },
+  { "id": "nightshift",    "title": "Night Shift",     "mood": "DOWNTEMPO",  "src": "synth:nightshift" },
+  { "id": "terminator",    "title": "Terminator Line", "mood": "DRIVING",    "src": "synth:terminator" }
 ]

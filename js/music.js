@@ -1,11 +1,14 @@
 /* ============================================================
-   music.js — the Ongak soundtrack engine (plan 27).
+   music.js — the Ongak soundtrack engine (plan 27; plan 28 made
+   Mars Sim's playlist its own).
 
-   Asset-free procedural synthwave, same discipline as sound.js:
+   Asset-free procedural instrumentals, same discipline as sound.js:
    nothing to download, nothing that can 404, works offline inside
    the Android APK. Each "track" is a preset — key, tempo, chord
    progression and which layers play — rendered live by a step
-   sequencer.
+   sequencer. Eleven ship today across synthwave, ambient, industrial,
+   percussive and downtempo; the marsapiens/SIGNAL R2 album is NOT
+   pulled in — that queue belongs to the standalone music app.
 
    Two things here are deliberate and easy to get wrong:
 
@@ -32,12 +35,10 @@ const LS_VOL = 'mc-music-vol';
 const LS_ON = 'mc-music-on';
 
 const MANIFEST_URL = 'assets/music/manifest.json';
-// The SIGNAL music app ships beside the game on the same origin; its default
-// queue is the real (Suno-generated) lore soundtrack, hosted on R2 with
-// permissive CORS — so those tracks can route through our own bus and get the
-// analyser + spatial panner, exactly like the synth ones. Relative, so it
-// resolves under any base path.
-const CATALOG_URL = '../music/data/tracks-default.json';
+// Plan 28: the game no longer pulls the marsapiens/SIGNAL R2 album. Mars Sim
+// keeps its OWN playlist — every track here is rendered in the browser, so
+// the soundtrack works offline in the APK, adds no bytes to the download, and
+// cannot be silenced by a CDN. Drop-in files still work via manifest.json.
 const TICK_MS = 25;        // scheduler wake-up
 // Notes queued ahead of the audio clock. This must exceed the WORST gap
 // between timer wake-ups, not the nominal 25ms: under load (a 2-core box at
@@ -51,10 +52,21 @@ const STEPS_PER_BAR = 16;  // 16th notes, 4/4
 // Scale degrees in semitones. Minor for the workhorse tracks, Phrygian
 // for menace (that ♭2 is the whole character), Dorian for the hopeful
 // one (the natural 6 lifts an otherwise minor progression).
+//
+// Plan 28 adds four more, each carrying a mood the first three cannot:
+// harmonic minor's ♯7 gives a leading tone that pulls (drama without
+// dissonance), Phrygian dominant is that same ♯3 over the ♭2 (the
+// "desert" mode), Lydian's ♯4 is the only genuinely bright scale here,
+// and the minor pentatonic simply has no semitone clashes — which is
+// what lets the percussive track hammer without turning to mud.
 const SCALES = {
     minor: [0, 2, 3, 5, 7, 8, 10],
     phrygian: [0, 1, 3, 5, 7, 8, 10],
     dorian: [0, 2, 3, 5, 7, 9, 10],
+    harmonicMinor: [0, 2, 3, 5, 7, 8, 11],
+    phrygianDom: [0, 1, 4, 5, 7, 8, 10],
+    lydian: [0, 2, 4, 6, 7, 9, 11],
+    pentatonic: [0, 3, 5, 7, 10],
 };
 
 /* Presets. `prog` is scale degrees (0 = tonic), one chord per bar.
@@ -93,6 +105,61 @@ const PRESETS = {
         arpPattern: [0, 2, 4, 5, 4, 2], arpEvery: 2,
         cutoff: [550, 2600], padType: 'sawtooth',
     },
+
+    /* ---- plan 28: six more, using the three new layer controls ----
+       `lead` is a slow triangle melody an octave over the arp — it is what
+       makes a track feel WRITTEN rather than generated, because the ear
+       follows a tune and ignores a texture. `swing` pushes the offbeat
+       16ths late (0.18 ≈ a lazy shuffle). `drumStyle` picks the kit
+       pattern; without it every drummed track was the same four-on-the-
+       floor and they all blurred together. */
+
+    // Warm dorian with an actual tune over it — the "good sol" track.
+    perihelion: {
+        rootMidi: 46, bpm: 88, scale: 'dorian', prog: [0, 4, 5, 3],
+        pad: 0.055, bass: 0.065, arp: 0.032, drums: 0.45, drumStyle: 'break',
+        arpPattern: [0, 2, 4, 2], arpEvery: 4, swing: 0.16,
+        lead: 0.05, leadPattern: [4, 2, 0, 2, 4, 6, 4, 2], leadEvery: 8,
+        cutoff: [520, 2200], padType: 'sawtooth',
+    },
+    // Harmonic minor + a hammering 16th arp: the mine/industry track.
+    ferric: {
+        rootMidi: 41, bpm: 112, scale: 'harmonicMinor', prog: [0, 0, 5, 4],
+        pad: 0.04, bass: 0.09, arp: 0.05, drums: 0.8, drumStyle: 'break',
+        arpPattern: [0, 0, 4, 0, 6, 0, 4, 2], arpEvery: 1,
+        cutoff: [700, 3400], padType: 'square', octaveBass: true,
+    },
+    // The only bright scale in the set. No drums, no arp — pad and a long
+    // lead line. Sunrise over the crater rim.
+    aphelion: {
+        rootMidi: 48, bpm: 60, scale: 'lydian', prog: [0, 3, 4, 3],
+        pad: 0.08, bass: 0.045, arp: 0, drums: 0,
+        arpPattern: [0], arpEvery: 4,
+        lead: 0.042, leadPattern: [0, 4, 2, 6], leadEvery: 16,
+        cutoff: [400, 1600], padType: 'sawtooth',
+    },
+    // Pentatonic, tom-led, almost no pad — drums carry it. Convoy music.
+    regolith: {
+        rootMidi: 43, bpm: 100, scale: 'pentatonic', prog: [0, 0, 3, 2],
+        pad: 0.03, bass: 0.085, arp: 0.038, drums: 0.7, drumStyle: 'tribal',
+        arpPattern: [0, 2, 3, 2, 4, 2], arpEvery: 2,
+        cutoff: [600, 2800], padType: 'square',
+    },
+    // Half-time, heavily swung, low and slow — the night-shift track.
+    nightshift: {
+        rootMidi: 40, bpm: 74, scale: 'minor', prog: [0, 5, 3, 4],
+        pad: 0.075, bass: 0.08, arp: 0.026, drums: 0.5, halfTime: true,
+        arpPattern: [0, 4, 2, 4], arpEvery: 4, swing: 0.22,
+        lead: 0.038, leadPattern: [2, 0, 4, 0], leadEvery: 16,
+        cutoff: [280, 1400], padType: 'sawtooth',
+    },
+    // Phrygian dominant at 124 — the fastest thing here, for the long haul.
+    terminator: {
+        rootMidi: 45, bpm: 124, scale: 'phrygianDom', prog: [0, 1, 0, 6],
+        pad: 0.04, bass: 0.08, arp: 0.055, drums: 0.75,
+        arpPattern: [0, 4, 6, 4, 2, 4], arpEvery: 1,
+        cutoff: [650, 3200], padType: 'sawtooth', octaveBass: true,
+    },
 };
 
 const BUILTIN = [
@@ -101,6 +168,12 @@ const BUILTIN = [
     { id: 'olympus-line', title: 'Olympus Line', mood: 'DRIVING', src: 'synth:olympus' },
     { id: 'signal-lost', title: 'Signal Lost', mood: 'TENSION', src: 'synth:lost' },
     { id: 'return-vector', title: 'Return Vector', mood: 'HOPEFUL', src: 'synth:vector' },
+    { id: 'perihelion', title: 'Perihelion', mood: 'WARM', src: 'synth:perihelion' },
+    { id: 'ferric', title: 'Ferric', mood: 'INDUSTRIAL', src: 'synth:ferric' },
+    { id: 'aphelion', title: 'Aphelion', mood: 'BRIGHT', src: 'synth:aphelion' },
+    { id: 'regolith', title: 'Regolith Run', mood: 'PERCUSSIVE', src: 'synth:regolith' },
+    { id: 'nightshift', title: 'Night Shift', mood: 'DOWNTEMPO', src: 'synth:nightshift' },
+    { id: 'terminator', title: 'Terminator Line', mood: 'DRIVING', src: 'synth:terminator' },
 ];
 
 const mtof = (m) => 440 * Math.pow(2, (m - 69) / 12);
@@ -133,6 +206,7 @@ export function createMusic(sound) {
     let step = 0;
     let bar = 0;
     let lastKick = 0;
+    let clockT0 = 0;       // audio time of beat 0 of the current playback
     let scheduled = 0;     // E2E probe: total sequencer steps queued
     let fileEl = null;     // <audio> for manifest tracks that are real files
     let fileNode = null;   // MediaElementSource (one per element, never rebuilt)
@@ -186,41 +260,18 @@ export function createMusic(sound) {
 
     loadTracks();
 
-    /** Assemble the playlist: the real SIGNAL catalog first (the scored,
-        lore-matched music), then the local manifest — which is where the
-        always-available synth presets live. Either source may fail; the
-        built-in presets are the floor, so the soundtrack can never be
-        empty and never depends on the network. */
+    /** Assemble the playlist from the local manifest alone (plan 28 — the
+        marsapiens R2 album is gone; this game has its own soundtrack). The
+        built-in presets are the floor, so the playlist can never be empty
+        and never depends on the network. */
     async function loadTracks() {
-        const [catalog, manifest] = await Promise.all([loadCatalog(), loadManifest()]);
-        const merged = [...catalog, ...manifest];
-        if (!merged.length) return;
+        const list = await loadManifest();
+        if (!list.length) return;
         const activeId = tracks[index]?.id;
-        tracks = merged;
+        tracks = list;
         const again = tracks.findIndex((t) => t.id === activeId);
         index = again >= 0 ? again : 0;
         notify();
-    }
-
-    /** The SIGNAL album catalog served alongside the game (/music/data/…),
-        streamed from R2. Absolute URLs, so they bypass the assets/music/
-        prefix. Offline (or on a site without the music app) this simply
-        returns nothing and the synth presets carry the soundtrack. */
-    async function loadCatalog() {
-        try {
-            const res = await fetch(CATALOG_URL, { cache: 'no-cache' });
-            if (!res.ok) return [];
-            const data = await res.json();
-            const list = Array.isArray(data?.tracks) ? data.tracks : [];
-            return list
-                .filter((t) => t && typeof t.url === 'string' && t.url && typeof t.title === 'string')
-                .map((t) => ({
-                    id: `signal-${t.id}`,
-                    title: t.title,
-                    mood: (t.genre ?? 'SIGNAL').toUpperCase(),
-                    src: t.url,
-                }));
-        } catch { return []; }
     }
 
     /** Local drop-in manifest. Anything malformed is ignored wholesale. */
@@ -289,11 +340,29 @@ export function createMusic(sound) {
         lastKick = t;
     }
 
+    /** Plan 28: pitched tom for the tribal kit. Same shape as the kick but
+        higher, shorter and with NO sidechain duck — toms that pump the pad
+        turn a groove into a stutter. */
+    function tom(t, freq, level) {
+        const o = ctx.createOscillator();
+        o.type = 'sine';
+        o.frequency.setValueAtTime(freq, t);
+        o.frequency.exponentialRampToValueAtTime(freq * 0.55, t + 0.14);
+        const g = ctx.createGain();
+        g.gain.setValueAtTime(level, t);
+        g.gain.exponentialRampToValueAtTime(0.0001, t + 0.22);
+        o.connect(g).connect(bus);
+        o.start(t);
+        o.stop(t + 0.24);
+    }
+
     // ---- sequencer ---------------------------------------------------
     function preset() {
         const src = tracks[index]?.src ?? '';
         return PRESETS[src.startsWith('synth:') ? src.slice(6) : ''] ?? null;
     }
+
+    const bpmOf = () => preset()?.bpm ?? 96;
 
     function scheduleStep(p, s, t) {
         const chordDeg = p.prog[bar % p.prog.length];
@@ -332,13 +401,48 @@ export function createMusic(sound) {
             voice('square', mtof(m), t, secPerBeat * 0.42, p.arp, f, { atk: 0.004 });
         }
 
-        // drums
+        // lead: a slow melody over the chord, an octave above the pad.
+        // Triangle (not saw) so it sings through the arp without fighting
+        // it for the same brightness.
+        if (p.lead && s % p.leadEvery === 0) {
+            const n = p.leadPattern[
+                (bar * (STEPS_PER_BAR / p.leadEvery) + s / p.leadEvery) % p.leadPattern.length];
+            const m = degreeMidi(p.rootMidi + 12, p.scale, chordDeg + n);
+            voice('triangle', mtof(m), t, secPerBeat * (p.leadEvery / 4) * 0.9,
+                p.lead, pump, { atk: 0.09, detune: 4 });
+        }
+
+        // drums — one of three kits. Same `p.drums` level scales all of them.
         if (p.drums) {
             const d = p.drums;
-            if (s % (p.halfTime ? 8 : 4) === 0) kick(t, 0.5 * d);
-            if (s % 8 === 4) noise(t, 0.16, 0.16 * d, 'bandpass', 1900, 0.8);
-            if (s % 2 === 0 && !p.halfTime) noise(t, 0.035, 0.05 * d, 'highpass', 7500);
+            if (p.drumStyle === 'break') {
+                // syncopated: the second kick lands a 16th LATE of beat 3,
+                // which is the whole reason a breakbeat pulls the ear
+                if (s === 0 || s === 6 || s === 10) kick(t, 0.5 * d);
+                if (s === 4 || s === 12) noise(t, 0.16, 0.17 * d, 'bandpass', 1900, 0.8);
+                if (s % 2 === 1) noise(t, 0.03, 0.04 * d, 'highpass', 8000);
+            } else if (p.drumStyle === 'tribal') {
+                if (s === 0 || s === 8) kick(t, 0.5 * d);
+                // toms answer the kick; three pitches so it reads as a
+                // hand-drum figure rather than one repeated hit
+                if (s === 3) tom(t, 210, 0.22 * d);
+                if (s === 6) tom(t, 160, 0.2 * d);
+                if (s === 11) tom(t, 260, 0.18 * d);
+                if (s === 14) tom(t, 190, 0.2 * d);
+                if (s % 2 === 0) noise(t, 0.025, 0.035 * d, 'highpass', 9000);
+            } else {
+                if (s % (p.halfTime ? 8 : 4) === 0) kick(t, 0.5 * d);
+                if (s % 8 === 4) noise(t, 0.16, 0.16 * d, 'bandpass', 1900, 0.8);
+                if (s % 2 === 0 && !p.halfTime) noise(t, 0.035, 0.05 * d, 'highpass', 7500);
+            }
         }
+    }
+
+    /** Plan 28: re-peg the beat clock to the step about to be queued. The
+        clock is what Gratbot dances to, and it is derived (not counted) so a
+        dropped frame can never make the dance drift away from the music. */
+    function anchorClock(p) {
+        clockT0 = nextTime - (bar * STEPS_PER_BAR + step) / 4 * (60 / p.bpm);
     }
 
     function scheduler() {
@@ -350,8 +454,15 @@ export function createMusic(sound) {
             // up note-by-note would dump hundreds of oscillators at once.
             // Threshold sits above LOOKAHEAD so ordinary starvation is
             // absorbed by the horizon rather than resetting the phase.
-            if (nextTime < ctx.currentTime - 1.2) nextTime = ctx.currentTime + 0.02;
-            scheduleStep(p, step, nextTime);
+            if (nextTime < ctx.currentTime - 1.2) {
+                nextTime = ctx.currentTime + 0.02;
+                anchorClock(p);   // the phase jumped — so must the beat clock
+            }
+            // Swing: push the offbeat 16ths late. Applied to the note TIME
+            // only, never to nextTime — swinging the grid itself would drag
+            // the whole track flat, one step at a time.
+            const swing = p.swing && step % 2 === 1 ? p.swing * secPerStep : 0;
+            scheduleStep(p, step, nextTime + swing);
             scheduled++;
             nextTime += secPerStep;
             step++;
@@ -406,6 +517,7 @@ export function createMusic(sound) {
             step = 0;
             bar = 0;
             nextTime = ctx.currentTime + 0.06;
+            clockT0 = nextTime;
             if (!timer) timer = setInterval(scheduler, TICK_MS);
             scheduler();
         } else {
@@ -494,6 +606,22 @@ export function createMusic(sound) {
             if (!ctx || !playing) return 0;
             const age = ctx.currentTime - lastKick;
             return age < 0 || age > 0.18 ? 0 : 1 - age / 0.18;
+        },
+        /** Tempo of whatever is playing. File tracks have no analysable
+            tempo, so they report a plausible mid-tempo — the dance still
+            has to move to something. */
+        get bpm() { return bpmOf(); },
+        /** Plan 28: elapsed beats as a float — the clock Gratbot's dance
+            runs on. DERIVED from the audio clock rather than counted per
+            frame, so the choreography stays locked to the music through
+            frame hitches. File tracks fall back to the element's own time,
+            and a stopped player holds at 0 (the dance idles in place).   */
+        beats() {
+            if (!ctx || !playing) return 0;
+            const spb = 60 / bpmOf();
+            const t = preset() ? ctx.currentTime - clockT0
+                : (fileEl?.currentTime ?? 0);
+            return Math.max(0, t) / spb;
         },
         /** A2: splice a PannerNode between the analyser and destination so
             the soundtrack comes from the bot rather than from everywhere. */
