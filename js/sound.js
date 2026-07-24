@@ -204,6 +204,29 @@ export function createSound() {
         dead: () => blip([160, 110], 0.3, 0.18, 'square'),
         // Wave 6 consequences: falling alarm for a tip-over, low grind
         // for digging in, rising all-clear once recovered
+        // Plan 27: wheel strikes a pebble — a dull noise thump, not a tone.
+        // A pitched blip would read as a UI cue; this has to feel physical.
+        thump(intensity = 1) {
+            if (!ctx) return;
+            const t = ctx.currentTime;
+            const src = ctx.createBufferSource();
+            const len = Math.floor(ctx.sampleRate * 0.12);
+            const buf = ctx.createBuffer(1, len, ctx.sampleRate);
+            const data = buf.getChannelData(0);
+            for (let i = 0; i < len; i++) {
+                // noise burst with a fast decay = a knock
+                data[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / len, 2.5);
+            }
+            src.buffer = buf;
+            const f = ctx.createBiquadFilter();
+            f.type = 'lowpass';
+            f.frequency.value = 220 + 380 * intensity;
+            const g = ctx.createGain();
+            g.gain.value = 0.05 + 0.14 * intensity;
+            src.connect(f).connect(g).connect(master);
+            src.start(t);
+            src.stop(t + 0.16);
+        },
         rollover: () => blip([392, 262, 175], 0.2, 0.22, 'square'),
         bogged: () => blip([196, 165, 196, 165], 0.18, 0.16, 'sawtooth'),
         recovered: () => blip([523, 659, 784], 0.12, 0.18),

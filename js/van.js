@@ -33,6 +33,20 @@ const MOUNT_R = 4;             // m — humanoid must be this close to mount/dis
 const DOCK_R = 7;              // m — deployed-van charge radius (van is bulkier
                                // than a chargepad disc, so wider than DOCK_R 5)
 const DEPLOY_SECS = 2.0;       // deploy/undeploy animation duration (~95% settled)
+// Plan 27 — pebble ride-over. Rocks up to this radius (≈1.2m across, vs the
+// van's 0.9m-diameter wheels) are driven OVER instead of stopping the van
+// dead; anything bigger is still a wall. Wheel-scale obstacles should be a
+// bump you feel, not an invisible barrier.
+export const VAN_CLIMB_R = 0.62;
+// Chassis spring for that ride. Critically damped (D = 2*sqrt(K)) so a
+// strike settles in ~0.5s without oscillating like a lowrider.
+const BUMP_K = 85;
+const BUMP_D = 2 * Math.sqrt(BUMP_K);
+// Per-wheel lift rate (m/s) above which a crossing counts as a STRIKE and
+// earns dust, a thump and a speed scrub. Below it, the wheel is riding a
+// gentle flank and only the spring responds.
+const STRIKE_RATE = 0.55;
+const STRIKE_SCRUB = 0.18;     // fraction of speed shed on a strike
 
 // Wheel hubs measured from the loaded van.glb in group-local meters
 // [x, y, z, r, halfW] (wheels.js format, ~x1.06 enclose margin baked in).
@@ -86,6 +100,7 @@ export function createVan(site, terrain, obstacles) {
     attachUnitModel(mesh, 'van', (_model, size) => {
         mesh.add(deployRig.group);
         wheelRig.layout(VAN_WHEELS_GLB);
+        hubs = VAN_WHEELS_GLB; // suspension samples the REAL hubs after the swap
         mesh.add(wheelRig.group);
         // Hinges ride the REAL roof line; the two heights are staggered so
         // the roof-stowed wings stack instead of z-fighting mid-overlap.
@@ -100,10 +115,71 @@ export function createVan(site, terrain, obstacles) {
     let deployTimer = 0;
     let deployTarget = 0;     // 0=undeployed, 1=deployed
     let driver = null;        // null = driverless, else the humanoid unit
+    let scrub = 0;            // speed penalty decaying after a rock strike
     const bound = site.worldSize / 2 - EDGE_MARGIN;
 
     const _yawQ = new THREE.Quaternion();
     const _tiltQ = new THREE.Quaternion();
+    const _bumpQ = new THREE.Quaternion();
+    const _pitchAxis = new THREE.Vector3();
+    const _rollAxis = new THREE.Vector3();
+
+    // Plan 27 suspension state: one lift sample per wheel (m of rock under
+    // it), plus the sprung chassis offset the six of them drive.
+    const wheelLift = new Float32Array(6);
+    let bumpY = 0;       // sprung vertical offset (m)
+    let bumpV = 0;       // its velocity
+    let bumpPitch = 0;   // rad, front-vs-rear lift
+    let bumpRoll = 0;    // rad, left-vs-right lift
+    /** Strike events for main.js to turn into dust / sound / shake. Consumed
+        (drained) each frame — van.js owns physics, not presentation. */
+    const bumps = [];
+
+    /** Which hub layout is live: the GLB set once the model swaps in, the
+        fallback corners before that. Kept in sync with wheelRig.layout(). */
+    let hubs = VAN_WHEELS_FALLBACK;
+
+    /** Sample the rock deck under each wheel and run the chassis spring.
+        Returns the mean lift so the caller can seat the body on it. */
+    function updateSuspension(dt, speed) {
+        if (!obstacles?.rockTop) return 0;
+        const sinH = Math.sin(heading);
+        const cosH = Math.cos(heading);
+        let mean = 0, front = 0, rear = 0, left = 0, right = 0;
+        for (let i = 0; i < hubs.length; i++) {
+            const [lx, , lz] = hubs[i];
+            // hub local -> world (yaw only; the tilt is cosmetic here)
+            const wx = mesh.position.x + lx * cosH + lz * sinH;
+            const wz = mesh.position.z - lx * sinH + lz * cosH;
+            const lift = obstacles.rockTop(wx, wz);
+            const prev = wheelLift[i];
+            // A fast RISE is a strike; falling off the back of a rock is not
+            // (that is just the wheel dropping, which the spring handles).
+            if (dt > 0 && (lift - prev) / dt > STRIKE_RATE && Math.abs(speed) > 1) {
+                bumps.push({
+                    x: wx, z: wz, lift,
+                    intensity: Math.min(1, ((lift - prev) / dt) / (STRIKE_RATE * 4)),
+                });
+            }
+            wheelLift[i] = lift;
+            mean += lift;
+            if (lz < 0) front += lift; else rear += lift;
+            if (lx < 0) left += lift; else right += lift;
+        }
+        mean /= hubs.length;
+        // Two hubs per end on the fallback, but the GLB has 2 front / 4 back;
+        // halving both sides keeps the ratio honest enough for a visual tilt.
+        const half = hubs.length / 2;
+        // Wheelbase ~3.7m, track ~3.0m: lift difference over that span IS the
+        // angle (small-angle, so the ratio is the radian).
+        bumpPitch = THREE.MathUtils.clamp((front - rear) / half / 3.7, -0.18, 0.18);
+        bumpRoll = THREE.MathUtils.clamp((right - left) / half / 3.0, -0.18, 0.18);
+
+        // critically damped spring toward the mean lift
+        bumpV += (BUMP_K * (mean - bumpY) - BUMP_D * bumpV) * dt;
+        bumpY += bumpV * dt;
+        return mean;
+    }
 
     function update(dt, input) {
         // Deploy animation: ease deployTimer toward deployTarget
@@ -134,7 +210,11 @@ export function createVan(site, terrain, obstacles) {
         const normal = terrain.sampleGroundNormal(mesh.position.x, mesh.position.z);
         const slopeMag = 1 - normal.y;
         const speedFactor = Math.max(MIN_SPEED_FACTOR, 1 - slopeMag * SLOPE_K);
-        const speed = canDrive ? input.throttle * VAN_SPEED * speedFactor : 0;
+        // Plan 27: a strike last frame scrubs speed — hitting a rock at
+        // wheel scale should cost momentum, the way it does in a real truck.
+        let speed = canDrive ? input.throttle * VAN_SPEED * speedFactor : 0;
+        speed *= (1 - scrub);
+        scrub = Math.max(0, scrub - dt * 1.6);
 
         let nx = mesh.position.x + Math.sin(heading) * speed * dt;
         let nz = mesh.position.z + Math.cos(heading) * speed * dt;
@@ -152,9 +232,18 @@ export function createVan(site, terrain, obstacles) {
             }
         }
 
+        // Plan 27: per-wheel rock sampling drives the chassis spring. Run it
+        // BEFORE seating the body so the lift lands this frame, and note the
+        // deckHeight below already contains the mean rock lift (via the
+        // colliders facade) — bumpY is the SPRUNG deviation from it, which
+        // is why the body height subtracts the raw mean and adds the sprung
+        // value instead of stacking both.
+        const meanLift = updateSuspension(dt, speed);
+        if (bumps.length) scrub = Math.min(0.6, scrub + STRIKE_SCRUB * bumps[bumps.length - 1].intensity);
+
         const groundY = terrain.sampleGroundHeight(mesh.position.x, mesh.position.z)
             + (obstacles?.deckHeight?.(mesh.position.x, mesh.position.z) ?? 0);
-        mesh.position.y = groundY + CLEARANCE;
+        mesh.position.y = groundY - meanLift + bumpY + CLEARANCE;
 
         // Wheels spin with ground speed and steer with input (front axle
         // with, mid/rear against — the real MMSEV all-wheel-steers).
@@ -164,6 +253,17 @@ export function createVan(site, terrain, obstacles) {
         _yawQ.setFromAxisAngle(_up, heading);
         _tiltQ.multiply(_yawQ);
         mesh.quaternion.slerp(_tiltQ, 1 - Math.exp(-12 * dt));
+        // Bump pitch/roll ride ON TOP of the settled terrain tilt, in the
+        // body's own frame — so they read as suspension travel rather than
+        // fighting the slerp that keeps the van on the slope.
+        if (bumpPitch || bumpRoll) {
+            _pitchAxis.set(1, 0, 0);
+            _rollAxis.set(0, 0, 1);
+            _bumpQ.setFromAxisAngle(_pitchAxis, bumpPitch);
+            mesh.quaternion.multiply(_bumpQ);
+            _bumpQ.setFromAxisAngle(_rollAxis, bumpRoll);
+            mesh.quaternion.multiply(_bumpQ);
+        }
     }
 
     function teleport(x, z) {
@@ -205,6 +305,29 @@ export function createVan(site, terrain, obstacles) {
         get dockRadius() { return DOCK_R; },
         get roofHeight() { return roofH; },
         get health() { return health; },
+        /** Plan 27 — sprung chassis state, for HUD/E2E. */
+        get bumpY() { return bumpY; },
+        /** E2E probe: live per-wheel rock lift + whether the facade can
+            even answer (a facade without climbR silently reports flat). */
+        get suspension() {
+            return {
+                hasRockTop: !!obstacles?.rockTop,
+                facadeClimbR: obstacles?.climbR ?? null,
+                lifts: Array.from(wheelLift),
+                hubs: hubs.length,
+            };
+        },
+        get bumpPitch() { return bumpPitch; },
+        get climbR() { return VAN_CLIMB_R; },
+        /** Drain this frame's rock strikes: [{x, z, lift, intensity}].
+            main.js turns them into dust, thump and camera shake — van.js
+            stays free of effects/sound imports (the humanoid dig idiom). */
+        takeBumps() {
+            if (!bumps.length) return null;
+            const out = bumps.slice();
+            bumps.length = 0;
+            return out;
+        },
         // Mobile base position: returns null if not deployed, else the van's
         // world x/z for main.js to register/remove a chargepad.
         get padPos() {

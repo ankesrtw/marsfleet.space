@@ -88,16 +88,30 @@ export function createColliders(rocks) {
     /** rocks.collides-shaped facade for one unit — drop-in for the
         `rocks` param the ground units already take. deckHeight rides
         along so every mover grounds itself on drivable platforms —
-        minus any deck the unit itself carries (owner exclusion). */
-    function forUnit(name) {
+        minus any deck the unit itself carries (owner exclusion).
+
+        opts.climbR (plan 27) is the rock radius this unit rides OVER
+        rather than being stopped by. Those rocks then come back as
+        ground height through deckHeight, so every existing caller —
+        which already grounds itself on `terrain + deckHeight` — drives
+        and walks over them with no change at the call site. */
+    function forUnit(name, opts = {}) {
+        const climbR = opts.climbR ?? 0;
         return {
             collides(x, z, r) {
                 const self = units.get(name);
                 const selfAlt = self ? self.alt() : 0;
-                if (selfAlt < ROCK_CEILING && rocks?.collides(x, z, r)) return true;
+                if (selfAlt < ROCK_CEILING && rocks?.collides(x, z, r, climbR)) return true;
                 return hits(name, x, z, r);
             },
-            deckHeight: (x, z) => deckHeight(x, z, name),
+            deckHeight: (x, z) => deckHeight(x, z, name)
+                + (climbR ? (rocks?.rockTop?.(x, z, climbR, opts.probeR ?? 0) ?? 0) : 0),
+            /** Rock contribution alone — the van's per-wheel bump sampling
+                needs it without the platform decks mixed in. probeR defaults
+                to the unit's contact radius (a wheel is not a point). */
+            rockTop: (x, z, probeR = opts.probeR ?? 0) =>
+                (climbR ? (rocks?.rockTop?.(x, z, climbR, probeR) ?? 0) : 0),
+            climbR,
         };
     }
 

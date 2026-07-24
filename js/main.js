@@ -8,7 +8,7 @@ import { loadTerrain } from './terrain.js';
 import { createRover } from './rover.js';
 import { createDrone } from './drone.js';
 import { createHumanoid } from './humanoid.js';
-import { createVan } from './van.js';
+import { createVan, VAN_CLIMB_R } from './van.js';
 import { createGratbot } from './gratbot.js';
 import { createOngak } from './ongak.js';
 import { createMusic } from './music.js';
@@ -256,7 +256,7 @@ async function startGame(site) {
         obstacles: colliders.forUnit('lift'), bodyRadius: 1.2, wind,
     });
     const humanoid = createHumanoid(site, terrain, colliders.forUnit('humanoid'));
-    const van = createVan(site, terrain, colliders.forUnit('van'));
+    const van = createVan(site, terrain, colliders.forUnit('van', { climbR: VAN_CLIMB_R, probeR: 0.47 }));
     // Plan 24 walkers: quad + octopod, fully procedural (no GLB).
     const gratbot = createGratbot(site, terrain, colliders.forUnit('gratbot'));
     const makadane = createMakadane(site, terrain, colliders.forUnit('makadane'));
@@ -1117,6 +1117,22 @@ async function startGame(site) {
         ongak.syncAudio(music.ctx, camera);
         ongak.pulse(music.level(), music.beat());
 
+        // Plan 27: the van rode over a pebble — dust off that wheel, a thump,
+        // a camera jolt, and a nudge to the rollover gauge. van.js queues the
+        // strikes; presentation lives here (the humanoid-dig idiom).
+        const vanBumps = van.takeBumps();
+        if (vanBumps) {
+            let worst = 0;
+            for (const bmp of vanBumps) {
+                worst = Math.max(worst, bmp.intensity);
+                effects.spawnDust(bmp.x,
+                    terrain.sampleHeight(bmp.x, bmp.z) + bmp.lift + 0.15, bmp.z, 2);
+            }
+            sound.thump(worst);
+            // Only shake for the unit you are actually looking at.
+            if (active.unit === van) camRig.shake(0.35 + 0.65 * worst);
+        }
+
         // Wave 12.16: cargo bay — the DRIVEN van auto-loads any field cache
         // it rolls up to (the humanoid crew does the loading; a driverless
         // van loads nothing) and bulk-delivers when it pulls up at the
@@ -1520,7 +1536,7 @@ async function startGame(site) {
             teleAccum = 0;
         }
 
-        camRig.update(active.unit.position, active.unit.heading, active.kind);
+        camRig.update(active.unit.position, active.unit.heading, active.kind, false, dt);
         env.update(camera, dt);
         updateShadows(dt);
         rocks.update(active.unit.position);

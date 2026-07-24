@@ -116,22 +116,89 @@ export function createRocks(site, terrain, quality) {
     // Anything with a horizontal footprint under this radius is a pebble
     // the wheels/boots just roll over; bigger blocks stop ground units.
     const BLOCKING_ROCK_RADIUS = 0.45;
+    // Plan 27: how far up the rock's own height a climber rides. The
+    // instance sits at sampleHeight + sy*0.35 with vertical scale sy, so
+    // its top stands sy*1.35 above the terrain — see scatter().
+    const TOP_K = 1.35;
+    // Fraction of a climbable rock's radius over which its deck ramps down
+    // to ground level. Without a ramp the wheel/foot teleports up the full
+    // rock height in one frame and the chassis pops.
+    const RIM = 0.45;
 
-    /** True if a ground unit of `radius` at (x, z) would hit a boulder. */
-    function collides(x, z, radius) {
+    /** Rocks in the 3x3 cells around (x, z) — the single query path shared
+        by collision and height, so they can never disagree. */
+    function nearRocks(x, z, out) {
+        out.length = 0;
         const ccx = Math.floor(x / CELL);
         const ccz = Math.floor(z / CELL);
         for (let cz = ccz - 1; cz <= ccz + 1; cz++) {
             for (let cx = ccx - 1; cx <= ccx + 1; cx++) {
-                for (const r of cellRocks(cx, cz)) {
-                    const rockR = Math.max(r.sx, r.sz);
-                    if (rockR < BLOCKING_ROCK_RADIUS) continue;
-                    const d = Math.hypot(x - r.x, z - r.z);
-                    if (d < rockR * 0.85 + radius) return true;
-                }
+                for (const r of cellRocks(cx, cz)) out.push(r);
             }
         }
+        return out;
+    }
+    const _near = [];
+
+    /**
+     * True if a ground unit of `radius` at (x, z) would hit a boulder.
+     *
+     * `climbR` (plan 27) is the rock radius this unit can ride OVER instead
+     * of being stopped by: 0 keeps the original behaviour (everything
+     * boulder-sized blocks), the van uses ~0.62 (pebbles at wheel scale),
+     * Makadane ~1.3 (near everything but true boulders). Rocks it can climb
+     * are not obstacles — they are terrain, via rockTop() below.
+     */
+    function collides(x, z, radius, climbR = 0) {
+        const limit = Math.max(BLOCKING_ROCK_RADIUS, climbR);
+        for (const r of nearRocks(x, z, _near)) {
+            const rockR = Math.max(r.sx, r.sz);
+            if (rockR < limit) continue;
+            const d = Math.hypot(x - r.x, z - r.z);
+            if (d < rockR * 0.85 + radius) return true;
+        }
         return false;
+    }
+
+    // Below this radius a rock is gravel — it should not lift a 3-tonne van.
+    // Above it and under the unit's climbR, it is something you ride over
+    // and FEEL. This floor is deliberately far under BLOCKING_ROCK_RADIUS:
+    // the [0.45, climbR) band alone is ~7% of rocks, so a van driving 178m
+    // in a straight line met none of them and the whole mechanic was
+    // invisible. The small pebbles are the common case and the ones the
+    // request was actually about — they used to be ghosted through.
+    const RIDEABLE_MIN_RADIUS = 0.12;
+
+    /**
+     * Height (m above local terrain) of the tallest rideable rock covering
+     * (x, z) — 0 in the open. Ramped across the outer RIM of each rock so a
+     * wheel rolls up the flank instead of popping onto the crown.
+     *
+     * Rocks in [RIDEABLE_MIN_RADIUS, climbR) contribute. At or above climbR
+     * they still block, so standing on one is impossible by construction.
+     *
+     * `probeR` is the radius of the thing doing the standing — a van wheel
+     * is 0.47m, not a point. This matters more than it looks: rideable rocks
+     * cover only ~0.04% of the ground (measured), so a POINT sample rides
+     * one about once per 700m of driving and the mechanic is invisible. A
+     * wheel that merely clips a rock's edge should still ride up it, which
+     * is both physically right and what makes the bump ever happen.
+     */
+    function rockTop(x, z, climbR = 0, probeR = 0) {
+        if (climbR <= 0) return 0;
+        let best = 0;
+        for (const r of nearRocks(x, z, _near)) {
+            const rockR = Math.max(r.sx, r.sz);
+            if (rockR < RIDEABLE_MIN_RADIUS || rockR >= climbR) continue;
+            // distance from the probe's NEAREST EDGE, not its centre
+            const d = Math.max(0, Math.hypot(x - r.x, z - r.z) - probeR);
+            if (d >= rockR) continue;
+            const inner = rockR * (1 - RIM);
+            const k = d <= inner ? 1 : 1 - (d - inner) / (rockR - inner);
+            const h = r.sy * TOP_K * k;
+            if (h > best) best = h;
+        }
+        return best;
     }
 
     /** Per frame with the active unit's position; re-scatters after travel. */
@@ -141,5 +208,5 @@ export function createRocks(site, terrain, quality) {
         }
     }
 
-    return { mesh, update, collides };
+    return { mesh, update, collides, rockTop };
 }

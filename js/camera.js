@@ -85,8 +85,20 @@ export function createCameraRig(camera, canvas, terrain) {
         dist = clamp(dist * Math.exp(e.deltaY * WHEEL_ZOOM_K), MIN_DIST, MAX_DIST);
     }, { passive: false });
 
+    // Plan 27: impulse shake (van rock strikes). Decays exponentially and is
+    // applied AFTER the position lerp so it never feeds back into the smoothing.
+    let shakeAmt = 0;
+    const SHAKE_DECAY = 6.5;
+    const SHAKE_SCALE = 0.35; // m of throw at full amplitude
+
+    /** amount 0..1 — takes the strongest pending shake rather than summing,
+        so a burst of wheel strikes reads as one jolt, not a pile-up. */
+    function shake(amount) {
+        shakeAmt = Math.min(1, Math.max(shakeAmt, amount));
+    }
+
     /** Called once per frame. kind: 'ground' | 'fly'. */
-    function update(target, heading, kind, snap = false) {
+    function update(target, heading, kind, snap = false, dt = 0.016) {
         defaultDist = kind === 'fly' ? 18 : 12;
         const yaw = heading + userYaw;
         const hd = dist * Math.cos(pitch);
@@ -101,6 +113,16 @@ export function createCameraRig(camera, canvas, terrain) {
 
         if (snap) camera.position.copy(desired);
         else camera.position.lerp(desired, 0.1);
+
+        if (shakeAmt > 0.001) {
+            const a = shakeAmt * SHAKE_SCALE;
+            camera.position.x += (Math.random() - 0.5) * a;
+            camera.position.y += (Math.random() - 0.5) * a;
+            camera.position.z += (Math.random() - 0.5) * a;
+            shakeAmt *= Math.exp(-SHAKE_DECAY * dt);
+        } else {
+            shakeAmt = 0;
+        }
         camera.lookAt(target.x, target.y + 1.5, target.z);
     }
 
@@ -113,8 +135,10 @@ export function createCameraRig(camera, canvas, terrain) {
     return {
         update,
         setDistance,
+        shake,
         // for E2E assertions
         get state() { return { userYaw, pitch, dist }; },
+        get shakeAmt() { return shakeAmt; },
     };
 }
 
