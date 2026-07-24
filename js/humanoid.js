@@ -79,18 +79,37 @@ const DIG_SECS = 4.5;
 const FEMUR = 0.208;
 const TIBIA = 0.259;
 const FOOT_SPACING = 0.12; // m — lateral offset per foot from body center
-const STEP_HALF = 0.35;  // m — half-step reach in body-local space
+// (half-step reach is derived live — see stepHalfNow(); it must track the
+// lope's cadence damping or the boot jumps at every stance handoff)
 const SWING_LIFT = 0.25; // m — foot rises this high during swing arc
 const ANKLE_H = 0.12;    // m — ankle bone height above the sole, world scale
 const USE_IK = true;     // toggle flag per plan: easy fallback to swing-only
 // Both leg bones extend along their own local +Y in this rig.
 const BONE_AXIS = new THREE.Vector3(0, 1, 0);
+// Which side of _right each boot plants on. Reads backwards on purpose:
+// the unit FACES -_fwd (forward input is negative throttle, and models.js
+// yaws every model's face onto local -Z to match), so its right hand is
+// -_right. The GLB's +90° yaw puts L_Thigh on group-local -X, which maps
+// to world +_right — so the LEFT boot takes +FOOT_SPACING. Swapping these
+// two crosses the legs (and stayed invisible while the old IK folded them
+// up behind the back).
+const L_LATERAL = FOOT_SPACING;
+const R_LATERAL = -FOOT_SPACING;
+const TAU = Math.PI * 2;
+// Above this much air the boots genuinely lose the ground and the stance
+// schedule has to release. A lope hop apex is only ~6 cm and lasts a few
+// frames — releasing the plants for those frames put a stance→swing
+// discontinuity at BOTH ends of every hop (measured 0.37 m in one frame).
+// Holding contact through the hop is also the truer read: the impulse is
+// applied during push-off, while the foot is still down.
+const FOOT_RELEASE_AIR = 0.25; // m
 
 // Wave 12.4 Apollo lope: above ~0.7 m/s a normal walk is unstable at
 // 0.38 g — the Apollo crews spontaneously switched to a bounding lope.
 const LOPE_THRESHOLD = 0.7;   // m/s — faster than this triggers the lope
 const LOPE_HOP = 0.75;        // m/s — periodic upward impulse at launch
 const LOPE_ARM_AMP = 0.25;    // extra arm-swing amplitude for balance
+const LOPE_STRIDE_DAMP = 0.4; // cadence drops this fraction in a full lope
 
 // `obstacles` is a colliders.js facade (boulders + structures + other
 // units), shaped like the old rocks collider: collides(x, z, radius).
@@ -159,6 +178,10 @@ export function createHumanoid(site, terrain, obstacles) {
     // Foot IK state
     const _lPlant = new THREE.Vector3();
     const _rPlant = new THREE.Vector3();
+    // Last commanded (sole) position per boot — the continuity anchor a
+    // stance plant pins to. See plantFoot().
+    const _lCmd = new THREE.Vector3();
+    const _rCmd = new THREE.Vector3();
     let lPlanted = false;
     let rPlanted = false;
     let prevLStance = false;
@@ -235,7 +258,12 @@ export function createHumanoid(site, terrain, obstacles) {
         // femur toward it keeps the knee leading forward — a human knee
         // cannot hinge backward, and this fixes the bend side without any
         // cross-product handedness to get wrong.
-        _poleW.copy(_fwd).addScaledVector(_legU, -_fwd.dot(_legU));
+        // NOTE the unit faces -_fwd, not +_fwd: forward input is NEGATIVE
+        // throttle (main.js W => -1), so travel is -[sin h, cos h] and
+        // models.js yaws every model's face onto local -Z to match. Poling
+        // at +_fwd bent the knees BACKWARD.
+        _poleW.copy(_fwd).negate();
+        _poleW.addScaledVector(_legU, -_poleW.dot(_legU));
         if (_poleW.lengthSq() < 1e-8) {
             _poleW.set(0, 0, 1).addScaledVector(_legU, -_legU.z);
         }
@@ -255,45 +283,79 @@ export function createHumanoid(site, terrain, obstacles) {
         aimBone(calfBone, calfBind, _thighQ, _tibiaDir);
     }
 
+    /** Half-stride reach, live. The swing arc has to span exactly the
+        ground the body covers in one half-cycle (speed·π/ω, ω = the live
+        stride rate) or the boot jumps when stance takes over. ω is itself
+        proportional to speed, so speed CANCELS — the arc only has to widen
+        as the lope damps the cadence. Which is also what a bounding lope
+        actually looks like: longer strides, not quicker ones.
+        Static STEP_HALF (0.35) matched only the un-loped rate, so at full
+        lope the body covered 1.22 m against a 0.7 m arc and the foot had
+        to teleport ~0.5 m at every release. */
+    function stepHalfNow() {
+        return Math.PI * WALK_SPEED
+            / (2 * STRIDE_RATE * (1 - LOPE_STRIDE_DAMP * lopeFactor));
+    }
+
     function groundAt(x, z) {
         return terrain.sampleGroundHeight(x, z) + (obstacles?.deckHeight?.(x, z) ?? 0);
     }
 
-    /** Stance plant point: a FULL step-half ahead along travel (heel
-        strike at max forward reach). The lead must match the swing arc's
-        ±STEP_HALF endpoints: stance travel per half-cycle is
-        speed × π/STRIDE_RATE ≈ 0.73 m ≈ the 0.7 m plant-to-release span,
-        so the foot stays within leg reach for the whole stance — a short
-        lead ran out of reach mid-stance and the clamp dragged the boot. */
-    function plantFoot(out, lateral) {
-        out.set(
-            mesh.position.x + _fwd.x * (-STEP_HALF),
-            0,
-            mesh.position.z + _fwd.z * (-STEP_HALF)
-        ).addScaledVector(_right, lateral);
+    /** Stance plant: pin the boot where it ACTUALLY is (its last commanded
+        swing position), not at a freshly recomputed lead off the body.
+
+        In steady grounded walking the two agree exactly — heel strike lands
+        as sin(stride) crosses zero, where cos = ±1 puts the swing arc on
+        the very same ∓STEP_HALF lead this used to compute. But a lope hop
+        suppresses the stance edge for its airborne frames, so the stride
+        can run well past that crossing before touchdown; recomputing the
+        lead then teleports the boot (measured: 0.63 m in one frame).
+        Planting where the foot already is makes the swing→stance handoff
+        continuous by construction — the same fix walker-rig.js needed for
+        its multi-leg gait. */
+    function plantFoot(out, cmd, lateral) {
+        if (cmd.lengthSq() === 0) { plantIdle(out, lateral, cmd); return; } // never commanded
+        out.copy(cmd);
         out.y = groundAt(out.x, out.z);
     }
 
-    /** Idle plant: boot settles directly under its hip. */
-    function plantIdle(out, lateral) {
+    /** Idle plant: boot settles directly under its hip. Also seeds `cmd` so
+        a leg that starts mid-swing has a valid on-ground origin. */
+    function plantIdle(out, lateral, cmd) {
         out.set(mesh.position.x, 0, mesh.position.z).addScaledVector(_right, lateral);
         out.y = groundAt(out.x, out.z);
+        cmd?.copy(out);
     }
 
     /** One leg per frame: planted feet re-sample their own ground height
         (world-locked in x/z — the anti-skate guarantee); swing feet arc
         between plant points over terrain-following base height. */
-    function solveLeg(thigh, calf, planted, plant, phase, lateral) {
+    function solveLeg(thigh, calf, planted, plant, phase, lateral, cmd) {
         if (planted) {
             plant.y = groundAt(plant.x, plant.z);
             _ikTarget.copy(plant);
         } else {
-            const swingT = (Math.sin(stride + phase) + 1) / 2; // 0→1 over swing
-            const lift = SWING_LIFT * Math.sin(swingT * Math.PI);
-            const sx = mesh.position.x + _fwd.x * (STEP_HALF * Math.cos(stride + phase)) + _right.x * lateral;
-            const sz = mesh.position.z + _fwd.z * (STEP_HALF * Math.cos(stride + phase)) + _right.z * lateral;
-            _ikTarget.set(sx, groundAt(sx, sz) + lift, sz);
+            // Swing lift must peak MID-swing. The old
+            // swingT=(sin(s+phase)+1)/2 fed into sin(swingT·π) is INVERTED:
+            // it peaks at s=0 and s=π (the two ground-contact transitions)
+            // and hits exactly 0 at mid-swing, so the boot scraped through
+            // the step and lifted at the contacts. walker-rig.js hit the
+            // identical bug (see issues-and-resolutions 2026-07-20).
+            // u runs 0→1 across this leg's swing half-cycle.
+            const u = THREE.MathUtils.clamp(
+                ((((stride + phase) % TAU) + TAU) % TAU) / Math.PI, 0, 1);
+            const lift = SWING_LIFT * Math.sin(u * Math.PI);
+            const reach = stepHalfNow() * Math.cos(stride + phase);
+            const sx = mesh.position.x + _fwd.x * reach + _right.x * lateral;
+            const sz = mesh.position.z + _fwd.z * reach + _right.z * lateral;
+            // +airY: in flight the swing arc rises WITH the body, so the
+            // legs keep their pose relative to the hips instead of reaching
+            // back down for ground that has dropped away.
+            _ikTarget.set(sx, groundAt(sx, sz) + lift + airY, sz);
         }
+        // Remember where this boot actually is, so the next stance plant can
+        // pin it here instead of teleporting it to a recomputed lead.
+        cmd?.copy(_ikTarget);
         // Plant points are SOLE positions but the IK drives the ankle bone,
         // which rides ANKLE_H above the sole — without this the boots sink.
         _ikTarget.y += ANKLE_H;
@@ -389,7 +451,8 @@ export function createHumanoid(site, terrain, obstacles) {
                 jumpVel = LOPE_HOP * lopeFactor;
             }
             // During lope, stride drifts (legs stay more extended in flight)
-            stride += dt * STRIDE_RATE * (-0.4 * lopeFactor) * Math.abs(speed) / WALK_SPEED;
+            stride += dt * STRIDE_RATE * (-LOPE_STRIDE_DAMP * lopeFactor)
+                * Math.abs(speed) / WALK_SPEED;
         }
         walkAmt += ((moving ? 1 : 0) - walkAmt) * Math.min(1, 8 * dt);
         _fwd.set(Math.sin(heading), 0, Math.cos(heading));
@@ -417,9 +480,19 @@ export function createHumanoid(site, terrain, obstacles) {
         // ---- Rig animation, in dependency order: arm/leg swing first,
         // then the posture chain (pelvis sway moves the hip sockets), then
         // leg IK LAST so the solve sees this frame's final pelvis pose.
-        const ikActive = USE_IK && !!legs && grounded;
-        const lStance = grounded && Math.sin(stride) < 0;
-        const rStance = grounded && Math.sin(stride) > 0;
+        // IK stays live in FLIGHT too. Gating it on `grounded` snapped both
+        // legs back to bind pose for the airborne frames and back to the
+        // solved pose on touchdown — and the Wave 12.4 lope hops constantly
+        // above LOPE_THRESHOLD (40 of 140 frames airborne at walking
+        // speed), so that discontinuity fired twice per hop and read as the
+        // legs jerking. Airborne frames now ride the swing arc, lifted by
+        // airY so the legs hold their pose relative to the hips.
+        const ikActive = USE_IK && !!legs;
+        // Only a REAL jump releases the boots; lope hops keep their stance
+        // schedule (see FOOT_RELEASE_AIR).
+        const footborne = airY > FOOT_RELEASE_AIR;
+        const lStance = !footborne && Math.sin(stride) < 0;
+        const rStance = !footborne && Math.sin(stride) > 0;
 
         if (rig && walkAmt > 0.01) {
             for (const j of rig) {
@@ -463,11 +536,17 @@ export function createHumanoid(site, terrain, obstacles) {
         }
 
         if (ikActive) {
-            if (moving) {
+            if (footborne) {
+                // Real jump: no ground contact to lock against, so both
+                // boots ride the swing arc (solveLeg lifts it by airY)
+                // rather than staying welded to receding ground.
+                lPlanted = false;
+                rPlanted = false;
+            } else if (moving) {
                 // Heel-strike: world-lock the foot at its plant point for
                 // the whole stance phase — the mechanical anti-skate.
-                if (!prevLStance && lStance) { plantFoot(_lPlant, -FOOT_SPACING); lPlanted = true; }
-                if (!prevRStance && rStance) { plantFoot(_rPlant, FOOT_SPACING); rPlanted = true; }
+                if (!prevLStance && lStance) { plantFoot(_lPlant, _lCmd, L_LATERAL); lPlanted = true; }
+                if (!prevRStance && rStance) { plantFoot(_rPlant, _rCmd, R_LATERAL); rPlanted = true; }
                 if (prevLStance && !lStance) lPlanted = false;
                 if (prevRStance && !rStance) rPlanted = false;
             } else {
@@ -475,11 +554,11 @@ export function createHumanoid(site, terrain, obstacles) {
                 // their own patch of ground under the hips — no foot left
                 // frozen mid-swing when the walk stops.
                 const turning = Math.abs(input.steer) > 0.05;
-                if (!lPlanted || turning) { plantIdle(_lPlant, -FOOT_SPACING); lPlanted = true; }
-                if (!rPlanted || turning) { plantIdle(_rPlant, FOOT_SPACING); rPlanted = true; }
+                if (!lPlanted || turning) { plantIdle(_lPlant, L_LATERAL, _lCmd); lPlanted = true; }
+                if (!rPlanted || turning) { plantIdle(_rPlant, R_LATERAL, _rCmd); rPlanted = true; }
             }
-            solveLeg(legs.lT, legs.lC, lPlanted, _lPlant, 0, -FOOT_SPACING);
-            solveLeg(legs.rT, legs.rC, rPlanted, _rPlant, Math.PI, FOOT_SPACING);
+            solveLeg(legs.lT, legs.lC, lPlanted, _lPlant, 0, L_LATERAL, _lCmd);
+            solveLeg(legs.rT, legs.rC, rPlanted, _rPlant, Math.PI, R_LATERAL, _rCmd);
             ikWasActive = true;
         } else {
             // Airborne / IK off: the legs return to the swing cycle. Restore

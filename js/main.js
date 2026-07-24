@@ -1216,7 +1216,8 @@ async function startGame(site) {
             terrain.sampleHeight(recon.position.x, recon.position.z)
                 + colliders.deckHeight(recon.position.x, recon.position.z),
             recon.alt,
-            active.unit === recon && !recon.landed
+            active.unit === recon && !recon.landed,
+            recon.heading
         );
         const engineNorm = active.kind === 'fly'
             ? (active.unit.landed ? 0 : Math.max(0.35, speedNow / active.unit.maxSpeed))

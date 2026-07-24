@@ -231,6 +231,16 @@ export function createEffects(scene, terrain) {
     // (capture stays proximity-gated in photos.js) — it sells "this drone
     // is imaging" and shows roughly what a frame will cover.
     const SENSOR_HALF_TAN = 0.49;   // tan ~26° half-FOV
+    // Boresight tilt FORWARD off nadir. A pure nadir cone hangs straight
+    // down under the fuselage where the chase cam can barely see it and
+    // nothing about it reads as steerable; tilting it ahead puts the
+    // footprint out in front, in view, and it sweeps as you yaw.
+    const SENSOR_TILT = 35 * Math.PI / 180;
+    const SENSOR_AHEAD = Math.tan(SENSOR_TILT);   // ground lead per metre AGL
+    const _coneApex = new THREE.Vector3();
+    const _coneBase = new THREE.Vector3();
+    const _coneAxis = new THREE.Vector3();
+    const _coneUp = new THREE.Vector3(0, 1, 0);
     const sensorMat = new THREE.MeshBasicMaterial({
         color: 0x2ec4d6, transparent: true, opacity: 0.07,
         blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide,
@@ -251,18 +261,40 @@ export function createEffects(scene, terrain) {
     sensorRing.visible = false;
     scene.add(sensorRing);
 
-    /** Per frame: apex rides the recon, base sits on the ground. `visible`
-        gates on "recon is the active unit and airborne" (main.js). */
-    function updateSensorCone(pos, groundY, agl, visible) {
+    /** Per frame: apex rides the recon, footprint lands SENSOR_TILT ahead
+        of it along the drone's heading. `visible` gates on "recon is the
+        active unit and airborne" (main.js). */
+    function updateSensorCone(pos, groundY, agl, visible, heading = 0) {
         const on = visible && agl > 2;
         sensorCone.visible = on;
         sensorRing.visible = on;
         if (!on) return;
-        const r = agl * SENSOR_HALF_TAN;
-        sensorCone.scale.set(r, agl, r);
-        sensorCone.position.set(pos.x, groundY + agl / 2, pos.z);
-        sensorRing.scale.setScalar(r);
-        sensorRing.position.set(pos.x, groundY + 0.15, pos.z);
+        // Drone forward is -[sin h, cos h] (drone.js: "forward axis matches
+        // ground units"), so the footprint leads along that.
+        const fx = -Math.sin(heading), fz = -Math.cos(heading);
+        const lead = agl * SENSOR_AHEAD;
+        _coneApex.set(pos.x, groundY + agl, pos.z);
+        _coneBase.set(pos.x + fx * lead, groundY, pos.z + fz * lead);
+        _coneAxis.copy(_coneApex).sub(_coneBase);
+        const slant = _coneAxis.length();
+        if (slant < 1e-4) return;
+        _coneAxis.divideScalar(slant);
+
+        // ConeGeometry runs apex(+Y) -> base(-Y), so aim local +Y up the
+        // boresight and straddle the apex/base midpoint. Open-ended, so the
+        // rim just clips into the terrain and depth-tests away.
+        const r = slant * SENSOR_HALF_TAN;
+        sensorCone.quaternion.setFromUnitVectors(_coneUp, _coneAxis);
+        sensorCone.scale.set(r, slant, r);
+        sensorCone.position.copy(_coneApex).add(_coneBase).multiplyScalar(0.5);
+
+        // The oblique ground cut is an ellipse — stretch the ring along the
+        // look direction by 1/cos(tilt) and yaw it to match. 'YXZ' gives
+        // R_y(heading)·R_x(-90°), which lays the ring flat with its local
+        // +Y running down-range.
+        sensorRing.rotation.set(-Math.PI / 2, heading, 0, 'YXZ');
+        sensorRing.scale.set(r, r / Math.cos(SENSOR_TILT), 1);
+        sensorRing.position.set(_coneBase.x, groundY + 0.15, _coneBase.z);
     }
 
     function update(dt, active, speed, daylight = 1) {
