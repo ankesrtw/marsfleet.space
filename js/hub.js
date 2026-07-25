@@ -298,8 +298,13 @@ export function createHub({ onEnter } = {}) {
         const c = drawLabelCanvas(site, playable);
         const tex = new THREE.CanvasTexture(c);
         tex.colorSpace = THREE.SRGBColorSpace;
+        // depthTest MUST stay off: a label is centred on its pin, so for any
+        // pin near the limb the far half of the sprite sits behind the globe
+        // surface and gets sliced mid-word ("Olympus Mons" -> "Olympus Mor").
+        // Nothing is lost by disabling it — labels for pins over the horizon
+        // are already culled explicitly by the isFront() test in update().
         const spr = new THREE.Sprite(new THREE.SpriteMaterial({
-            map: tex, transparent: true, depthWrite: false, depthTest: true,
+            map: tex, transparent: true, depthWrite: false, depthTest: false,
         }));
         spr.scale.set(0.5, 0.5 * LABEL_H / LABEL_W, 1);
         spr.userData.canvas = c;
