@@ -3,7 +3,7 @@
    ============================================================ */
 
 import * as THREE from 'three';
-import { SITES, getSiteFromUrl } from './sites.js';
+import { SITES, LOCKED_SITES, getSiteFromUrl } from './sites.js';
 import { loadTerrain } from './terrain.js';
 import { createRover } from './rover.js';
 import { createDrone } from './drone.js';
@@ -780,7 +780,7 @@ async function startGame(site) {
     // Debug/E2E handle (also used by the sampleHeight ground-truth check;
     // renderer/scene/camera exposed so tests on software-GL boxes can pause
     // the loop and capture canvas pixels via a same-task render+toDataURL).
-    window.__mc = { site, terrain, rover, drone: recon, recon, lift, humanoid, van, gratbot, makadane, ongak, tryRock, tryParcel, toggleDance, setDanceMove, danceEligible, get ongakHost() { return ongakHost; }, set ongakHost(u) { ongakHost = u; }, get active() { return units[activeIndex]; }, samples, renderer, scene, camera, camRig, units, env, effects, waypoint, sound, rocks, lab, sling, analysis, outposts, fog, colliders, missions, hazardZones, weather, dustDevils, wind, chargepads, comms, baseList, marsClock, setNightVision, get nightVision() { return nightVision; }, get intro() { return intro; }, hologram, photos, tryPhoto, vanCargo, music };
+    window.__mc = { site, SITES, LOCKED_SITES, terrain, rover, drone: recon, recon, lift, humanoid, van, gratbot, makadane, ongak, tryRock, tryParcel, toggleDance, setDanceMove, danceEligible, get ongakHost() { return ongakHost; }, set ongakHost(u) { ongakHost = u; }, get active() { return units[activeIndex]; }, samples, renderer, scene, camera, camRig, units, env, effects, waypoint, sound, rocks, lab, sling, analysis, outposts, fog, colliders, missions, hazardZones, weather, dustDevils, wind, chargepads, comms, baseList, marsClock, setNightVision, get nightVision() { return nightVision; }, get intro() { return intro; }, hologram, photos, tryPhoto, vanCargo, music };
 
     function applyUnitMode() {
         const active = units[activeIndex];

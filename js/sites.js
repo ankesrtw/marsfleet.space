@@ -539,6 +539,102 @@ export const SITES = {
               buried: { surveyZone: 'eastern-hollows' } },
         ],
     },
+    meridiani: {
+        id: 'meridiani',
+        name: 'Meridiani Planum',
+        mission: 'Opportunity · MER-B',
+        heightmapUrl: 'assets/meridiani/heightmap.png',
+        textureUrl: 'assets/meridiani/albedo.jpg',
+        // Baked from `gdalinfo -stats` (prep_site.sh meridiani, 2026-07-25).
+        // Integers because the HRSC/MOLA blend is Int16, not Float32.
+        elevMin: -1958,
+        elevMax: -1285,
+        // The first REGIONAL site (see prep_site.sh): Meridiani has no
+        // high-res DEM, only the 200m global blend, so a 6km crop would be
+        // 30 elevation samples across — a featureless blob. At 30km the same
+        // DEM gives 150 samples AND the crop spans Opportunity's real
+        // 14-year drive: Eagle Crater in the NW out to Endeavour in the SE.
+        worldSize: 30000,
+        // 512 desktop = 58.6m quads, still 3.4x finer than the 200m DEM.
+        // Going finer would only interpolate detail the data does not have.
+        segments: { desktop: 512, mobile: 128 },
+        center: { lon: -5.34800, lat: -2.11300 },
+        // Opportunity touchdown (UTC) — drives the live mission sol counter.
+        landingUtc: '2004-01-25T05:05:00Z',
+        // CTX quad is grayscale — multiply in the Mars-rust tint.
+        tint: 0xc98a5e,
+        // Eagle Crater, the 22m crater Opportunity bounced into — the
+        // "interplanetary hole in one". Heading SE so W drives the traverse.
+        spawn: { x: -10586, z: -9887, heading: 3.9596 },
+        briefing: [
+            'Ariana: Welcome to Meridiani Planum. I have been watching since the landing — flat dark plains, and one rover that drove forty-five kilometres across them.',
+            'This is where Opportunity proved an ancient sea once stood here. The Eagle plains, Victoria Crater, the Endeavour rim — each tells a chapter of the story.',
+        ],
+        // Zone radii scale with worldSize: 900 here is the same fraction of
+        // the map as Jezero's 200 is of its 6km.
+        surveyZones: [
+            { id: 'eagle-plains', x: -10586, z: -9887, radius: 900 },
+            { id: 'victoria', x: -10195, z: -3734, radius: 900 },
+            { id: 'endeavour-rim', x: 5500, z: 7000, radius: 1000 },
+        ],
+        photoSpots: [
+            { id: 'eagle-crater', name: 'Eagle Crater', x: -10586, z: -9887, note: 'A 22m crater Opportunity bounced into — an interplanetary hole in one' },
+            { id: 'victoria-crater', name: 'Victoria Crater', x: -10195, z: -3734, note: '750m of scalloped cliffs, the deepest section of the first years' },
+            { id: 'endeavour-rim', name: 'Endeavour Rim', x: 5500, z: 7000, note: 'Rim of a 22km crater — the drive that took eight years' },
+            { id: 'endeavour-floor', name: 'Endeavour Floor', x: 10551, z: 9899, note: 'The deep interior, 670m below the plains' },
+        ],
+        missions: ['tutorial', 'survey', 'photo'],
+        hq: { name: 'Signal Meridiani Station' },
+        // Meridiani is a sand-ripple plain: Opportunity spent five weeks
+        // bogged in "Purgatory Dune" in 2005. And the 2018 global dust storm
+        // is what finally killed the rover — hence the highest storm peak
+        // of any site we ship.
+        hazards: {
+            softSand: [
+                { x: -9500, z: -7000, r: 800, intensity: 0.75 },  // Purgatory Dune
+                { x: 0, z: -3000, r: 700, intensity: 0.5 },       // open ripple field
+                { x: 11000, z: 11000, r: 900, intensity: 0.6 },   // Endeavour floor sands
+            ],
+            dustStorm: { peakIntensity: 0.9 },
+        },
+        samples: [
+            { id: 'eagle-outcrop', name: 'Eagle Crater Outcrop', x: -10586, z: -9887, note: 'The first bedrock seen up close on Mars',
+              finding: 'Layered sulfate bedrock in the crater wall — sediment laid down in standing water, found within days of landing.',
+              outpost: { name: 'Eagle Checkpost' } },
+            { id: 'blueberries', name: 'Hematite Concretions', x: -10400, z: -9700, note: 'The "blueberries"',
+              finding: 'Hematite spherules weathering out of the rock — they grew inside water-soaked sediment, grain by grain.',
+              outpost: { name: 'Blueberry Checkpost' } },
+            { id: 'endurance', name: 'Endurance Crater', x: -9800, z: -9400, note: '130m crater, explored 2004',
+              finding: 'Seven metres of layered rock in one wall — a long read of an acidic, evaporating sea that came and went.',
+              outpost: { name: 'Endurance Checkpost' } },
+            { id: 'heat-shield-rock', name: 'Heat Shield Rock', x: -9000, z: -8600, note: 'Beside the discarded heat shield',
+              finding: 'An iron-nickel meteorite — the first meteorite ever identified on the surface of another planet.' },
+            { id: 'purgatory-dune', name: 'Purgatory Dune', x: -9500, z: -7000, note: 'Where Opportunity bogged in 2005',
+              finding: 'A ripple of fine basaltic sand deep enough to bury the wheels — five weeks of careful reversing to escape.' },
+            { id: 'erebus', name: 'Erebus Crater', x: -10000, z: -6500, note: 'Eroded crater, 2005-06',
+              finding: 'Cross-bedded sandstone — wind-blown dunes that were later soaked, cemented and turned to rock.' },
+            { id: 'victoria', name: 'Victoria Crater', x: -10195, z: -3734, note: '750m crater, explored 2006-08',
+              finding: 'Scalloped capes and bays exposing the thickest stack of layers yet — the sea record ran deeper than anyone expected.',
+              outpost: { name: 'Victoria Checkpost' } },
+            { id: 'santa-maria', name: 'Santa Maria Crater', x: -8000, z: -1500, note: 'Waypoint crater, 2010-11 (approx. location)',
+              finding: 'Hydrated sulfate salts detected from orbit and confirmed on the ground — water chemistry preserved in the rim rock.' },
+            { id: 'cape-york', name: 'Cape York', x: 4000, z: 4000, note: 'Endeavour rim segment, reached 2011',
+              finding: 'Esperance: aluminium-rich clay formed in NEUTRAL water — drinkable, unlike the acid that made everything else here.',
+              outpost: { name: 'Cape York Checkpost' } },
+            { id: 'marathon-valley', name: 'Marathon Valley', x: 5500, z: 7000, note: 'Rim valley, 2015-16',
+              finding: 'Clay minerals right where orbiters predicted them — and the point where the odometer passed a full marathon.',
+              outpost: { name: 'Marathon Checkpost' } },
+            { id: 'perseverance-valley', name: 'Perseverance Valley', x: 4500, z: 8500, note: 'Where the mission ended, June 2018',
+              finding: 'A carved channel on the rim, half surveyed when a global dust storm blacked out the sky and the last signal came: my battery is low.' },
+            { id: 'endeavour-floor', name: 'Endeavour Floor', x: 10551, z: 9899, note: 'Crater interior — simulated survey target',
+              finding: '[SIM] The deep floor of a 22km impact basin, 670m below the plains — the lowest ground for a hundred kilometres.' },
+            // Recon must map the endeavour-rim zone before this can be cored.
+            { id: 'meridiani-subsurface-core', name: 'Meridiani Subsurface Core', x: 6100, z: 7600,
+              note: '[SIM] Buried rim-flank core — localized by aerial survey',
+              finding: '[SIM] Clay-bearing rim rock sealed beneath the sulfate blanket — the older, gentler water chemistry the acid never reached.',
+              buried: { surveyZone: 'endeavour-rim' } },
+        ],
+    },
 };
 
 // Future landing sites — shown on the Site Hub globe (hub.js) as dim
@@ -547,10 +643,12 @@ export const SITES = {
 // can never route into a site with no assets; the hub is the only consumer.
 // Real coords land each pin on a recognizable feature of the Viking mosaic:
 // Hellas = the bright basin lower-right, Olympus Mons = the big shield left.
+// A site listed in SITES must NOT also appear here — hub.js concatenates
+// both lists into one pin array, so a duplicate id renders two overlapping
+// pins on the globe (one playable, one greyed "COMING SOON").
 export const LOCKED_SITES = [
     { id: 'hellas', name: 'Hellas Planitia', mission: 'Future landing — survey pending', center: { lon: 70.0, lat: -42.4 }, playable: false },
     { id: 'olympus', name: 'Olympus Mons', mission: 'Future landing — survey pending', center: { lon: -134.0, lat: 18.65 }, playable: false },
-    { id: 'meridiani', name: 'Meridiani Planum', mission: 'Opportunity · MER-B (future port)', center: { lon: -5.4, lat: -1.95 }, playable: false },
 ];
 
 export function getSiteFromUrl() {
