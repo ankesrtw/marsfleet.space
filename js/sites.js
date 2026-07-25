@@ -361,6 +361,94 @@ export const SITES = {
               buried: { surveyZone: 'southern-hills' } },
         ],
     },
+    syrtis: {
+        id: 'syrtis',
+        name: 'NE Syrtis',
+        // No lander has ever been here — it was Jezero's closest rival for
+        // Mars 2020 and lost. Everything known about it came from orbit.
+        mission: 'MRO survey · unflown',
+        heightmapUrl: 'assets/syrtis/heightmap.png',
+        textureUrl: 'assets/syrtis/albedo.jpg',
+        // Baked from `gdalinfo -stats` (prep_site.sh syrtis, 2026-07-25).
+        // 940m relief — by far the most vertical site we ship.
+        elevMin: -4881.8115234375,
+        elevMax: -3941.2958984375,
+        // 6km x 6km at (21.90430W, 21.65871N), chosen by scanning the whole
+        // 37x46km DTM for the 6km window with the most relief. Slopes stay
+        // drivable: median 7.3deg, p90 18.3deg, only 2.7% over 25deg.
+        worldSize: 6000,
+        segments: { desktop: 384, mobile: 128 },
+        center: { lon: -21.90430, lat: 21.65871 },
+        // This site has no landing to count from, so the sol clock runs from
+        // Mars Reconnaissance Orbiter's orbit insertion — the spacecraft
+        // whose CTX/CRISM data is the only reason we know anything here.
+        landingUtc: '2006-03-10T21:24:00Z',
+        tint: 0xc98a5e,
+        // Spawn low on the basin floor in the NW, facing SE so W drives the
+        // full climb: carbonate basin -> scarp face -> Syrtis lava plateau.
+        spawn: { x: -2400, z: -600, heading: 4.1333 },
+        briefing: [
+            'Ariana: Welcome to NE Syrtis. No one has ever landed here — we are the first. The basin floor below us, the scarp above it, and the old lava plateau on the skyline.',
+            'Orbiters found carbonates and clays here, cooked by warm water. The carbonate basin, the scarp face, the Syrtis plateau — each tells a chapter of the story.',
+        ],
+        surveyZones: [
+            { id: 'carbonate-basin', x: -2200, z: -2200, radius: 200 }, // basin floor
+            { id: 'scarp-face', x: 990, z: 1290, radius: 220 },         // mid-scarp
+            { id: 'syrtis-plateau', x: 2600, z: 2600, radius: 200 },    // capping lavas
+        ],
+        photoSpots: [
+            { id: 'carbonate-basin', name: 'Carbonate Basin', x: -2200, z: -2200, note: 'Olivine-carbonate bedrock — the reason this site was a finalist' },
+            { id: 'scarp-face', name: 'The Scarp', x: 990, z: 1290, note: 'Four billion years of stratigraphy exposed in one climb' },
+            { id: 'syrtis-plateau', name: 'Syrtis Plateau', x: 2600, z: 2600, note: 'Young Syrtis Major lavas capping the whole sequence' },
+            { id: 'north-bench', name: 'North Bench', x: 2800, z: -1400, note: 'Fractured bench cut by the Nili Fossae trough system' },
+        ],
+        missions: ['tutorial', 'survey', 'photo'],
+        hq: { name: 'Signal Syrtis Station' },
+        hazards: {
+            softSand: [
+                { x: -1990, z: -2070, r: 200, intensity: 0.6 },  // basin floor sands
+                { x: -500, z: 300, r: 180, intensity: 0.5 },     // scarp-base talus
+                { x: 2400, z: 1800, r: 170, intensity: 0.55 },   // plateau drift
+            ],
+            dustStorm: { peakIntensity: 0.65 },
+        },
+        samples: [
+            { id: 'olivine-carbonate', name: 'Olivine-Carbonate Bedrock', x: -2200, z: -2200, note: 'The unit that made this a finalist site',
+              finding: 'Magnesium carbonate intergrown with olivine — rock that reacted with water and locked away CO₂ from a thicker early atmosphere.',
+              outpost: { name: 'Carbonate Checkpost' } },
+            { id: 'serpentine', name: 'Serpentine Outcrop', x: -1600, z: -1400, note: 'Altered ultramafic rock',
+              finding: 'Serpentinized olivine — a reaction that releases hydrogen and can feed microbial life with no sunlight at all.',
+              outpost: { name: 'Serpentine Checkpost' } },
+            { id: 'megabreccia', name: 'Isidis Megabreccia', x: -900, z: -2400, note: 'Basement shattered by the Isidis impact',
+              finding: 'House-sized blocks of crust thrown out by the Isidis impact — the deepest, oldest rock exposed anywhere at this site.' },
+            { id: 'clay-unit', name: 'Fe/Mg Clay Unit', x: -300, z: -900, note: 'Smectite-bearing layer',
+              finding: 'Iron-magnesium smectite clays — a long, quiet period of water-rock reaction before the lavas sealed it over.',
+              outpost: { name: 'Clay Unit Checkpost' } },
+            { id: 'scarp-face', name: 'The Scarp', x: 990, z: 1290, note: 'Mid-scarp stratigraphic section',
+              finding: 'Carbonates, clays, sulfates and lava stacked in order in one cliff — the whole wet-to-dry history of Mars in a single climb.',
+              outpost: { name: 'Scarp Checkpost' } },
+            { id: 'layered-sulfates', name: 'Layered Sulfates', x: 1700, z: 700, note: 'Upper scarp evaporites',
+              finding: 'Sulfate salts over the clays — the water that remained had turned acidic and was drying out for good.' },
+            { id: 'nili-trough', name: 'Nili Fossae Trough', x: 2800, z: -1400, note: 'Graben concentric to Isidis (approx. location)',
+              finding: 'A fracture torn open when the Isidis impact flexed the crust — and the plumbing that let hot water reach the surface.' },
+            { id: 'syrtis-cap', name: 'Syrtis Major Cap', x: 2600, z: 2600, note: 'Capping lava unit',
+              finding: 'Young Syrtis Major basalt flooding over everything — the lid that sealed and preserved the ancient record beneath.',
+              outpost: { name: 'Syrtis Cap Checkpost' } },
+            { id: 'talus-apron', name: 'Talus Apron', x: -500, z: 300, note: 'Scarp-base debris fan',
+              finding: 'Blocks shed from every layer above, collected in one fan — a free sample of the entire section without the climb.' },
+            { id: 'plateau-rim', name: 'Plateau Rim', x: 1990, z: 1970, note: 'Scarp crest (approx. location)',
+              finding: 'The contact where lava meets altered bedrock — a hard line between a wet Mars and the dry one that followed.' },
+            { id: 'basin-sands', name: 'Basin Sands', x: -1990, z: -2070, note: 'Aeolian survey — simulated survey target',
+              finding: '[SIM] Dark basaltic sand pooled on the basin floor, sorted and re-sorted by wind funnelling along the scarp.' },
+            { id: 'north-bench', name: 'North Bench', x: 2400, z: -2100, note: 'Survey station — simulated survey target',
+              finding: '[SIM] Fractured bench above the trough — clear line of sight down the whole fossae system.' },
+            // Recon must map the scarp-face zone before this can be cored.
+            { id: 'syrtis-subsurface-core', name: 'Syrtis Subsurface Core', x: 1120, z: 1420,
+              note: '[SIM] Buried scarp-face core — localized by aerial survey',
+              finding: '[SIM] Unweathered carbonate sealed under the talus — the pristine version of the surface rock, never touched by the dry air.',
+              buried: { surveyZone: 'scarp-face' } },
+        ],
+    },
 };
 
 // Future landing sites — shown on the Site Hub globe (hub.js) as dim
