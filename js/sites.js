@@ -730,20 +730,115 @@ export const SITES = {
               buried: { surveyZone: 'main-caldera' } },
         ],
     },
+    hellas: {
+        id: 'hellas',
+        name: 'Hellas Planitia',
+        mission: 'MGS survey · unflown',
+        heightmapUrl: 'assets/hellas/heightmap.png',
+        textureUrl: 'assets/hellas/albedo.jpg',
+        // Baked from `gdalinfo -stats` (prep_site.sh hellas, 2026-07-26).
+        // 3268m of relief, and the only site that crosses the datum:
+        // -694m on the basin side up to +2574m on the rim highlands.
+        elevMin: -694,
+        elevMax: 2574,
+        // 30km x 30km at (102.97E, 39.56S), on the EASTERN RIM of the Hellas
+        // basin. RELOCATED from the old locked pin at (70E, 42.4S), which
+        // has no CTX coverage at all — the Hellas exploration-zone mosaics
+        // sit at 99.66-106.28E / 37.32-41.81S, so the site moved onto real
+        // 5m imagery instead of shipping a Viking-resolution blur.
+        // Despite the relief this is the gentlest of the regional sites:
+        // slopes run median 2.5deg, p90 14.1deg, only 1.6% over 25deg — a
+        // long regional climb out of the basin, not a wall.
+        worldSize: 30000,
+        segments: { desktop: 512, mobile: 128 },
+        center: { lon: 102.97, lat: -39.56 },
+        // No lander here either. Mars Global Surveyor's MOLA is what
+        // actually measured how deep this basin is, so the clock runs from
+        // its orbit insertion.
+        landingUtc: '1997-09-12T01:17:00Z',
+        tint: 0xc98a5e,
+        // Spawn low on the basin side, facing ENE so W drives up the rim.
+        spawn: { x: -9000, z: 4000, heading: 5.2195 },
+        briefing: [
+            'Ariana: Welcome to the eastern rim of Hellas Planitia — the deepest basin on Mars, and the biggest hole any impact ever punched in this planet.',
+            'The air down in the basin is thick enough for liquid water, briefly. The basin floor, the rim scarp, the eastern highlands — each tells a chapter of the story.',
+        ],
+        surveyZones: [
+            { id: 'basin-floor', x: -11000, z: 9000, radius: 900 },
+            { id: 'rim-scarp', x: 0, z: 0, radius: 1000 },
+            { id: 'eastern-highlands', x: 11000, z: -9000, radius: 900 },
+        ],
+        photoSpots: [
+            { id: 'basin-floor', name: 'Basin Floor', x: -11000, z: 9000, note: 'Looking down into the deepest place on Mars' },
+            { id: 'rim-scarp', name: 'Rim Scarp', x: 0, z: 0, note: 'Three kilometres of climb out of the basin' },
+            { id: 'eastern-highlands', name: 'Eastern Highlands', x: 11000, z: -9000, note: 'Ancient cratered terrain above the rim' },
+            { id: 'dissected-valleys', name: 'Dissected Valleys', x: -8000, z: -11000, note: 'Branching valleys cut into the rim by running water' },
+        ],
+        missions: ['tutorial', 'survey', 'photo'],
+        hq: { name: 'Signal Hellas Station' },
+        hazards: {
+            softSand: [
+                { x: -11000, z: 9000, r: 900, intensity: 0.7 },   // basin-floor dust
+                { x: 3000, z: 6000, r: 800, intensity: 0.55 },    // scarp-foot apron
+                { x: 12000, z: -6000, r: 800, intensity: 0.5 },   // highland drift
+            ],
+            // Hellas is famous for breeding regional dust storms — the low,
+            // dense air makes it one of the planet's storm nurseries.
+            dustStorm: { peakIntensity: 0.85 },
+        },
+        samples: [
+            { id: 'basin-floor', name: 'Basin Floor Deposits', x: -11000, z: 9000, note: 'Lowest ground in the crop',
+              finding: 'Layered fill on the floor of a basin seven kilometres deep — sediment, ice and dust stacked since the impact that made it.',
+              outpost: { name: 'Basin Floor Checkpost' } },
+            { id: 'rim-scarp', name: 'Rim Scarp', x: 0, z: 0, note: 'The main climb',
+              finding: 'Three kilometres of section in one slope — crust uplifted and overturned by the impact, then cut back by erosion.',
+              outpost: { name: 'Rim Scarp Checkpost' } },
+            { id: 'dissected-valleys', name: 'Dissected Valleys', x: -8000, z: -11000, note: 'Branching valley networks',
+              finding: 'Dendritic valleys cut into the rim — rain or meltwater ran down this slope when Mars still had weather.',
+              outpost: { name: 'Valleys Checkpost' } },
+            { id: 'eastern-highlands', name: 'Eastern Highlands', x: 11000, z: -9000, note: 'Ancient cratered terrain',
+              finding: 'Some of the oldest surface on the planet — Noachian crust that has simply sat here for four billion years.',
+              outpost: { name: 'Highlands Checkpost' } },
+            { id: 'glacial-fill', name: 'Glacial Fill', x: -6000, z: 12000, note: 'Viscous flow features (approx. location)',
+              finding: 'Lobed debris aprons that crept downhill like glaciers — buried ice, still there under a rind of rock.' },
+            { id: 'impact-melt', name: 'Impact Melt Sheet', x: 6000, z: 10000, note: 'Basin-forming melt (approx. location)',
+              finding: 'Rock melted outright by the impact and ponded as it cooled — the signature of a collision that nearly split the crust.' },
+            { id: 'honeycomb', name: 'Honeycomb Terrain', x: -13000, z: 2000, note: 'Cellular basin-floor pattern (approx. location)',
+              finding: 'A polygonal cell pattern unique to this basin — probably salt or ice diapirs rising slowly through the fill.' },
+            { id: 'gullies', name: 'Rim Gullies', x: 4000, z: -8000, note: 'Young slope features',
+              finding: 'Gullies far younger than the valleys above them — briny meltwater or dry debris flows, still argued over.' },
+            { id: 'wind-streaks', name: 'Wind Streaks', x: 12000, z: -6000, note: 'Aeolian survey target',
+              finding: 'Bright and dark streaks behind every crater, all pointing the same way — the prevailing wind, written across the highlands.' },
+            { id: 'crater-cluster', name: 'Crater Cluster', x: 9000, z: 5000, note: 'Secondary crater field (approx. location)',
+              finding: 'A tight cluster of secondaries — debris thrown from a much larger impact elsewhere, landing together.' },
+            { id: 'scarp-apron', name: 'Scarp Apron', x: 3000, z: 6000, note: 'Debris fan — simulated survey target',
+              finding: '[SIM] Material shed from the whole scarp and pooled at its foot — every layer above, sampled without the climb.' },
+            { id: 'south-station', name: 'South Station', x: -2000, z: 13000, note: 'Survey station — simulated survey target',
+              finding: '[SIM] Open sightline west across the basin, with the far rim below the horizon 1,500km away.' },
+            // Recon must map the rim-scarp zone before this can be cored.
+            { id: 'hellas-subsurface-core', name: 'Hellas Subsurface Core', x: 900, z: 1200,
+              note: '[SIM] Buried scarp core — localized by aerial survey',
+              finding: '[SIM] Ice-cemented breccia sealed inside the scarp — water still held in the rock, three kilometres above the basin floor.',
+              buried: { surveyZone: 'rim-scarp' } },
+        ],
+    },
 };
 
 // Future landing sites — shown on the Site Hub globe (hub.js) as dim
 // "COMING SOON" pins at their real coordinates, but NOT yet playable (no
 // heightmap/albedo/samples). Kept OUT of SITES so getSiteFromUrl / startGame
 // can never route into a site with no assets; the hub is the only consumer.
-// Real coords land each pin on a recognizable feature of the Viking mosaic:
-// Hellas = the bright basin lower-right, Olympus Mons = the big shield left.
+//
 // A site listed in SITES must NOT also appear here — hub.js concatenates
 // both lists into one pin array, so a duplicate id renders two overlapping
-// pins on the globe (one playable, one greyed "COMING SOON").
-export const LOCKED_SITES = [
-    { id: 'hellas', name: 'Hellas Planitia', mission: 'Future landing — survey pending', center: { lon: 70.0, lat: -42.4 }, playable: false },
-];
+// pins on the globe (one playable, one greyed "COMING SOON"). Guarded by
+// tests/e2e/test_site_parity.py.
+//
+// EMPTY as of plan 30: all three former "coming soon" pins (Hellas, Olympus
+// Mons, Meridiani Planum) are now built and playable, alongside Gusev, NE
+// Syrtis and Elysium Planitia. The array stays exported — hub.js spreads it
+// unconditionally, and the next unbuilt body lands here.
+export const LOCKED_SITES = [];
 
 export function getSiteFromUrl() {
     const params = new URLSearchParams(window.location.search);
