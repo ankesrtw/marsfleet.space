@@ -181,19 +181,54 @@ export function createWalker(site, terrain, obstacles, spec) {
     // frame as input.beats so the dance stays locked to music.js's clock.
     let danceOn = false;
     let danceMove = 0;
+    let danceRamp = 0;   // 0→1 ease-in so a move never pops on in one frame
     const DANCE_MOVES = 5;
+    // Rear-up pivot: the HIND feet. Rotating the body about the line through
+    // them holds every hind hip at a CONSTANT distance from its own foot
+    // (that distance is a rotation invariant), so the hind legs stay solvable
+    // no matter how high it rears — and the hind feet never leave their plant.
+    const hindLz = legs.reduce((m, l) => Math.max(m, l.homeLz), 0);
+    // Nose-up rear angle. Kept moderate on purpose: the terrain-hug tilt stacks
+    // on top of it, and rearing swings the rear-bottom chassis corner down AND
+    // backward, so too steep an angle buries that corner in ground rising
+    // behind the pivot. 0.6 rad clears a 20° grade at every heading.
+    const REAR_PITCH = 0.6;
     const bound = site.worldSize / 2 - EDGE_MARGIN;
 
     const _fwd = new THREE.Vector3();   // body +Z in world
     const _lat = new THREE.Vector3();   // body +X in world (plant offsets)
     const _right = new THREE.Vector3(); // humanoid's roll-axis convention
     const _up = new THREE.Vector3(0, 1, 0);
+    // Body-LOCAL axes. The dance composes onto the finished tilt/heading pose,
+    // so its axes live in the walker's own frame — using the world-space
+    // _fwd/_right there made the rotation heading-dependent (it inverted into
+    // a nose-DIVE at heading π and degenerated into a roll at ±π/2).
+    const _bodyX = new THREE.Vector3(1, 0, 0);
+    const _bodyY = new THREE.Vector3(0, 1, 0);
+    const _bodyZ = new THREE.Vector3(0, 0, 1);
     const _yawQ = new THREE.Quaternion();
     const _pitchQ = new THREE.Quaternion();
     const _rollQ = new THREE.Quaternion();
     const _tiltQ = new THREE.Quaternion();
+    // The smoothed terrain-tilt pose, kept SEPARATE from mesh.quaternion.
+    // mesh.quaternion is the tilt with the dance offset already composed in;
+    // slerping the next frame's smoothing from that fed the offset back into
+    // itself and the pitch ran away with framerate (31° intended → 89° at
+    // 60fps, which buried the whole chassis).
+    const _baseQ = new THREE.Quaternion();
     const _danceQ = new THREE.Quaternion();
     const _danceHip = new THREE.Vector3();
+    const _dancePaw = new THREE.Vector3();
+    // The body position BEFORE the rear-up lean. Foot homes are anchored to
+    // this, not to the leaned position — the feet are what's planted; the
+    // chassis is what moves over them. (Homing off the leaned position slid
+    // the hind feet backwards by the lean, i.e. a skate.)
+    const _danceBase = new THREE.Vector3();
+    const _danceSeat = new THREE.Vector3();   // rotated hind-foot offset
+    // Horizontal body shift the dance applied last frame (the rear-up leans
+    // back over its hind feet). mesh.position IS the movement integrator's
+    // state, so this must be undone before the next step or it drifts.
+    const _danceOfs = new THREE.Vector3();
     const _local = new THREE.Vector3();
     const _hipInv = new THREE.Matrix4();
 
@@ -307,12 +342,14 @@ export function createWalker(site, terrain, obstacles, spec) {
 
     /** Beat-synced dance-in-place. Called from update() instead of the gait
         loop when danceOn and the unit is stationary. `beats` is elapsed
-        beats (float) from music.js. It leaves _fwd/_lat/_right (heading
-        frame) and the terrain-tilt quaternion already set by update(); it
-        adds a body bounce + rotation offset, then plants the feet at their
-        heading-relative homes so the IK bends the legs under the moving
-        body. Feet stay on the ground except where a move lifts them. */
-    function poseDance(beats) {
+        beats (float) from music.js. It consumes the heading frame (_fwd/_lat)
+        and the smoothed terrain tilt (_baseQ) that update() has already set;
+        it adds a body bounce + a body-LOCAL rotation offset, then plants the
+        feet at their heading-relative homes so the IK bends the legs under
+        the moving body. Feet stay on the ground except where a move lifts
+        them, and no foot or chassis point is ever driven below the surface. */
+    function poseDance(beats, dt) {
+        danceRamp += (1 - danceRamp) * Math.min(1, 5 * dt);
         const w = beats * Math.PI * 2;         // one cycle per beat
         const barPh = (beats / 4) * Math.PI * 2; // one cycle per 4/4 bar
         // hop: a sharp 0→1→0 peaking ON the beat (phase 0)
@@ -325,14 +362,13 @@ export function createWalker(site, terrain, obstacles, spec) {
                 dY = 0.11 * hop;
                 pitch = 0.03 * Math.sin(w);
                 break;
-            case 1: // TWO-LEG — rear up on the hind legs, front paws waving.
-                // Body lifts and pitches NOSE-UP (pitch>0 raises the −Z front,
-                // derived from the _right axis rotation), so it towers rather
-                // than looking sunk into the ground; the front legs leave the
-                // stance and dangle/paw from the raised chest (handled below).
+            case 1: // TWO-LEG — rear up on the hind legs like a horse.
+                // pitch>0 is nose-up about the body's own X. The rise and the
+                // backward lean are NOT tuned constants — they are derived
+                // below from the pitch so the motion is a true rotation about
+                // the planted hind feet.
                 rearUp = true;
-                dY = 0.30 + 0.05 * hop;
-                pitch = 0.55 + 0.06 * hop;
+                pitch = REAR_PITCH + 0.07 * hop;
                 yaw = 0.10 * Math.sin(barPh);   // a little sway for flair
                 break;
             case 2: // SPIN — the chassis twists over the bar (feet stay put,
@@ -360,12 +396,37 @@ export function createWalker(site, terrain, obstacles, spec) {
             }
         }
 
-        mesh.position.y += dY;
-        _yawQ.setFromAxisAngle(_up, yaw);
-        _pitchQ.setFromAxisAngle(_right, -pitch);
-        _rollQ.setFromAxisAngle(_fwd, -roll);
+        yaw *= danceRamp; roll *= danceRamp; pitch *= danceRamp; dY *= danceRamp;
+        _danceBase.copy(mesh.position);   // ground-seated pose, before the dance
+        _yawQ.setFromAxisAngle(_bodyY, yaw);
+        _pitchQ.setFromAxisAngle(_bodyX, pitch);
+        _rollQ.setFromAxisAngle(_bodyZ, -roll);
         _danceQ.copy(_yawQ).multiply(_pitchQ).multiply(_rollQ);
-        mesh.quaternion.multiply(_danceQ);   // compose onto the tilt/heading pose
+        // Compose onto the SMOOTHED tilt, never onto the previous composed
+        // pose — mesh.quaternion is an output here, not an accumulator.
+        mesh.quaternion.copy(_baseQ).multiply(_danceQ);
+
+        if (rearUp) {
+            // SEAT the reared chassis on its hind feet. Under the FULL pose q
+            // (terrain tilt AND the rear pitch), the body-local hind-foot line
+            // L = (0,0,hindLz) must land back on the ground, so
+            // position = P_world − q·L. This is the general form of "pivot
+            // about the hind feet": on the flat it reduces to a rise of
+            // hindLz·sin θ and a lean of hindLz·(1−cos θ), but it also stays
+            // correct on a grade — deriving the rise from the dance pitch alone
+            // ignored the tilt already in the pose and swung the rear corner
+            // 0.23 m into the hillside.
+            const px = _danceBase.x + _fwd.x * hindLz;
+            const pz = _danceBase.z + _fwd.z * hindLz;
+            _danceSeat.set(0, 0, hindLz).applyQuaternion(mesh.quaternion);
+            mesh.position.set(px - _danceSeat.x,
+                groundAt(px, pz) - _danceSeat.y,
+                pz - _danceSeat.z);
+            _danceOfs.set(mesh.position.x - _danceBase.x, 0,
+                mesh.position.z - _danceBase.z);
+        } else {
+            mesh.position.y += dY;
+        }
         mesh.updateWorldMatrix(true, false);
 
         for (let li = 0; li < legs.length; li++) {
@@ -378,18 +439,29 @@ export function createWalker(site, terrain, obstacles, spec) {
                 _danceHip.setFromMatrixPosition(leg.hipMount.matrixWorld);
                 const left = leg.homeLx < 0;
                 const wig = 0.16 * Math.sin(w + (left ? 0 : Math.PI));
-                const px = _danceHip.x - _fwd.x * 0.30;   // reach out front (−_fwd)
-                const pz = _danceHip.z - _fwd.z * 0.30;
-                const py = _danceHip.y - 0.30 + wig;       // dangle below the chest
-                leg.plant.set(px, py, pz);
+                // Paw from the raised chest, alternating on the beat. Offsets
+                // stay well inside L1+L2 of the hip, so the IK never saturates.
+                // Lerped off the ground home by the ramp, so the forelegs
+                // leave the surface with the rear-up instead of snapping up.
+                const hx = _danceBase.x + _lat.x * leg.homeLx + _fwd.x * leg.homeLz;
+                const hz = _danceBase.z + _lat.z * leg.homeLx + _fwd.z * leg.homeLz;
+                const hy = groundAt(hx, hz);
+                const k = danceRamp;
+                _dancePaw.set(
+                    hx + (_danceHip.x - _fwd.x * 0.30 - hx) * k,   // out front (−_fwd)
+                    hy + (_danceHip.y - 0.30 + wig - hy) * k,
+                    hz + (_danceHip.z - _fwd.z * 0.30 - hz) * k);
+                // A paw is never allowed to reach below the surface.
+                _dancePaw.y = Math.max(_dancePaw.y, groundAt(_dancePaw.x, _dancePaw.z));
+                leg.plant.copy(_dancePaw);
                 leg.planted = false;
                 leg.prevStance = true;
-                leg.cmd.set(px, py, pz);
-                solveChain(leg, px, py, pz);
+                leg.cmd.copy(_dancePaw);
+                solveChain(leg, _dancePaw.x, _dancePaw.y, _dancePaw.z);
                 continue;
             }
-            const fx = mesh.position.x + _lat.x * leg.homeLx + _fwd.x * leg.homeLz;
-            const fz = mesh.position.z + _lat.z * leg.homeLx + _fwd.z * leg.homeLz;
+            const fx = _danceBase.x + _lat.x * leg.homeLx + _fwd.x * leg.homeLz;
+            const fz = _danceBase.z + _lat.z * leg.homeLx + _fwd.z * leg.homeLz;
             const gy = groundAt(fx, fz);
             const fy = gy + Math.max(0, lift[li]);   // never target below ground
             leg.plant.set(fx, gy, fz);
@@ -401,6 +473,13 @@ export function createWalker(site, terrain, obstacles, spec) {
     }
 
     function update(dt, input) {
+        // Undo last frame's dance body shift BEFORE the step integrator reads
+        // mesh.position — leaving it in place re-applies it every frame and
+        // the walker slides backwards for as long as it dances.
+        if (_danceOfs.lengthSq() > 0) {
+            mesh.position.sub(_danceOfs);
+            _danceOfs.set(0, 0, 0);
+        }
         heading += input.steer * spec.turnRate * dt;
 
         const normal = terrain.sampleGroundNormal(mesh.position.x, mesh.position.z);
@@ -444,14 +523,16 @@ export function createWalker(site, terrain, obstacles, spec) {
         _pitchQ.setFromAxisAngle(_right, -pitch);
         _rollQ.setFromAxisAngle(_fwd, -roll);
         _tiltQ.copy(_yawQ).multiply(_pitchQ).multiply(_rollQ);
-        if (dt === 0) mesh.quaternion.copy(_tiltQ);      // boot: no swivel-in
-        else mesh.quaternion.slerp(_tiltQ, 1 - Math.exp(-10 * dt));
+        if (dt === 0) _baseQ.copy(_tiltQ);               // boot: no swivel-in
+        else _baseQ.slerp(_tiltQ, 1 - Math.exp(-10 * dt));
+        mesh.quaternion.copy(_baseQ);
         mesh.position.y += Math.abs(Math.sin(stride)) * spec.bobAmp * walkAmt;
         mesh.updateWorldMatrix(true, false);
 
         // Plan 28: dance owns the pose while stopped. Driving overrides it —
         // the dance resumes the moment you let go of the stick.
-        if (danceOn && !moving) { poseDance(input.beats ?? 0); return; }
+        if (danceOn && !moving) { poseDance(input.beats ?? 0, dt); return; }
+        danceRamp = 0;   // driving resets the ease-in
 
         const TAU = Math.PI * 2;
         const turning = Math.abs(input.steer) > 0.05;
@@ -514,9 +595,15 @@ export function createWalker(site, terrain, obstacles, spec) {
             plant so the gait re-captures continuity cleanly. */
         setDance(on) {
             danceOn = !!on;
-            if (!on) for (const leg of legs) leg.planted = false;
+            if (!on) {
+                danceRamp = 0;
+                for (const leg of legs) leg.planted = false;
+            }
         },
-        setDanceMove(i) { danceMove = ((i % DANCE_MOVES) + DANCE_MOVES) % DANCE_MOVES; },
+        setDanceMove(i) {
+            danceMove = ((i % DANCE_MOVES) + DANCE_MOVES) % DANCE_MOVES;
+            danceRamp = 0;   // ease into the new move from the current pose
+        },
         get dancing() { return danceOn; },
         get danceMove() { return danceMove; },
         get danceMoveCount() { return DANCE_MOVES; },
