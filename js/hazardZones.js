@@ -11,7 +11,9 @@
 
    Zones come from sites.js `hazards.softSand: [{x, z, r,
    intensity}]` — a site without the field simply has none (the
-   whole module no-ops, Gale untouched by design).
+   whole module no-ops). Both shipped sites define zones on their
+   real aeolian ground: Séítah/Neretva at Jezero, Bagnold and the
+   Peace Vallis fan at Gale (plan 21-B).
 
    Effect profile: full intensity through the zone core, linear
    ramp over the outer EDGE_BAND fraction of the radius — a

@@ -65,7 +65,7 @@ const NV_GAIN_DARK = 10;
 const NV_GAIN_DAY = 1.6;
 
 // Per-site mesh density (sites.js `segments`) by device class — Gale's 1m
-// DEM earns 512 desktop quads, Jezero's 20m DEM doesn't. Fallback for
+// DEM earns 1024 desktop quads, Jezero's 20m DEM only 384. Fallback for
 // sites without the field keeps the old shared 256/128.
 function qualityFor(site) {
     const coarse = window.matchMedia('(pointer: coarse)').matches;
@@ -387,7 +387,8 @@ async function startGame(site) {
     // grounded on the terrain at her own spot.
     const holoSpot = new THREE.Vector3(lab.stationPos.x + 3.2, 0, lab.stationPos.z + 5.6);
     holoSpot.y = terrain.sampleHeight(holoSpot.x, holoSpot.z);
-    const hologram = createLabHologram(scene, holoSpot);
+    // `site` supplies her site-specific briefing lines (sites.js `briefing`).
+    const hologram = createLabHologram(scene, holoSpot, site);
     // Plan 28: rising-edge latch for the opening "report to Ariana" mission
     // step — set once, so re-approaching her later doesn't re-fire it.
     let arianaBriefed = false;

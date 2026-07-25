@@ -16,8 +16,8 @@
    devils cost one draw call. sampleWind(x, z) feeds the main.js
    wind facade that drones read; rovers ignore it (1/100 Earth air
    density — real vortices rock a rover's wind sensor, not the
-   rover). Sites without `hazards.dustStorm` get none (Gale
-   untouched, Wave 4 no-op convention).
+   rover). Sites without `hazards.dustStorm` get none (Wave 4
+   no-op convention); both shipped sites define one.
 
    force(x, z) is the manual override for E2E/debug — forceStorm()
    spirit.

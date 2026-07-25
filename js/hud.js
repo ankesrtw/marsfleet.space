@@ -1060,7 +1060,7 @@ export function createHud(rootEl, { site, onSwitchUnit, onCollect, onToggleSfx, 
 
     // BASE STRUCTURES menu section (Wave 7): every structure the site
     // offers, built or still locked with its unlock hint. Empty entries
-    // keep the "not charted" hint — Gale has no base-building by design.
+    // keep the "not charted" hint, for a site that defines no structures.
     const outpostsList = rootEl.querySelector('#mc-outposts-list');
     function setOutposts(entries) {
         if (!entries?.length) return;

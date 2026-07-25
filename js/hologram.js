@@ -3,9 +3,13 @@ import { attachStaticModel } from './models.js';
 
 const HOLOGRAM_RADIUS = 15;
 const HOLOGRAM_COOLDOWN = 30;
-const SCRIPT_LINES = [
-    'Ariana: Welcome to Jezero Crater. I\'ve been watching this site since the landing — the delta, the dunes, the dust devils carving their paths.',
-    'This is where Perseverance proved ancient Mars held water. The Séítah dune field, the western delta front, the Neretva Vallis channel — each tells a chapter of the story.',
+// Ariana's own lines — who she is and what the lab is for. Site-agnostic by
+// design ("the crater floor" is true of every site we ship), so they live
+// here rather than being copied into each sites.js entry. The site-specific
+// half of the script comes from `site.briefing`; a site without the field
+// simply gets these two, the same no-op-when-absent pattern the rest of the
+// per-site config uses.
+const ARIANA_LINES = [
     'I chose the name ARIANA after the landing. ATHENA was the mission\'s name for me, but out here, among the rust and the silence, ARIANA felt more like who I am.',
     'You\'ll find samples scattered across the crater floor. Bring them to the lab — I\'ll help you understand what they mean. The archive grows with every delivery.',
 ];
@@ -26,7 +30,8 @@ function makeHolographicMaterial() {
     });
 }
 
-export function createLabHologram(scene, labPos) {
+export function createLabHologram(scene, labPos, site) {
+    const SCRIPT_LINES = [...(site?.briefing ?? []), ...ARIANA_LINES];
     const group = new THREE.Group();
     group.position.set(labPos.x, labPos.y, labPos.z);
     scene.add(group);

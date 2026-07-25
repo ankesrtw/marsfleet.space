@@ -11,7 +11,8 @@
    constants live HERE (SLOPE_K/GEARS precedent — module tuning,
    not site data); sites.js only says whether a site has storms
    and how hard they peak: `hazards.dustStorm: { peakIntensity }`.
-   No field = no storms, update() is a no-op (Gale untouched).
+   No field = no storms, update() is a no-op. Both shipped sites
+   define one (Jezero 0.7, Gale 0.6 — plan 21-B).
 
    forceStorm() is the manual override for E2E/debug — same
    spirit as env.toggleSol().

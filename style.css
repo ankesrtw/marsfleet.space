@@ -1167,7 +1167,14 @@ html, body {
     color: #a6f2e8;
     font-size: 0.78rem;
     letter-spacing: 0.12em;
-    white-space: nowrap;
+    /* Ariana's briefing lines (sites.js `briefing`) run ~160 chars — as an
+       unbounded nowrap row they ran off both edges of any window narrower
+       than ~1280px. Same wrap idiom the mobile breakpoint already used,
+       just applied at every width; short objective steps still sit on one
+       line, only long dialogue wraps. */
+    max-width: min(92vw, 1180px);
+    white-space: normal;
+    text-align: center;
     pointer-events: none;
     z-index: 20;
 }
@@ -1180,14 +1187,14 @@ html, body {
     pointer-events: auto;
     font-size: 0.68rem;
     padding: 3px 8px;
+    /* Never let the wrapping text squeeze SKIP onto two lines. */
+    flex-shrink: 0;
+    white-space: nowrap;
 }
 
 @media (max-width: 899px), (pointer: coarse) {
     .mars-hud__objective {
         font-size: 0.64rem;
-        max-width: 92vw;
-        white-space: normal;
-        text-align: center;
     }
 }
 

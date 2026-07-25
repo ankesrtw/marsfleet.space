@@ -16,8 +16,8 @@
    of boulders, procedural fallback shell swapped for the real GLB
    via models.js attachStaticModel (checkpost.glb / hq.glb), additive
    beacon column for over-the-ridge findability, colliders.addStatic
-   footprint. Sites without `outpost`/`hq` fields (Gale) no-op —
-   Wave 4's copy-ready pattern.
+   footprint. Sites without `outpost`/`hq` fields no-op — Wave 4's
+   copy-ready pattern (both shipped sites now carry them; plan 21-B).
    ============================================================ */
 
 import * as THREE from 'three';

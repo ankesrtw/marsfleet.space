@@ -70,6 +70,16 @@ export const SITES = {
             { id: 'three-forks', name: 'Three Forks Depot', x: -2015, z: 1600, note: 'Humanity’s first sample depot on another world' },
             { id: 'seitah-ridge', name: 'Séítah Ridge', x: 1008, z: 415, note: 'Ridge-forming igneous outcrop over the dune field' },
         ],
+        // Plan 28's opening mission step sends the player to Ariana, so her
+        // briefing has to describe the site they actually landed on. These
+        // two lines are the site-specific half of the script; her own
+        // character lines are shared across sites (hologram.js). Line two
+        // names this site's three surveyZones — the briefing doubles as the
+        // objective preview.
+        briefing: [
+            'Ariana: Welcome to Jezero Crater. I\'ve been watching this site since the landing — the delta, the dunes, the dust devils carving their paths.',
+            'This is where Perseverance proved ancient Mars held water. The Séítah dune field, the Dust Devil Flats, the Neretva Vallis channel — each tells a chapter of the story.',
+        ],
         missions: ['tutorial', 'survey', 'photo'],
         // Wave 7 base-building: once ALL missions above are complete, the
         // Signal Headquarters structure builds near the FIELD LAB
@@ -188,6 +198,15 @@ export const SITES = {
             { id: 'vera-rubin-ridge', name: 'Vera Rubin Ridge', x: -1450, z: 3860, note: 'Hematite-bearing ridge — a groundwater oxidation front' },
             { id: 'yellowknife-bay', name: 'Yellowknife Bay', x: 2375, z: -3560, note: 'The first proven habitable ancient lake environment on Mars' },
             { id: 'mount-sharp-foothills', name: 'Mount Sharp Foothills', x: 2600, z: 3300, note: 'Layered sulfate strata rising toward Aeolis Mons' },
+        ],
+        // Ariana's site-specific briefing (see the Jezero note above) — same
+        // two-line shape, real Gale science, naming this site's three
+        // surveyZones so the briefing previews the objectives here too.
+        // Keep lines within Jezero's length envelope: the objective banner
+        // that renders them is a single centered row on desktop.
+        briefing: [
+            'Ariana: Welcome to Gale Crater. I\'ve been watching this site since the landing — the old lakebed, the dune field, and Mount Sharp rising above it all.',
+            'This is where Curiosity proved ancient Mars was habitable. The Bagnold dune field, the Peace Vallis fan, Vera Rubin Ridge — each tells a chapter of the story.',
         ],
         missions: ['tutorial', 'survey', 'photo'],
         // Wave 7 base-building: once ALL missions complete, the HQ builds near
