@@ -258,6 +258,109 @@ export const SITES = {
               buried: { surveyZone: 'bagnold' } },
         ],
     },
+    gusev: {
+        id: 'gusev',
+        name: 'Gusev Crater',
+        mission: 'Spirit · MER-A',
+        heightmapUrl: 'assets/gusev/heightmap.png',
+        textureUrl: 'assets/gusev/albedo.jpg',
+        // Baked from `gdalinfo -stats` on the real cropped DTM
+        // (prep_site.sh gusev, run 2026-07-25). 114m relief: the basalt
+        // plains up into the Columbia Hills massif.
+        elevMin: -1950.3997802734,
+        elevMax: -1836.0093994141,
+        // 6km x 6km centered at (175.50523E, 14.59151S) — the MIDPOINT of
+        // Spirit's mission arc rather than its landing site. Centering on
+        // the landing clipped the Columbia Hills off the east edge (78m
+        // relief); this framing holds both ends of the real 4.7km drive.
+        worldSize: 6000,
+        // Same 20m-DTM source class as Jezero, so the same density: 384
+        // desktop segments = 15.6m quads, at the DEM's native limit.
+        segments: { desktop: 384, mobile: 128 },
+        center: { lon: 175.50523, lat: -14.59151 },
+        // Spirit touchdown (UTC) — drives the live mission sol counter.
+        landingUtc: '2004-01-04T04:35:00Z',
+        // CTX-derived ortho is grayscale — multiply in the Mars-rust tint.
+        tint: 0xc98a5e,
+        // Columbia Memorial Station (175.4729E, 14.5692S — the published
+        // landing coordinate, and this AOI's world frame reproduces it
+        // exactly). Heading faces ESE so W drives the real traverse:
+        // out of the plains and up into the hills.
+        spawn: { x: -1916, z: -1323, heading: 4.1096 },
+        // Plan 28's opening step sends the player to Ariana; line two names
+        // this site's three surveyZones (see the Jezero note).
+        briefing: [
+            'Ariana: Welcome to Gusev Crater. I\'ve been watching this site since the landing — the cratered plains, the dust devils, and the hills a rover took two years to climb.',
+            'This is where Spirit found carbonates and silica laid down by hot water. The Bonneville plains, Husband Hill, the southern hills — each tells a chapter of the story.',
+        ],
+        // Recon scouting targets along Spirit's actual traverse: the landing
+        // plains, the summit it spent two years reaching, and the southern
+        // hills beyond Home Plate.
+        surveyZones: [
+            { id: 'bonneville-plains', x: -1710, z: -1930, radius: 200 }, // landing plains
+            { id: 'husband-hill', x: 1910, z: 1310, radius: 220 },        // summit massif
+            { id: 'southern-hills', x: 1710, z: 2450, radius: 200 },      // southern ridge
+        ],
+        photoSpots: [
+            { id: 'memorial-station', name: 'Columbia Memorial Station', x: -1916, z: -1323, note: 'Where Spirit landed — named for the Columbia STS-107 crew' },
+            { id: 'husband-hill', name: 'Husband Hill', x: 1910, z: 1310, note: 'The summit Spirit spent two years climbing — 114m above the plains' },
+            { id: 'home-plate', name: 'Home Plate', x: 1250, z: 70, note: 'Layered plateau built by a hydrovolcanic explosion' },
+            { id: 'mccool-hill', name: 'McCool Hill', x: 2710, z: 2010, note: 'Southern massif of the Columbia Hills range' },
+        ],
+        missions: ['tutorial', 'survey', 'photo'],
+        hq: { name: 'Signal Gusev Station' },
+        // Gusev is THE dust-devil site — Spirit's solar panels were
+        // repeatedly cleaned by passing vortices, which is why its mission
+        // outlived its 90-sol design life by six years. Highest storm peak
+        // of any site we ship. Soft sand sits on real drift: the El Dorado
+        // ripple field and the Tyrone sulfate soils that mired the rover.
+        hazards: {
+            softSand: [
+                { x: 2090, z: 410, r: 190, intensity: 0.7 },    // El Dorado ripples
+                { x: 1230, z: -830, r: 170, intensity: 0.6 },   // Tyrone bright soils
+                { x: -1110, z: 1030, r: 200, intensity: 0.5 },  // western plains drift
+            ],
+            dustStorm: { peakIntensity: 0.75 },
+        },
+        samples: [
+            { id: 'adirondack', name: 'Adirondack', x: -1850, z: -1250, note: 'First rock target, Feb 2004',
+              finding: 'Unaltered olivine basalt — the crater floor is lava, not the lakebed sediment the site was chosen for.',
+              outpost: { name: 'Adirondack Checkpost' } },
+            { id: 'bonneville', name: 'Bonneville Crater', x: -1700, z: -1500, note: '200m impact crater east of the landing',
+              finding: 'The impact excavated only more basalt — the plains are a lava veneer sealing whatever lies beneath.',
+              outpost: { name: 'Bonneville Checkpost' } },
+            { id: 'clovis', name: 'Clovis', x: 1420, z: 900, note: 'First strongly altered rock in the hills',
+              finding: 'Goethite — an iron hydroxide that forms only in the presence of water. The first hard proof of water at Gusev.',
+              outpost: { name: 'Clovis Checkpost' } },
+            { id: 'wishstone', name: 'Wishstone', x: 1620, z: 1100, note: 'Husband Hill volcaniclastic rock',
+              finding: 'Unusually phosphorus-rich volcaniclastic rock — ash reworked by water on the flank of the hills.' },
+            { id: 'husband-hill', name: 'Husband Hill', x: 1910, z: 1310, note: 'Summit reached Aug 2005',
+              finding: 'Layered, tilted outcrops all the way up — the Columbia Hills are older than the lava plains that lap against them.',
+              outpost: { name: 'Husband Hill Checkpost' } },
+            { id: 'comanche', name: 'Comanche', x: 2180, z: 1520, note: 'Carbonate outcrop on the eastern flank',
+              finding: 'Roughly a quarter magnesium-iron carbonate — precipitated from neutral-pH water, not the acid brines seen elsewhere on Mars.' },
+            { id: 'home-plate', name: 'Home Plate', x: 1250, z: 70, note: 'Layered plateau, explored 2006',
+              finding: 'A bomb sag in the layering — a rock lobbed by a hydrovolcanic explosion landed in soft ash: water met magma here.',
+              outpost: { name: 'Home Plate Checkpost' } },
+            { id: 'troy', name: 'Troy', x: 1080, z: 180, note: 'Where Spirit mired for good, 2009',
+              finding: 'Nearly pure opaline silica — a hot-spring or fumarole deposit, and one of the strongest habitability signals of the mission.',
+              outpost: { name: 'Troy Checkpost' } },
+            { id: 'tyrone', name: 'Tyrone', x: 1230, z: -830, note: 'Bright soils churned up by a dragging wheel',
+              finding: 'Ferric sulfate salts hidden under the surface — Spirit’s broken wheel ploughed up subsurface water chemistry by accident.' },
+            { id: 'el-dorado', name: 'El Dorado', x: 2090, z: 410, note: 'Dark basaltic ripple field',
+              finding: 'Remarkably well-sorted basaltic sand — a clean record of wind grading grains on the hills’ lee side.' },
+            { id: 'mccool-hill', name: 'McCool Hill', x: 2710, z: 2010, note: 'Southern massif (approx. location)',
+              finding: 'Steep basaltic slopes named for the Columbia crew — the winter haven Spirit drove for as power ran low.' },
+            { id: 'southern-ridge', name: 'Southern Ridge', x: 1710, z: 2450, note: 'Survey station — simulated survey target',
+              finding: '[SIM] Panoramic survey south of Home Plate — the Columbia Hills range running on beyond the rover’s reach.' },
+            // No cone/beacon here: recon must map the southern-hills zone
+            // first, then the humanoid cores this buried patch.
+            { id: 'gusev-subsurface-core', name: 'Gusev Subsurface Core', x: 1620, z: 2330,
+              note: '[SIM] Buried ridge-flank core — localized by aerial survey',
+              finding: '[SIM] Sulfate-cemented ash preserved beneath the ridge flank — the wet, altered rock the plains basalt hides everywhere else.',
+              buried: { surveyZone: 'southern-hills' } },
+        ],
+    },
 };
 
 // Future landing sites — shown on the Site Hub globe (hub.js) as dim
