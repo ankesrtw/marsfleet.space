@@ -449,6 +449,96 @@ export const SITES = {
               buried: { surveyZone: 'scarp-face' } },
         ],
     },
+    insight: {
+        id: 'insight',
+        name: 'Elysium Planitia',
+        mission: 'InSight · Discovery 12',
+        heightmapUrl: 'assets/insight/heightmap.png',
+        textureUrl: 'assets/insight/albedo.jpg',
+        // Baked from `gdalinfo -stats` (prep_site.sh insight, 2026-07-25).
+        // 67m relief — the flattest site we ship, on purpose.
+        elevMin: -2654.8498535156,
+        elevMax: -2587.8413085938,
+        // 6km x 6km centered EXACTLY on the lander (135.6234E, 4.5024N),
+        // so world (0,0) IS InSight. Elysium was chosen by NASA for being
+        // the dullest, flattest ground on Mars — InSight was a stationary
+        // geophysics station, so a boring surface was the requirement.
+        // That makes this the one site where the terrain is not the point:
+        // what happened here happened 3000km underneath it.
+        worldSize: 6000,
+        segments: { desktop: 384, mobile: 128 },
+        center: { lon: 135.62263, lat: 4.50239 },
+        // InSight touchdown (UTC) — drives the live mission sol counter.
+        landingUtc: '2018-11-26T19:52:59Z',
+        tint: 0xc98a5e,
+        // Spawn ON the lander, facing west toward the low ridge — the only
+        // relief worth driving to.
+        spawn: { x: 0, z: 0, heading: Math.PI / 2 },
+        briefing: [
+            'Ariana: Welcome to Elysium Planitia. I have been listening here since the landing — the flattest ground on Mars, picked so a lander could sit still and listen.',
+            'InSight measured this planet\'s core and crust from this exact spot. The western ridge, the eastern hollows, the northern flats — each tells a chapter of the story.',
+        ],
+        surveyZones: [
+            { id: 'western-ridge', x: -2570, z: 990, radius: 200 },
+            { id: 'eastern-hollows', x: 2390, z: 870, radius: 220 },
+            { id: 'northern-flats', x: 2270, z: -1830, radius: 200 },
+        ],
+        photoSpots: [
+            { id: 'homestead-hollow', name: 'Homestead Hollow', x: 0, z: 0, note: 'The filled-in crater InSight landed in — and never left' },
+            { id: 'western-ridge', name: 'Western Ridge', x: -2570, z: 990, note: 'The highest ground for kilometres: all of 67 metres' },
+            { id: 'eastern-hollows', name: 'Eastern Hollows', x: 2390, z: 870, note: 'Degraded craters softened into shallow bowls' },
+            { id: 'cerberus-bearing', name: 'Cerberus Bearing', x: 2270, z: -1830, note: 'The direction most marsquakes arrived from' },
+        ],
+        missions: ['tutorial', 'survey', 'photo'],
+        hq: { name: 'Signal Elysium Station' },
+        // The soil here is the story: HP³ failed because Elysium regolith
+        // cements into duricrust instead of collapsing, and dust on the
+        // solar panels is what finally ended the mission.
+        hazards: {
+            softSand: [
+                { x: 1200, z: 400, r: 190, intensity: 0.6 },     // loose fines
+                { x: -1800, z: 1600, r: 180, intensity: 0.5 },   // ridge-foot drift
+                { x: 2270, z: -1830, r: 170, intensity: 0.55 },  // northern dust
+            ],
+            dustStorm: { peakIntensity: 0.7 },
+        },
+        samples: [
+            { id: 'homestead-hollow', name: 'Homestead Hollow', x: 0, z: 0, note: 'The hollow InSight landed in',
+              finding: 'Sandy regolith almost free of rocks — an old crater filled and smoothed flat, which is exactly why it was safe to land here.',
+              outpost: { name: 'Homestead Checkpost' } },
+            { id: 'seis', name: 'SEIS Emplacement', x: 70, z: 90, note: 'The seismometer, placed by robotic arm',
+              finding: 'Over 1,300 marsquakes recorded — the first time anyone listened to the inside of another planet.',
+              outpost: { name: 'SEIS Checkpost' } },
+            { id: 'hp3-mole', name: 'HP³ Mole Site', x: -90, z: 120, note: 'The heat probe that never got down',
+              finding: 'The mole stalled near 40cm: this soil cements into duricrust rather than collapsing, so it never gripped the probe.',
+              outpost: { name: 'Mole Site Checkpost' } },
+            { id: 'duricrust', name: 'Duricrust Layer', x: 620, z: -410, note: 'Salt-cemented surface crust',
+              finding: 'Regolith glued together by salts — thin films of water touched this ground long after the rivers were gone.' },
+            { id: 'core-shadow', name: 'Core Shadow Zone', x: -1690, z: -430, note: 'Seismic ray-path station (approx. location)',
+              finding: 'Waves reflecting off a liquid core about 1,830km in radius — Mars has a molten heart, larger than anyone expected.',
+              outpost: { name: 'Core Shadow Checkpost' } },
+            { id: 'crustal-boundary', name: 'Crustal Boundary', x: -2570, z: 990, note: 'Crust-thickness station (approx. location)',
+              finding: 'A crust 20–37km thick in layers beneath this spot — the first direct measurement of another planet\'s crust.' },
+            { id: 'cerberus-fossae', name: 'Cerberus Bearing', x: 2270, z: -1830, note: 'Marsquake source bearing (approx. location)',
+              finding: 'Most quakes arrive from Cerberus Fossae, 1,600km away — Mars is not tectonically dead, just very quiet.',
+              outpost: { name: 'Cerberus Checkpost' } },
+            { id: 's1222a', name: 'Marsquake S1222a', x: 1500, z: -1200, note: 'Largest quake recorded, May 2022',
+              finding: 'Magnitude 4.7, ringing the planet for six hours — energy enough to survey the whole crust in one event.' },
+            { id: 'impact-ejecta', name: 'Impact Ejecta', x: -2100, z: -1500, note: 'Fresh meteoroid strike (approx. location)',
+              finding: 'A strike both heard by SEIS and photographed from orbit — the first impact on Mars pinned down by sound and sight together.' },
+            { id: 'eastern-hollows', name: 'Eastern Hollows', x: 2390, z: 870, note: 'Degraded crater field',
+              finding: 'Craters worn down to shallow dishes — this plain has been quietly erasing its own history for three billion years.' },
+            { id: 'dust-drift', name: 'Dust Drift', x: 1200, z: 400, note: 'Aeolian survey — simulated survey target',
+              finding: '[SIM] The fine dust that settled on InSight\'s panels year after year, until there was not enough power to listen any more.' },
+            { id: 'northern-station', name: 'Northern Station', x: 1900, z: -2400, note: 'Survey station — simulated survey target',
+              finding: '[SIM] Open sightlines north across the plain — nothing to block a horizon this flat.' },
+            // Recon must map the eastern-hollows zone before this can be cored.
+            { id: 'elysium-subsurface-core', name: 'Elysium Subsurface Core', x: 2500, z: 990,
+              note: '[SIM] Buried hollow-floor core — localized by aerial survey',
+              finding: '[SIM] Layered fill beneath a buried crater floor — the sediment record this plain smoothed over and hid.',
+              buried: { surveyZone: 'eastern-hollows' } },
+        ],
+    },
 };
 
 // Future landing sites — shown on the Site Hub globe (hub.js) as dim
