@@ -635,6 +635,101 @@ export const SITES = {
               buried: { surveyZone: 'endeavour-rim' } },
         ],
     },
+    olympus: {
+        id: 'olympus',
+        name: 'Olympus Mons',
+        // No lander, ever. Mariner 9 found it through a global dust storm in
+        // 1971 — the only thing visible was this summit poking out above the
+        // dust, which is how it earned the name.
+        mission: 'Mariner 9 survey · unflown',
+        heightmapUrl: 'assets/olympus/heightmap.png',
+        textureUrl: 'assets/olympus/albedo.jpg',
+        // Baked from `gdalinfo -stats` (prep_site.sh olympus, 2026-07-26).
+        // POSITIVE elevations — every other site we ship sits below the
+        // datum; this one is the summit of the tallest volcano in the
+        // solar system. 3407m of caldera wall.
+        elevMin: 17629,
+        elevMax: 21036,
+        // 90km x 90km framing the whole nested caldera complex (~78km
+        // across) with its rim just inside. The centre was found by
+        // IMAGING the DEM: the textbook coordinate clipped the caldera into
+        // a corner, and the DEM's global maximum is a flank high ~90km away.
+        worldSize: 90000,
+        // 512 = 176m quads, matched to the 200m DEM. Going finer would only
+        // interpolate detail the data does not contain.
+        segments: { desktop: 512, mobile: 128 },
+        center: { lon: -133.1678, lat: 18.3271 },
+        // Mariner 9 orbit insertion — the moment this mountain was found.
+        landingUtc: '1971-11-14T00:17:39Z',
+        tint: 0xc98a5e,
+        // Spawn on the main caldera floor, facing the northeast vent.
+        spawn: { x: -14240, z: 1580, heading: 5.3797 },
+        briefing: [
+            'Ariana: Welcome to Olympus Mons — twenty-one kilometres up, the summit of the largest volcano in the solar system, with barely any air left above us.',
+            'Six calderas collapsed here as the magma beneath drained away. The main caldera, the northeast vent, the southwest vent — each tells a chapter of the story.',
+        ],
+        surveyZones: [
+            { id: 'main-caldera', x: -14240, z: 1580, radius: 2500 },
+            { id: 'northeast-vent', x: 21450, z: -26540, radius: 2500 },
+            { id: 'southwest-vent', x: -22150, z: 22680, radius: 2500 },
+        ],
+        photoSpots: [
+            { id: 'main-caldera', name: 'Main Caldera', x: -14240, z: 1580, note: 'The largest collapse basin — floor 3km below the rim' },
+            { id: 'northeast-vent', name: 'Northeast Vent', x: 21450, z: -26540, note: 'The youngest and deepest of the nested craters' },
+            { id: 'southwest-vent', name: 'Southwest Vent', x: -22150, z: 22680, note: 'An older collapse, half-buried by later flows' },
+            { id: 'summit-rim', name: 'Summit Rim', x: 34980, z: 30590, note: 'The high rim — 21km above datum, above most of the atmosphere' },
+        ],
+        missions: ['tutorial', 'survey', 'photo'],
+        hq: { name: 'Signal Olympus Station' },
+        // Air pressure up here is roughly a tenth of the Martian datum, so
+        // there is very little atmosphere to lift dust: the lowest storm
+        // peak of any site we ship. The summit is mantled in fine fallout
+        // dust instead — soft, but never blown into real storms.
+        hazards: {
+            softSand: [
+                { x: 0, z: -15000, r: 2500, intensity: 0.6 },      // dust-mantled bench
+                { x: -25000, z: -9840, r: 2200, intensity: 0.5 },  // western fallout
+                { x: 15000, z: 20000, r: 2400, intensity: 0.55 },  // southern drift
+            ],
+            dustStorm: { peakIntensity: 0.35 },
+        },
+        samples: [
+            { id: 'caldera-floor', name: 'Caldera Floor', x: -14240, z: 1580, note: 'Youngest lava on the mountain',
+              finding: 'Flows so sparsely cratered they may be only a few million years old — by Martian standards, this volcano is barely cold.',
+              outpost: { name: 'Caldera Checkpost' } },
+            { id: 'collapse-rim', name: 'Nested Collapse Rim', x: -9000, z: -6000, note: 'Where two calderas overlap',
+              finding: 'Six craters cut into each other — each one a magma chamber that emptied and let its own roof founder in.',
+              outpost: { name: 'Collapse Rim Checkpost' } },
+            { id: 'northeast-vent', name: 'Northeast Vent', x: 21450, z: -26540, note: 'Deepest of the nested craters',
+              finding: 'The youngest collapse, cutting cleanly through all the others — the last time this mountain emptied itself.',
+              outpost: { name: 'Northeast Vent Checkpost' } },
+            { id: 'southwest-vent', name: 'Southwest Vent', x: -22150, z: 22680, note: 'Older collapse basin',
+              finding: 'An early caldera, its rim softened and partly drowned by flows from the eruptions that followed it.' },
+            { id: 'terraced-wall', name: 'Terraced Wall', x: -18000, z: 9000, note: 'Concentric wall benches',
+              finding: 'Stair-stepped terraces around the wall — the floor dropped repeatedly, not once, each step a separate collapse.',
+              outpost: { name: 'Terrace Checkpost' } },
+            { id: 'wrinkle-ridges', name: 'Wrinkle Ridges', x: 9490, z: -1050, note: 'Compressional ridges on the floor',
+              finding: 'Ridges squeezed up as the cooling floor sagged and shortened — the caldera settling under its own weight.' },
+            { id: 'summit-rim', name: 'Summit Rim', x: 34980, z: 30590, note: 'High rim, ~21km above datum',
+              finding: 'Air pressure here is about a tenth of the plains below: high enough that the sky darkens and dust can barely rise.',
+              outpost: { name: 'Summit Rim Checkpost' } },
+            { id: 'dust-mantle', name: 'Dust Mantle', x: 0, z: -15000, note: 'Fine fallout deposit',
+              finding: 'Metres of fine dust settled out of a thin sky — too little air up here to ever blow it away again.' },
+            { id: 'lava-channel', name: 'Lava Channel', x: -30000, z: 5000, note: 'Leveed flow channel (approx. location)',
+              finding: 'A channel with built-up levees — lava ran in rivers here, insulated by its own crust, for hundreds of kilometres.' },
+            { id: 'chamber-roof', name: 'Magma Chamber Roof', x: -5000, z: 12000, note: 'Structural centre of the complex',
+              finding: 'The whole complex sits over one shallow chamber, refilling and draining for a billion years or more.' },
+            { id: 'north-rim', name: 'North Rim', x: -1050, z: -37090, note: 'Survey station — simulated survey target',
+              finding: '[SIM] The rim crest running away north, with the flank dropping out of sight below the horizon.' },
+            { id: 'west-bench', name: 'West Bench', x: -34450, z: -9840, note: 'Survey station — simulated survey target',
+              finding: '[SIM] A broad structural bench outside the caldera wall, mantled in dust and undisturbed since it formed.' },
+            // Recon must map the main-caldera zone before this can be cored.
+            { id: 'olympus-subsurface-core', name: 'Olympus Subsurface Core', x: -12800, z: 3400,
+              note: '[SIM] Buried caldera-floor core — localized by aerial survey',
+              finding: '[SIM] Layered flows stacked under the caldera floor — eruption after eruption, recorded in order beneath the youngest crust.',
+              buried: { surveyZone: 'main-caldera' } },
+        ],
+    },
 };
 
 // Future landing sites — shown on the Site Hub globe (hub.js) as dim
@@ -648,7 +743,6 @@ export const SITES = {
 // pins on the globe (one playable, one greyed "COMING SOON").
 export const LOCKED_SITES = [
     { id: 'hellas', name: 'Hellas Planitia', mission: 'Future landing — survey pending', center: { lon: 70.0, lat: -42.4 }, playable: false },
-    { id: 'olympus', name: 'Olympus Mons', mission: 'Future landing — survey pending', center: { lon: -134.0, lat: 18.65 }, playable: false },
 ];
 
 export function getSiteFromUrl() {
