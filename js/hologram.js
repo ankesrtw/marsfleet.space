@@ -10,9 +10,41 @@ const HOLOGRAM_COOLDOWN = 30;
 // simply gets these two, the same no-op-when-absent pattern the rest of the
 // per-site config uses.
 const ARIANA_LINES = [
-    'I chose the name ARIANA after the landing. ATHENA was the mission\'s name for me, but out here, among the rust and the silence, ARIANA felt more like who I am.',
-    'You\'ll find samples scattered across the crater floor. Bring them to the lab — I\'ll help you understand what they mean. The archive grows with every delivery.',
+    { text: 'I chose the name ARIANA after the landing. ATHENA was the mission\'s name for me, but out here, among the rust and the silence, ARIANA felt more like who I am.', audio: 'ariana-intro' },
+    { text: 'You\'ll find samples scattered across the crater floor. Bring them to the lab — I\'ll help you understand what they mean. The archive grows with every delivery.', audio: 'ariana-lab' },
 ];
+
+// Audio playback state
+const LS_VOICE_KEY = 'mc-voice';
+let currentAudio = null;
+let voiceEnabled = localStorage.getItem(LS_VOICE_KEY) !== 'off';
+
+export function setVoiceEnabled(enabled) {
+    voiceEnabled = enabled;
+    localStorage.setItem(LS_VOICE_KEY, enabled ? 'on' : 'off');
+    if (currentAudio) {
+        currentAudio.pause();
+        currentAudio = null;
+    }
+}
+
+export function getVoiceEnabled() {
+    return voiceEnabled;
+}
+
+function playVoiceLine(audioId) {
+    if (!voiceEnabled) return;
+    if (currentAudio) {
+        currentAudio.pause();
+        currentAudio = null;
+    }
+    const audioUrl = `assets/audio/ariana/${audioId}.mp3`;
+    const audio = new Audio(audioUrl);
+    audio.play().catch(() => {
+        // Autoplay may be blocked — silently fail, text-only display continues
+    });
+    currentAudio = audio;
+}
 
 function makeHolographicMaterial() {
     return new THREE.MeshPhysicalMaterial({
@@ -31,7 +63,12 @@ function makeHolographicMaterial() {
 }
 
 export function createLabHologram(scene, labPos, site) {
-    const SCRIPT_LINES = [...(site?.briefing ?? []), ...ARIANA_LINES];
+    // Map site briefing lines to audio IDs
+    const siteBriefingWithAudio = (site?.briefing ?? []).map((line, idx) => {
+        const audioId = site ? `${site.id}-${idx + 1}` : null;
+        return { text: line, audio: audioId };
+    });
+    const SCRIPT_LINES = [...siteBriefingWithAudio, ...ARIANA_LINES];
     const group = new THREE.Group();
     group.position.set(labPos.x, labPos.y, labPos.z);
     scene.add(group);
@@ -75,7 +112,9 @@ export function createLabHologram(scene, labPos, site) {
         scriptIdx = 0;
         scriptTimer = 0;
         toastCallback = showToast;
-        toastCallback(SCRIPT_LINES[0]); // first line immediately
+        const line = SCRIPT_LINES[0];
+        toastCallback(line.text); // first line immediately
+        if (line.audio) playVoiceLine(line.audio);
         seen = true;
     }
 
@@ -91,7 +130,9 @@ export function createLabHologram(scene, labPos, site) {
             scriptIdx++;
             scriptTimer = 0;
             if (scriptIdx < SCRIPT_LINES.length) {
-                toastCallback(SCRIPT_LINES[scriptIdx]);
+                const line = SCRIPT_LINES[scriptIdx];
+                toastCallback(line.text);
+                if (line.audio) playVoiceLine(line.audio);
             } else {
                 scriptActive = false;
                 cooldown = HOLOGRAM_COOLDOWN;
