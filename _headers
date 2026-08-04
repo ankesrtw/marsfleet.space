@@ -1,0 +1,52 @@
+# Cloudflare Pages cache rules.
+#
+# Without this file Pages serves everything with `max-age=14400,
+# must-revalidate` and leaves big binaries at cf-cache-status: DYNAMIC —
+# so every GLB/heightmap round-trips to origin on every load. That's what
+# made structures pop in ~16s behind their procedural fallbacks and left
+# the hub globe on a blank red screen while mars-globe.jpg fetched.
+#
+# Everything under assets/ and vendor/ is content-stable: a changed model
+# or terrain tile ships under a new deploy, and index.html is never cached,
+# so `immutable` is safe and there's no stale-asset risk.
+
+# `/assets/*` alone only matches ONE path segment on Pages, so the real
+# payloads (assets/models/*.glb, assets/jezero/heightmap.png) fell through
+# to the default max-age=14400 must-revalidate. The nested globs below are
+# what actually cover them.
+/assets/*
+  Cache-Control: public, max-age=31536000, immutable
+
+/assets/*/*
+  Cache-Control: public, max-age=31536000, immutable
+
+/vendor/*
+  Cache-Control: public, max-age=31536000, immutable
+
+/vendor/*/*
+  Cache-Control: public, max-age=31536000, immutable
+
+/vendor/*/*/*
+  Cache-Control: public, max-age=31536000, immutable
+
+/vendor/*/*/*/*
+  Cache-Control: public, max-age=31536000, immutable
+
+/icons/*
+  Cache-Control: public, max-age=31536000, immutable
+
+# App code changes every deploy but is cheap to revalidate — a short TTL
+# keeps a reload from serving a stale bundle against fresh assets.
+/js/*
+  Cache-Control: public, max-age=300, must-revalidate
+
+/style.css
+  Cache-Control: public, max-age=300, must-revalidate
+
+# version.json drives the in-page update banner (js/update-check.js polls
+# its ETag) — it MUST never be cached or the banner can't fire.
+/version.json
+  Cache-Control: no-cache, no-store, must-revalidate
+
+/index.html
+  Cache-Control: no-cache, must-revalidate

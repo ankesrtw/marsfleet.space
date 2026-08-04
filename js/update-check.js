@@ -59,7 +59,15 @@ async function poll() {
     if (changed(baseline, current)) showBanner();
 }
 
+/** The packaged Android app (Capacitor) serves www/ from a local origin with no
+    version.json — and its updates ship through Play, not a page reload. Polling
+    there would either 404 or, worse, pick up the *website's* build id and offer
+    a RELOAD that can't change the bundled build. So it's a no-op on native.
+    Same detection as telemetry.js. */
+const isNative = () => !!(window.Capacitor && window.Capacitor.isNativePlatform && window.Capacitor.isNativePlatform());
+
 export function startUpdateCheck() {
+    if (isNative()) return;
     poll();
     setInterval(poll, POLL_MS);
     document.addEventListener('visibilitychange', () => {

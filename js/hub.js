@@ -125,15 +125,24 @@ export function createHub({ onEnter } = {}) {
         tilt.add(spin);
         scene.add(tilt);
 
-        // The globe.
-        globeTex = new THREE.TextureLoader().load(TEXTURE_URL);
-        globeTex.colorSpace = THREE.SRGBColorSpace;
-        globeTex.anisotropy = Math.min(8, renderer.capabilities.getMaxAnisotropy());
+        // The globe. TextureLoader is async, so the mesh would otherwise
+        // render for a beat as an untextured sphere — a featureless red disc
+        // filling the screen ("blank red" on a cold cache). Start it hidden
+        // and reveal on the texture's onLoad, so the first thing drawn is
+        // already the real Mars. Fade in to avoid a hard pop.
         globeMat = new THREE.MeshStandardMaterial({
-            map: globeTex, roughness: 0.95, metalness: 0.0,
+            roughness: 0.95, metalness: 0.0, transparent: true, opacity: 0,
         });
         globe = new THREE.Mesh(new THREE.SphereGeometry(R, 96, 64), globeMat);
+        globe.visible = false;
         spin.add(globe);
+        globeTex = new THREE.TextureLoader().load(TEXTURE_URL, (tex) => {
+            tex.colorSpace = THREE.SRGBColorSpace;
+            tex.anisotropy = Math.min(8, renderer.capabilities.getMaxAnisotropy());
+            globeMat.map = tex;
+            globeMat.needsUpdate = true;
+            globe.visible = true;
+        });
 
         // Atmosphere rim — a back-side fresnel shell, additive, so the limb
         // glows dusty orange without hiding the disc.
@@ -562,6 +571,12 @@ export function createHub({ onEnter } = {}) {
         raf = requestAnimationFrame(frame);
         timer.update(); // THREE.Timer computes the delta here (as the sim loop does)
         const dt = Math.min(timer.getDelta(), 0.05);
+        // Fade the globe up once its texture landed (see build()) — the mesh
+        // stays hidden until then rather than flashing as a flat red sphere.
+        if (globe && globe.visible && globeMat.opacity < 1) {
+            globeMat.opacity = Math.min(1, globeMat.opacity + dt * 2.5);
+            if (globeMat.opacity >= 1) globeMat.transparent = false;
+        }
         if (focusTarget && !dragging) {
             // Ease the selected pin to front-center and hold it there.
             spin.rotation.y += shortAngle(spin.rotation.y, focusTarget.y) * 0.12;

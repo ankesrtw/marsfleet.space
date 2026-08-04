@@ -116,7 +116,15 @@ function applyBrandFinish(model) {
 // Hide the procedural fallback briefly while the GLB loads — kills the
 // one-second "gray blocks" flash on boot. The fallback still appears if
 // the load runs long or fails, keeping the play-offline guarantee.
-const FALLBACK_DELAY_MS = 2500;
+//
+// 2500 was tuned when assets were edge-cached; on the marsfleet.space
+// project they were served uncached (cf-cache-status: DYNAMIC) and the
+// 4.35MB station.glb took ~16s, so the placeholder box/stick sat on
+// screen looking like the real structure. _headers + the texture-resize
+// pass fixed the root cause; this raises the grace period so a cold
+// cache or a slow link degrades to "structure appears a moment late"
+// rather than "structure is a gray slab". Offline still falls back.
+const FALLBACK_DELAY_MS = 8000;
 
 function deferFallback(group) {
     group.visible = false;
