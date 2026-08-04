@@ -1,0 +1,19 @@
+# Cloudflare Pages config for marsfleet.space (project: marsfleet-space).
+# Deploy via scripts/deploy.sh (wraps `wrangler pages deploy`).
+#
+# The D1 binding itself is set on the Pages project via the dashboard
+# (Settings -> Functions -> D1 database bindings) or the API — Pages
+# bindings aren't read from this file the way Workers bindings are. This
+# file exists so `wrangler pages dev` has the same binding locally.
+
+name = "marsfleet-space"
+pages_build_output_dir = "."
+compatibility_date = "2026-08-04"
+
+# ---- Telemetry D1 binding (plan 24) -----------------------------------------
+# Consumed by functions/api/telemetry.js as `env.TELEMETRY_DB`. Inert
+# (204-drops events) if unbound, so the site stays deployable either way.
+[[d1_databases]]
+binding = "TELEMETRY_DB"
+database_name = "mars-telemetry"
+database_id = "de0fd628-a775-4ba5-a3dd-46839a9075e7"

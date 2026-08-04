@@ -2150,3 +2150,42 @@ html, body {
 .hub-cloud__signout:hover {
     color: #f2ece3;
 }
+
+/* Live-update banner (plan 30, js/update-check.js) — standalone, injected
+   into <body> rather than the HUD's template, since it must show on both
+   the hub screen and mid-sim. High z-index so it sits above the HUD's
+   own top banner stack (which tops out at z-index: 20). */
+.mc-update-banner {
+    position: fixed;
+    top: 0;
+    left: 50%;
+    transform: translateX(-50%) translateY(-100%);
+    margin-top: max(10px, env(safe-area-inset-top));
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 10px 14px;
+    border: 1px solid #e0b95e;
+    border-radius: 6px;
+    background: rgba(29, 17, 10, 0.95);
+    color: #f2ece3;
+    font-size: 0.8rem;
+    letter-spacing: 0.05em;
+    z-index: 500;
+    transition: transform 0.35s ease-out;
+}
+
+.mc-update-banner[data-visible="true"] {
+    transform: translateX(-50%) translateY(0);
+}
+
+.mc-update-banner__reload {
+    padding: 6px 12px;
+    font-size: 0.75rem;
+    border-color: #e0b95e;
+    color: #e0b95e;
+}
+
+.mc-update-banner__reload:hover {
+    background: rgba(224, 185, 94, 0.15);
+}

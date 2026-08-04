@@ -25,7 +25,7 @@ export const APP_VERSION = '1.0.0';   // single source of truth (also in manifes
 // Web build posts same-origin (relative). The bundled Android app has no
 // server of its own, so it must hit the deployed Pages origin absolutely —
 // point this at your production domain if you add a custom one.
-const REMOTE_BASE = 'https://signal-playground-0uj.pages.dev';
+const REMOTE_BASE = 'https://marsfleet.space';
 const PATH = '/api/telemetry';
 
 const FLUSH_MS = 15000;   // periodic drain while playing

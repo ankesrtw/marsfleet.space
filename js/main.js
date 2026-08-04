@@ -39,6 +39,7 @@ import { createMarsClock } from './mars-clock.js';
 import { createLabHologram } from './hologram.js';
 import { createPhotos, MIN_ALT as PHOTO_MIN_ALT } from './photos.js';
 import { createTelemetry, privacyUrl } from './telemetry.js';
+import { startUpdateCheck } from './update-check.js';
 
 // Lift-drone logistics interaction envelope (see lab.js):
 const SLING_ALT = 8;      // m AGL — hover this low (or sit landed: alt 0
@@ -123,6 +124,10 @@ function createMarsEnvMap(renderer) {
 // OPEN MISSION MAP is a full nav, so each load is naturally its own session.
 // track() is a no-op while consent is off; nothing is sent otherwise.
 const telemetry = createTelemetry();
+
+// Live-update detection (plan 30) — independent of the hub-vs-site boot
+// path below, so it runs no matter which one wins.
+startUpdateCheck();
 
 async function boot() {
     telemetry.track('app_open');
