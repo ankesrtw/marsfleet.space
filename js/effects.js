@@ -230,12 +230,12 @@ export function createEffects(scene, terrain) {
     // recon down to the ground plus a rim ring where it lands. Pure visual
     // (capture stays proximity-gated in photos.js) — it sells "this drone
     // is imaging" and shows roughly what a frame will cover.
-    const SENSOR_HALF_TAN = 0.49;   // tan ~26° half-FOV
+    const SENSOR_HALF_TAN = 0.36;   // tan ~20° half-FOV
     // Boresight tilt FORWARD off nadir. A pure nadir cone hangs straight
     // down under the fuselage where the chase cam can barely see it and
     // nothing about it reads as steerable; tilting it ahead puts the
     // footprint out in front, in view, and it sweeps as you yaw.
-    const SENSOR_TILT = 35 * Math.PI / 180;
+    const SENSOR_TILT = 45 * Math.PI / 180;
     const SENSOR_AHEAD = Math.tan(SENSOR_TILT);   // ground lead per metre AGL
     const _coneApex = new THREE.Vector3();
     const _coneBase = new THREE.Vector3();
