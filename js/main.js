@@ -543,6 +543,7 @@ async function startGame(site) {
         consentOn: telemetry.consent,
         privacyUrl: privacyUrl(),
         onReplayHologram: () => hologram.replay(),
+        onAdvanceDialog: () => hologram.advance(),
         onStartMission: (id) => startMission(id),
         missions: missions.menuEntries(),
         onSetOverlayMode: (mode) => fog.setOverlayMode(mode),

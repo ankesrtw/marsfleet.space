@@ -32,18 +32,38 @@ export function getVoiceEnabled() {
     return voiceEnabled;
 }
 
-function playVoiceLine(audioId) {
-    if (!voiceEnabled) return;
+/** Cuts the currently playing line short — the player skipped ahead, or
+    the dialog ended, before the audio reached its own 'ended' event. */
+function stopVoiceLine() {
     if (currentAudio) {
         currentAudio.pause();
         currentAudio = null;
     }
+}
+
+/** Plays a line's audio and reports back when the line is "done talking"
+    via onEnded — the caller (hologram dialog) waits for this instead of a
+    fixed timer, so text no longer moves on mid-sentence. Returns false
+    (and never calls onEnded) when voice is off or the audio fails to
+    start at all, so the caller can fall back to a flat timer for those
+    cases; a mid-playback error still resolves onEnded so a broken file
+    can't stall the dialog forever. */
+function playVoiceLine(audioId, onEnded) {
+    if (currentAudio) {
+        currentAudio.pause();
+        currentAudio = null;
+    }
+    if (!voiceEnabled) return false;
     const audioUrl = `assets/audio/ariana/${audioId}.mp3`;
     const audio = new Audio(audioUrl);
-    audio.play().catch(() => {
-        // Autoplay may be blocked — silently fail, text-only display continues
-    });
+    audio.addEventListener('ended', () => onEnded?.());
+    audio.addEventListener('error', () => onEnded?.());
+    const playPromise = audio.play();
+    if (playPromise && typeof playPromise.catch === 'function') {
+        playPromise.catch(() => onEnded?.()); // autoplay blocked — fall back to timer
+    }
     currentAudio = audio;
+    return true;
 }
 
 function makeHolographicMaterial() {
@@ -98,24 +118,51 @@ export function createLabHologram(scene, labPos, site) {
         });
     });
 
+    // Minimum on-screen time for a line with no audio (or with voice
+    // disabled) — the same flat pacing the timer used to apply to every
+    // line. Lines WITH audio instead wait for playVoiceLine's onEnded, so
+    // the text only advances once Ariana actually finishes speaking.
+    const NO_AUDIO_HOLD = 3.5;
+
     let seen = false;
     let cooldown = 0;
     let scriptActive = false;
     let scriptIdx = 0;
     let scriptTimer = 0;
+    let waitingOnAudio = false;
+    let lineDone = false;
     let toastCallback = null;
+    let dialogDoneCallback = null;
+
+    function showLine(idx) {
+        const line = SCRIPT_LINES[idx];
+        scriptTimer = 0;
+        lineDone = false;
+        toastCallback(line.text);
+        waitingOnAudio = line.audio
+            ? playVoiceLine(line.audio, () => { lineDone = true; })
+            : false;
+    }
 
     function triggerDialog(showToast, done) {
         if (scriptActive) return;
         if (cooldown > 0) return;
         scriptActive = true;
         scriptIdx = 0;
-        scriptTimer = 0;
         toastCallback = showToast;
-        const line = SCRIPT_LINES[0];
-        toastCallback(line.text); // first line immediately
-        if (line.audio) playVoiceLine(line.audio);
+        dialogDoneCallback = done;
+        showLine(0);
         seen = true;
+    }
+
+    /** Player-driven advance — click/key skips the rest of the current
+        line's audio and moves straight to the next one, same as the
+        player moving away cuts a line short elsewhere in the sim. */
+    function advance() {
+        if (!scriptActive) return;
+        stopVoiceLine();
+        lineDone = true;
+        waitingOnAudio = false;
     }
 
     function update(dt, activePos, showToast, dialogDone) {
@@ -126,18 +173,18 @@ export function createLabHologram(scene, labPos, site) {
         }
         if (!scriptActive) return;
         scriptTimer += dt;
-        if (scriptTimer >= 3.5) {
-            scriptIdx++;
-            scriptTimer = 0;
-            if (scriptIdx < SCRIPT_LINES.length) {
-                const line = SCRIPT_LINES[scriptIdx];
-                toastCallback(line.text);
-                if (line.audio) playVoiceLine(line.audio);
-            } else {
-                scriptActive = false;
-                cooldown = HOLOGRAM_COOLDOWN;
-                dialogDone?.();
-            }
+        // Waiting on the current line's audio (playVoiceLine's onEnded
+        // flips lineDone) — a flat hold only applies when there's no
+        // audio to wait on.
+        const ready = waitingOnAudio ? lineDone : scriptTimer >= NO_AUDIO_HOLD;
+        if (!ready) return;
+        scriptIdx++;
+        if (scriptIdx < SCRIPT_LINES.length) {
+            showLine(scriptIdx);
+        } else {
+            scriptActive = false;
+            cooldown = HOLOGRAM_COOLDOWN;
+            dialogDoneCallback?.();
         }
     }
 
@@ -147,7 +194,7 @@ export function createLabHologram(scene, labPos, site) {
     }
 
     return {
-        group, update, replay,
+        group, update, replay, advance,
         get seen() { return seen; },
         get script() { return SCRIPT_LINES; },
         get active() { return scriptActive; },

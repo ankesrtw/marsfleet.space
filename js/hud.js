@@ -20,7 +20,7 @@
 import { isTouchDevice } from './touch.js';
 import { M_PER_DEG, SOL_MS } from './sites.js';
 
-export function createHud(rootEl, { site, onSwitchUnit, onCollect, onToggleSfx, sfxEnabled = true, onCycleGear, gear = 'G2', onToggleSol, solOn = true, onToggleLanding, onCommandAlt, onReset, onSkipIntro, onSkipMission, onReplayIntro, onStartMission, missions = [], onSetOverlayMode, onTravel, onToggleNv, onReplayHologram, onVanDeploy, onPhoto, onToggleConsent, consentOn = true, privacyUrl = '/privacy.html', onMusicToggle, onMusicNext, onMusicPrev, onMusicSelect, onMusicVolume, onOngakCall, onOngakDeploy, onOngakParcel, onDance, onDanceMove, onRock }) {
+export function createHud(rootEl, { site, onSwitchUnit, onCollect, onToggleSfx, sfxEnabled = true, onCycleGear, gear = 'G2', onToggleSol, solOn = true, onToggleLanding, onCommandAlt, onReset, onSkipIntro, onSkipMission, onReplayIntro, onStartMission, missions = [], onSetOverlayMode, onTravel, onToggleNv, onReplayHologram, onAdvanceDialog, onVanDeploy, onPhoto, onToggleConsent, consentOn = true, privacyUrl = '/privacy.html', onMusicToggle, onMusicNext, onMusicPrev, onMusicSelect, onMusicVolume, onOngakCall, onOngakDeploy, onOngakParcel, onDance, onDanceMove, onRock }) {
     rootEl.innerHTML = `
         <div class="mars-hud">
             <div class="mars-hud__top">
@@ -756,6 +756,12 @@ export function createHud(rootEl, { site, onSwitchUnit, onCollect, onToggleSfx, 
     const objectiveEl = rootEl.querySelector('#mc-objective');
     const objectiveTextEl = rootEl.querySelector('#mc-objective-text');
     rootEl.querySelector('#mc-skip-tutorial').addEventListener('click', () => onSkipMission?.());
+    // Clicking the line itself advances Ariana's dialog early (main.js wires
+    // this to hologram.advance()) — distinct from SKIP, which drops the
+    // whole mission. Harmless no-op via onAdvanceDialog?. outside dialog.
+    objectiveTextEl.style.pointerEvents = 'auto';
+    objectiveTextEl.style.cursor = 'pointer';
+    objectiveTextEl.addEventListener('click', () => onAdvanceDialog?.());
     let lastObjectiveText = null;
     function setObjective(text) {
         if (text === lastObjectiveText) return;
