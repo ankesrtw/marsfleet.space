@@ -9,9 +9,13 @@
    always shows the same rocks no matter when you arrive or from
    where — drive away and back, same boulders.
 
-   Size distribution is skewed hard toward pebbles with rare
-   boulders, matching rover surface photos. Rocks settle into the
-   terrain via sampleHeight.
+   Size distribution is skewed toward pebbles with a longer tail of
+   boulders than early tuning, approximating the rock-abundance curves
+   rover teams use for rocky Mars terrain (Golombek et al.'s
+   cumulative size-frequency work at Viking/Pathfinder/MER/InSight
+   sites) — small rocks dominate by count, but boulders are common
+   enough to be a real navigation feature, not a rarity. Rocks settle
+   into the terrain via sampleHeight.
 
    Collision: collides(x, z, radius) regenerates the 3x3 cells around
    the query point through the SAME deterministic cellRocks() the
@@ -22,9 +26,9 @@
 
 import * as THREE from 'three';
 
-const CELL = 25;          // m grid
+const CELL = 15;          // m grid
 const RADIUS = 350;       // m window around the unit
-const ROCKS_PER_CELL_MAX = 2;
+const ROCKS_PER_CELL_MAX = 5;
 const REBUILD_DIST = 60;  // m of travel before re-scatter
 
 export function createRocks(site, terrain, quality, save = null) {
@@ -87,8 +91,8 @@ export function createRocks(site, terrain, quality, save = null) {
     function cellRocks(cx, cz) {
         const rand = cellRand(cx, cz);
         const n = dense
-            ? (rand() < 0.75 ? ROCKS_PER_CELL_MAX : 1)
-            : (rand() < 0.5 ? 1 : 0);
+            ? 1 + Math.floor(rand() * ROCKS_PER_CELL_MAX)
+            : (rand() < 0.7 ? 1 : 0) + (rand() < 0.3 ? 1 : 0);
         const rocks = [];
         for (let k = 0; k < n; k++) {
             const x = (cx + rand()) * CELL;
@@ -96,7 +100,7 @@ export function createRocks(site, terrain, quality, save = null) {
             // NOTE: the rand() calls below must run even when this rock is
             // skipped, or the PRNG stream shifts and the rest of the cell
             // moves. Build it first, decide afterwards.
-            const s = 0.1 + Math.pow(rand(), 3.4) * 2.2;
+            const s = 0.08 + Math.pow(rand(), 2.6) * 2.4;
             const rec = {
                 id: `${cx}:${cz}:${k}`,
                 x, z,

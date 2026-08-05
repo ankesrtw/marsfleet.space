@@ -18,7 +18,7 @@
 
 import * as THREE from 'three';
 
-const DUST_MAX = 220;
+const DUST_MAX = 360;
 const DUST_LIFE = 1.2;
 const TRACK_SEGMENTS = 400;     // per-strip pool; ~0.8m each ≈ 320m of trail
 const TRACK_STEP = 0.8;         // meters of travel per laid segment
@@ -111,14 +111,14 @@ export function createEffects(scene, terrain) {
     function updateDust(dt, active, speed) {
         // spawn behind the active ground unit proportionally to speed
         if (active && active.kind === 'ground' && speed > 1.5) {
-            spawnAccum += dt * Math.min(speed, 14) * 1.4;
+            spawnAccum += dt * Math.min(speed, 14) * 2.2;
             const p = active.unit.position;
             const h = active.unit.heading;
             while (spawnAccum >= 1) {
                 spawnAccum -= 1;
                 // units travel along -[sin h, cos h] under forward input,
                 // so "behind" is +[sin h, cos h]
-                spawnDust(p.x + Math.sin(h) * 1.4, p.y, p.z + Math.cos(h) * 1.4, 1);
+                spawnDust(p.x + Math.sin(h) * 1.4, p.y, p.z + Math.cos(h) * 1.4, 2);
             }
         }
         for (let i = 0; i < DUST_MAX; i++) {
