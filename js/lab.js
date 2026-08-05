@@ -19,6 +19,7 @@
 import * as THREE from 'three';
 import { attachStaticModel } from './models.js';
 import { makeLabel, plateScale } from './outposts.js';
+import { VAN_SPAWN_OFFSET } from './van.js';
 
 const PAD_RADIUS = 5.5;
 const DELIVER_RADIUS = 7.5;   // horizontal "over the pad" test
@@ -36,8 +37,15 @@ const STATION_OFFSET = PAD_RADIUS + 9;
 const STATION_RADIUS = 7.6;   // collision circle over the 15 x 7.5m box
 
 export function createLab(scene, site, terrain, rocks) {
+    // Van spawns at a fixed offset from site.spawn (van.js) before the lab
+    // ever picks a spot — keep the pad AND the station footprint clear of
+    // it too, or the station shell lands on top of the van.
+    const vanX = site.spawn.x + VAN_SPAWN_OFFSET.x;
+    const vanZ = site.spawn.z + VAN_SPAWN_OFFSET.z;
+    const VAN_CLEAR_R = 5; // m, van body (2.2) + margin
+
     // Flattest of 8 candidate spots ~30m around spawn — clear of boulders
-    // at both the pad AND the station dock footprint west of it.
+    // and the van at both the pad AND the station dock footprint west of it.
     let best = null;
     for (let i = 0; i < 8; i++) {
         const a = (i / 8) * Math.PI * 2;
@@ -45,10 +53,15 @@ export function createLab(scene, site, terrain, rocks) {
         const z = site.spawn.z + Math.cos(a) * 30;
         if (rocks?.collides(x, z, PAD_RADIUS)) continue;
         if (rocks?.collides(x - STATION_OFFSET, z, STATION_RADIUS)) continue;
+        if (Math.hypot(x - vanX, z - vanZ) < PAD_RADIUS + VAN_CLEAR_R) continue;
+        if (Math.hypot((x - STATION_OFFSET) - vanX, z - vanZ) < STATION_RADIUS + VAN_CLEAR_R) continue;
         const slope = 1 - terrain.sampleNormal(x, z).y;
         if (!best || slope < best.slope) best = { x, z, slope };
     }
-    if (!best) best = { x: site.spawn.x + 30, z: site.spawn.z, slope: 0 };
+    // Fallback (all 8 candidates rejected): offset in +z instead of +x so
+    // the station footprint (which extends further west than the van's
+    // fixed +x offset) can't land on it either.
+    if (!best) best = { x: site.spawn.x, z: site.spawn.z + 30, slope: 0 };
     const padPos = new THREE.Vector3(best.x, terrain.sampleHeight(best.x, best.z), best.z);
 
     const group = new THREE.Group();

@@ -38,6 +38,10 @@ const DEPLOY_SECS = 2.0;       // deploy/undeploy animation duration (~95% settl
 // dead; anything bigger is still a wall. Wheel-scale obstacles should be a
 // bump you feel, not an invisible barrier.
 export const VAN_CLIMB_R = 0.62;
+// Van's fixed spawn offset from site.spawn (world x/z, not rotated with
+// heading) — lab.js's placement search needs this to keep the station
+// footprint from landing on top of it.
+export const VAN_SPAWN_OFFSET = { x: 12, z: 0 };
 // Chassis spring for that ride. Critically damped (D = 2*sqrt(K)) so a
 // strike settles in ~0.5s without oscillating like a lowrider.
 const BUMP_K = 85;
@@ -79,7 +83,7 @@ const _up = new THREE.Vector3(0, 1, 0);
 
 export function createVan(site, terrain, obstacles) {
     const { mesh, deployRig } = buildVanMesh();
-    mesh.position.set(site.spawn.x + 12, 0, site.spawn.z);
+    mesh.position.set(site.spawn.x + VAN_SPAWN_OFFSET.x, 0, site.spawn.z + VAN_SPAWN_OFFSET.z);
     mesh.rotation.y = site.spawn.heading;
 
     // Spinning-wheel overlay (wheels.js — the rover's rig, relaid for six
