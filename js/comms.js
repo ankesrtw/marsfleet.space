@@ -7,8 +7,8 @@
    1. BEARINGS — the GPS half. waypoint.js already points at ONE thing
       (the nearest uncollected sample) and the telemetry TGT arrow shows
       that one steer angle. This generalizes the same maths to N targets:
-      every other unit, plus the nearest base. Two conventions, on
-      purpose, each matching the readout it feeds:
+      every other unit, plus every base, sorted nearest-first. Two
+      conventions, on purpose, each matching the readout it feeds:
         - compass ticks use the ABSOLUTE bearing (the dial is N-up, so a
           tick at the top means "that way is north of you")
         - the GPS card's arrows use the bearing RELATIVE to the nose
@@ -148,9 +148,11 @@ export function createComms(scene, terrain, rocks, colliders) {
 
     /** GPS feed for the HUD. `from` = the unit being driven (excluded from
         its own target list — you always know where you are); `others` =
-        [{ name, position }]; `bases` = [{ id, name, x, z }] — only the
-        NEAREST base is tracked, so the dial stays readable with 4 units
-        and 5 bases up. */
+        [{ name, position }]; `bases` = [{ id, name, x, z }] — every base is
+        tracked (not just the nearest) so the readable card can answer "which
+        way is the OTHER outpost", not just the closest one. Sorted nearest
+        first: whichever target you're most likely steering for reads at the
+        top of the card instead of wherever it happened to land in the feed. */
     function track(from, heading, others, bases) {
         const { x, z } = from;
         const out = others.map((u) => ({
@@ -162,21 +164,17 @@ export function createComms(scene, terrain, rocks, colliders) {
             rel: relativeBearing(x, z, heading, u.position.x, u.position.z),
         }));
 
-        let near = null;
         for (const b of bases ?? []) {
-            const d = Math.hypot(b.x - x, b.z - z);
-            if (!near || d < near.dist) near = { ...b, dist: d };
-        }
-        if (near) {
             out.push({
-                id: `base:${near.id}`,
-                label: near.name.toUpperCase(),
+                id: `base:${b.id}`,
+                label: b.name.toUpperCase(),
                 color: TRACK_COLORS.base,
-                dist: near.dist,
-                bearing: bearingTo(x, z, near.x, near.z),
-                rel: relativeBearing(x, z, heading, near.x, near.z),
+                dist: Math.hypot(b.x - x, b.z - z),
+                bearing: bearingTo(x, z, b.x, b.z),
+                rel: relativeBearing(x, z, heading, b.x, b.z),
             });
         }
+        out.sort((a, b) => a.dist - b.dist);
         return out;
     }
 
