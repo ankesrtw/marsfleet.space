@@ -82,10 +82,33 @@ function makeHolographicMaterial() {
     });
 }
 
+// Audio-ID overrides for lines regenerated after the original mp3s went
+// stale (the Polly output no longer matched the briefing text they were
+// meant to voice — see plan 30 follow-up). `/assets/*` is served
+// `immutable, max-age=1yr` (_headers), so a corrected line can't just
+// overwrite the old filename: any client or edge PoP that already cached
+// the old bytes would keep serving them for up to a year. New content
+// ships under a new filename instead, same as every other immutable
+// asset in the project. `insight` (Elysium/InSight site) additionally
+// never had a matching id at all — its audio shipped as `elysium-*`
+// while `site.id` is `insight`, so the old `${site.id}-${idx+1}` lookup
+// 404'd silently and that site played no voice.
+const AUDIO_ID_OVERRIDES = {
+    'gale-1': 'gale-1-v2', 'gale-2': 'gale-2-v2',
+    'gusev-1': 'gusev-1-v2', 'gusev-2': 'gusev-2-v2',
+    'hellas-1': 'hellas-1-v2', 'hellas-2': 'hellas-2-v2',
+    'insight-1': 'insight-1-v2', 'insight-2': 'insight-2-v2',
+    'jezero-1': 'jezero-1-v2',
+    'meridiani-1': 'meridiani-1-v2', 'meridiani-2': 'meridiani-2-v2',
+    'olympus-1': 'olympus-1-v2', 'olympus-2': 'olympus-2-v2',
+    'syrtis-1': 'syrtis-1-v2', 'syrtis-2': 'syrtis-2-v2',
+};
+
 export function createLabHologram(scene, labPos, site) {
     // Map site briefing lines to audio IDs
     const siteBriefingWithAudio = (site?.briefing ?? []).map((line, idx) => {
-        const audioId = site ? `${site.id}-${idx + 1}` : null;
+        const baseId = site ? `${site.id}-${idx + 1}` : null;
+        const audioId = baseId ? (AUDIO_ID_OVERRIDES[baseId] ?? baseId) : null;
         return { text: line, audio: audioId };
     });
     const SCRIPT_LINES = [...siteBriefingWithAudio, ...ARIANA_LINES];
