@@ -4,7 +4,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
-    <link rel="icon" type="image/svg+xml" href="../icon.svg">
+    <link rel="icon" type="image/png" href="icons/icon-192.png">
     <!-- PWA / installable app (Android TWA — plan 19). Manifest wraps this page
          as a standalone app; icons + theme mirror the game's Mars-gold branding. -->
     <link rel="manifest" href="manifest.json">
@@ -12,14 +12,14 @@
     <meta name="mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-    <meta name="apple-mobile-web-app-title" content="Mars Sim">
+    <meta name="apple-mobile-web-app-title" content="Mars Fleet">
     <link rel="apple-touch-icon" href="icons/icon-192.png">
-    <meta name="description" content="Mars Sim — drive a rover, fly a drone and walk a surface unit across real Mars terrain from Jezero and Gale craters.">
-    <title>SIGNAL — Mars Sim</title>
+    <meta name="description" content="Mars Fleet — drive a rover, fly a drone and walk a surface unit across real Mars terrain from Jezero and Gale craters.">
+    <title>SIGNAL — Mars Fleet</title>
 
     <!-- Open Graph / social share -->
     <meta property="og:type" content="website">
-    <meta property="og:title" content="SIGNAL — Mars Sim">
+    <meta property="og:title" content="SIGNAL — Mars Fleet">
     <meta property="og:description" content="Drive, fly and walk across real Mars terrain — Jezero and Gale craters, from real elevation data.">
     <meta property="og:url" content="https://marsfleet.space/">
     <meta property="og:site_name" content="SIGNAL">
@@ -52,9 +52,20 @@
         <canvas id="hub-canvas"></canvas>
         <div id="hub-ui">
             <div id="hub-title">
-                <h1>MARS SIM</h1>
+                <img id="hub-logo" src="icons/icon-192.png" alt="" width="44" height="44">
+                <h1>MARS FLEET</h1>
                 <p>SELECT A LANDING SITE</p>
             </div>
+            <!-- Sites info side panel: a static reference of every landing site,
+                 independent of pin picks on the globe below. -->
+            <button id="hub-sites-toggle" class="mars-btn hub-sites-toggle" aria-expanded="false" aria-controls="hub-sites-panel">☰ SITES</button>
+            <aside id="hub-sites-panel" class="hub-sites-panel" data-open="false" aria-hidden="true">
+                <div class="hub-sites-panel__header">
+                    <h2>LANDING SITES</h2>
+                    <button id="hub-sites-close" aria-label="Close">&times;</button>
+                </div>
+                <ul id="hub-sites-list" class="hub-sites-panel__list"></ul>
+            </aside>
             <!-- Cloud save (plan 23): sign in to sync progress to YOUR Google
                  Drive. Hidden/inert until GOOGLE_CLIENT_ID is set in cloudsync.js. -->
             <div id="hub-cloud" hidden>

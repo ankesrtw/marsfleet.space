@@ -1,7 +1,7 @@
 {
   "id": "/",
-  "name": "Mars Sim",
-  "short_name": "Mars Sim",
+  "name": "Mars Fleet",
+  "short_name": "Mars Fleet",
   "description": "Drive a rover, fly a drone and walk a surface unit across real Mars terrain — Jezero and Gale craters, built from real elevation data.",
   "start_url": "/",
   "scope": "/",

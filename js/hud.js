@@ -182,7 +182,7 @@ export function createHud(rootEl, { site, onSwitchUnit, onCollect, onToggleSfx, 
         </div>
         <div class="mars-menu" id="mc-menu" data-open="false">
             <div class="mars-menu__panel">
-                <h2>MARS SIM</h2>
+                <h2>MARS FLEET</h2>
                 <div class="mars-menu__section">
                     <h3>MISSION MAP</h3>
                     <button class="mars-btn mars-btn--map" id="mc-open-hub">◉ OPEN MISSION MAP</button>
@@ -198,7 +198,7 @@ export function createHud(rootEl, { site, onSwitchUnit, onCollect, onToggleSfx, 
                     <button class="mars-btn" id="mc-replay-intro">▶ LANDING INTRO</button>
                     <button class="mars-btn" id="mc-analytics">ANALYTICS ${consentOn ? 'ON' : 'OFF'}</button>
                     <p class="mars-menu__note">Anonymous analytics &amp; crash diagnostics — no account, no
-                    location, no ads — help us improve Mars Sim. Turn them off here anytime.
+                    location, no ads — help us improve Mars Fleet. Turn them off here anytime.
                     <a id="mc-privacy-link" href="${privacyUrl}" target="_blank" rel="noopener">Privacy &amp; data ›</a></p>
                     <p class="mars-menu__note">GEAR (HUD button or G) time-compresses speed per unit:
                     rover REAL = the true 4.2 cm/s, G1 ×50, G2 ×150, G3 ×400; drones G1 = real scale
@@ -222,7 +222,7 @@ export function createHud(rootEl, { site, onSwitchUnit, onCollect, onToggleSfx, 
                     and trails it; CALL (C) sends it to whatever you're driving, DEPLOY (O) leaves it playing
                     where it stands, and PARCEL (J) has it ferry one sample cache to the field lab. Docked with
                     GRATBOT you can make GRATBOT dance (K, then 1-5 for moves). The soundtrack is synthesized
-                    live in the browser — its own Mars Sim playlist, nothing to download — and plays on through
+                    live in the browser — its own Mars Fleet playlist, nothing to download — and plays on through
                     unit switches. Full player: the ♪ button, top right. Keys — B play/pause, [ and ] prev/next.</p>
                 </div>
                 <div class="mars-menu__section">
@@ -1107,7 +1107,8 @@ export function createHud(rootEl, { site, onSwitchUnit, onCollect, onToggleSfx, 
     const gpsDialEl = rootEl.querySelector('#mc-compass-gps');
     const gpsListEl = rootEl.querySelector('#mc-gps-list');
     const gpsRows = new Map();   // id -> { tick, li, arrow, name, dist }
-    let gpsOrder = '';           // last rendered id order (re-seat only on change)
+    let gpsMembers = '';         // last rendered id SET (re-seat on join/leave)
+    let gpsResortAt = 0;         // next allowed distance re-sort (throttled, see below)
 
     function setGps(tracks) {
         const seen = new Set();
@@ -1147,14 +1148,20 @@ export function createHud(rootEl, { site, onSwitchUnit, onCollect, onToggleSfx, 
             row.li.remove();
             gpsRows.delete(id);
         }
-        // Reused rows keep their old slot, so after a unit switch the card
-        // reorders itself (the row that left frees a slot, the row that
-        // joined lands last). Re-seat them in track order — but only when
-        // the set actually changed, not 10x a second.
-        const key = tracks.map((t) => t.id).join('|');
-        if (key !== gpsOrder) {
-            gpsOrder = key;
+        // `tracks` arrives sorted nearest-first (comms.js), so a plain
+        // append-in-order re-seat would reshuffle the list every tick two
+        // targets swap distance rank — visually jittery mid-read for a
+        // panel whose whole point is to be readable. Re-seat immediately
+        // when the SET changes (a unit switch or a target appearing/
+        // disappearing), but throttle the distance-driven reorder to once
+        // every couple seconds so rows hold still while you're reading them.
+        const members = tracks.map((t) => t.id).sort().join('|');
+        const now = Date.now();
+        const joined = members !== gpsMembers;
+        if (joined || now >= gpsResortAt) {
+            gpsMembers = members;
             gpsListEl.append(...tracks.map((t) => gpsRows.get(t.id).li));
+            gpsResortAt = now + 2000;
         }
     }
 
