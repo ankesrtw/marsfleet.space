@@ -86,10 +86,6 @@ export function createHub({ onEnter } = {}) {
         close: document.getElementById('hub-card-close'),
     };
     const resetGameBtn = document.getElementById('hub-reset-game');
-    const sitesToggle = document.getElementById('hub-sites-toggle');
-    const sitesPanel = document.getElementById('hub-sites-panel');
-    const sitesCloseBtn = document.getElementById('hub-sites-close');
-    const sitesList = document.getElementById('hub-sites-list');
     const cloudEls = {
         root: document.getElementById('hub-cloud'),
         signin: document.getElementById('hub-signin'),
@@ -624,7 +620,6 @@ export function createHub({ onEnter } = {}) {
         root.style.transition = '';
         card.hidden = true;
         resetGameBtn.hidden = false;
-        closeSitesPanel();
         if (!built) build();
         addListeners();
         timer.update(); // seed; the 0.05 clamp caps any first-frame gap anyway
@@ -642,8 +637,6 @@ export function createHub({ onEnter } = {}) {
         cardEls.enter.addEventListener('click', enterSelected);
         cardEls.reset.addEventListener('click', onResetSiteClick);
         resetGameBtn.addEventListener('click', onResetGameClick);
-        sitesToggle.addEventListener('click', toggleSitesPanel);
-        sitesCloseBtn.addEventListener('click', closeSitesPanel);
     }
     function removeListeners() {
         canvas.removeEventListener('pointerdown', onPointerDown);
@@ -656,42 +649,8 @@ export function createHub({ onEnter } = {}) {
         cardEls.enter.removeEventListener('click', enterSelected);
         cardEls.reset.removeEventListener('click', onResetSiteClick);
         resetGameBtn.removeEventListener('click', onResetGameClick);
-        sitesToggle.removeEventListener('click', toggleSitesPanel);
-        sitesCloseBtn.removeEventListener('click', closeSitesPanel);
     }
 
-    /** Sites info panel: a static reference list of every landing site (playable
-        + locked/coming-soon), independent of the globe's pin picks. Built once
-        from SITES/LOCKED_SITES metadata — no game state involved. */
-    let sitesListBuilt = false;
-    function buildSitesList() {
-        if (sitesListBuilt) return;
-        sitesListBuilt = true;
-        const rows = [
-            ...SITES.map((s) => ({ site: s, playable: true })),
-            ...LOCKED_SITES.map((s) => ({ site: s, playable: false })),
-        ];
-        sitesList.innerHTML = rows.map(({ site, playable }) => `
-            <li class="hub-sites-panel__item${playable ? '' : ' is-locked'}">
-                <span class="hub-sites-panel__name">${site.name}</span>
-                <span class="hub-sites-panel__mission">${site.mission || (playable ? '' : 'Coming soon')}</span>
-            </li>
-        `).join('');
-    }
-    function toggleSitesPanel() {
-        sitesPanel.dataset.open === 'true' ? closeSitesPanel() : openSitesPanel();
-    }
-    function openSitesPanel() {
-        buildSitesList();
-        sitesPanel.dataset.open = 'true';
-        sitesPanel.setAttribute('aria-hidden', 'false');
-        sitesToggle.setAttribute('aria-expanded', 'true');
-    }
-    function closeSitesPanel() {
-        sitesPanel.dataset.open = 'false';
-        sitesPanel.setAttribute('aria-hidden', 'true');
-        sitesToggle.setAttribute('aria-expanded', 'false');
-    }
     function onResetSiteClick() { armConfirm(cardEls.reset, 'RESET SITE', resetSite); }
     function onResetGameClick() { armConfirm(resetGameBtn, 'RESET GAME', resetGameAll); }
 
